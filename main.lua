@@ -504,6 +504,18 @@ local function beginBattle()
     setSpeech(Game.battle, enc.introLine, 5.2)
 end
 
+local acceptDecision
+
+local function battleRequest(b, enc)
+    local props = {}
+    for i, prop in ipairs(Game.battleFX:getPersistentProps()) do props[i] = prop.key end
+    return {
+        id = enc.id, name = enc.name, category = enc.category, situation = enc.situation,
+        weaknesses = enc.weaknesses, hp = b.enemyHp, pudu_hp = b.hp, max_hp = enc.maxHp, turn = b.turn,
+        current_reaction = b.reaction, active_props = props, stage_states = Game.stageStates,
+    }
+end
+
 local function submitPrompt(prompt, preview, automated)
     local b = Game.battle
     prompt = BattleHUD.limitPrompt(prompt)
@@ -521,13 +533,12 @@ local function submitPrompt(prompt, preview, automated)
     Game.ritual:start(prompt)
     if Game.audio then Game.audio:play("sfx_prompt_submit", 0.68) end
     b.nextAutoArrowAt = Game.demo and 0.12 or 0.26
-    local props = {}
-    for i, prop in ipairs(Game.battleFX:getPersistentProps()) do props[i] = prop.key end
-    b.request = {
-        id = enc.id, name = enc.name, category = enc.category, situation = enc.situation,
-        weaknesses = enc.weaknesses, hp = b.enemyHp, pudu_hp = b.hp, max_hp = enc.maxHp, turn = b.turn,
-        current_reaction = b.reaction, active_props = props, stage_states = Game.stageStates,
-    }
+    b.request = battleRequest(b, enc)
+    local cached = not preview and not Game.demo and b.preparedResults and b.preparedResults[prompt]
+    if cached then
+        acceptDecision({ uid = b.uid, result = cached, source = "cache", latency_ms = 0 })
+        return true
+    end
     Game.battleIn:push({
         cmd = "prompt", id = b.uid, uid = b.uid, prompt = prompt,
         mock_mode = Game.cli.mock or preview ~= nil or Game.demo ~= nil, encounter = b.request,
@@ -553,18 +564,33 @@ local function logTurn(b, damage)
     io.stdout:flush()
 end
 
+local rivalPrompts = {
+    pila_de_ropa = "Jabón",
+    mancha = "Aspiradora",
+    tempano = "Secador",
+    mimo_muro = "Pintura",
+    gato_guaton = "Pepino",
+    fila_tramite = "Sello VIP",
+}
+
 local function enterPlayerTurn()
     local b = Game.battle
+    local enc = Encounters.getByIndex(Game.encounterIndex)
     if b.pendingSemiHint then
-        local enc = Encounters.getByIndex(Game.encounterIndex)
         setSpeech(b, enc.semiHintLine, 5.2)
         b.pendingSemiHint = false
+    end
+    b.preparedPrompts = { "Nube", "Rayo", rivalPrompts[enc.id] or "Empanada" }
+    b.preparedResults = {}
+    local request = battleRequest(b, enc)
+    for _, prompt in ipairs(b.preparedPrompts) do
+        b.preparedResults[prompt] = Judge.standaloneLuaEvaluate(prompt, request)
     end
     Game.battlePhase = "player_turn"
     Game.hud:openPrompt()
 end
 
-local function acceptDecision(message)
+function acceptDecision(message)
     local b, res = Game.battle, message.result
     if not b or Game.battlePhase ~= "ritual" or b.uid ~= message.uid or b.decision
         or Game.transitionState == "to_explore" then return end
@@ -678,8 +704,6 @@ local function endBattleTurn(enc, ex, ey, w)
         Game.battlePhase = "defeat"
         b.mood = "shocked"
         if Game.audio then Game.audio:playTrack("defeat", true) end
-    else
-        enterPlayerTurn()
     end
     if (b.enemyHp == 0 or b.hp == 0) and Game.scoreHistory and not Game.demo and not Game.cli.demoFinale
         and not Game.cli.testRitual and #Game.cli.autoPrompts == 0 then
@@ -688,6 +712,7 @@ local function endBattleTurn(enc, ex, ey, w)
         if not saved then io.stderr:write("[PUDU FANTASY WARN] Puntajes: " .. tostring(err) .. "\n") end
     end
     b.turn = b.turn + 1
+    if b.enemyHp > 0 and b.hp > 0 then enterPlayerTurn() end
 end
 
 local function decodeSprite(data)
@@ -1496,6 +1521,7 @@ local function getHudState(battleEnc)
             state.rivalPortrait = (state.rivalShouts and portraits.shout) or portraits.idle or portraits.shout
         end
         state.hp, state.enemyHp, state.enemyMaxHp = b.hp, b.enemyHp, battleEnc.maxHp
+        state.preparedPrompts = b.preparedPrompts
         state.score, state.totalScore = b.score, BattleScores.total(b.score)
         state.campaignComplete = b.campaignComplete
         state.stageStates, state.portraits, state.mood = Game.stageStates, Game.assets.portraits, b.mood
@@ -1764,7 +1790,7 @@ function love.textinput(text)
     end
 end
 
-local function routeHudAction(action)
+local function routeHudAction(action, prompt)
     if action == "scores" and not Game.scorePage and canOpenScores() then
         if Game.audio then Game.audio:play("sfx_ui_click", 0.52) end
         Game.scorePage = 1
@@ -1801,6 +1827,10 @@ local function routeHudAction(action)
         enterBattleArenaImmediate(Game.encounterIndex, false)
     elseif action == "prompt" and promptAvailable() then
         if not Game.hud.promptOpen and Game.audio then Game.audio:play("sfx_prompt_open", 0.55) end
+        Game.hud:openPrompt()
+    elseif action == "prepared_prompt" and promptAvailable() then
+        if Game.audio then Game.audio:play("sfx_ui_click", 0.55) end
+        Game.hud.input = prompt
         Game.hud:openPrompt()
     elseif action == "conjure" and promptAvailable() then
         submitPrompt(Game.hud.input)

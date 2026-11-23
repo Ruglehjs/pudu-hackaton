@@ -141,7 +141,7 @@ end
 function BattleHUD:hitTest(mx, my)
     for _, hit in ipairs(self.hits) do
         if contains(mx, my, hit.x, hit.y, hit.w, hit.h) then
-            return hit.action
+            return hit.action, hit.prompt
         end
     end
 end
@@ -158,9 +158,9 @@ function BattleHUD:_buttonFace(action, x, y, w, h, enabled, spell)
     if enabled then self.hits[#self.hits + 1] = { action = action, x = x, y = y, w = w, h = h } end
 end
 
-function BattleHUD:_button(action, text, x, y, w, h, enabled, spell)
+function BattleHUD:_button(action, text, x, y, w, h, enabled, spell, font)
     self:_buttonFace(action, x, y, w, h, enabled, spell)
-    local font = spell and (self.fonts.story or self.fonts.heading) or self.fonts.body
+    font = font or (spell and (self.fonts.story or self.fonts.heading) or self.fonts.body)
     local inset = 5
     if action == "conjure" then
         Skin.spark(g, x + 17, y + h / 2 - 1, 5, enabled and Skin.gold or Skin.muted)
@@ -523,10 +523,20 @@ function BattleHUD:drawBattleStrip(state, w, h)
         return
     end
 
-    local fieldX, fieldY = rightX + 13, y + 14
-    local fieldW, fieldH = rightW - 165, 49
+    local fieldX, fieldY = rightX + 13, y + 36
+    local fieldW, fieldH = rightW - 165, 35
+    local prompts = state.preparedPrompts or {}
+    if #prompts > 0 then
+        local buttonGap = 6
+        local buttonW = (rightW - 26 - buttonGap * (#prompts - 1)) / #prompts
+        for i, prompt in ipairs(prompts) do
+            local buttonX = fieldX + (i - 1) * (buttonW + buttonGap)
+            self:_button("prepared_prompt", prompt, buttonX, y + 7, buttonW, 25, true, false, f.small)
+            self.hits[#self.hits].prompt = prompt
+        end
+    end
     Skin.paper(g, fieldX, fieldY, fieldW, fieldH, self.promptOpen)
-    Skin.sprig(g, fieldX + 17, fieldY + 32, -0.74, 0.64, { 0.40, 0.45, 0.22 })
+    Skin.sprig(g, fieldX + 17, fieldY + 22, -0.74, 0.64, { 0.40, 0.45, 0.22 })
     local paperInset = fieldX + 42
     local paperEnd = fieldX + fieldW - 68
     local prompt = self.input == "" and "Escribe qué quieres invocar..." or BattleHUD.displayText(self.input)
