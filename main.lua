@@ -380,20 +380,34 @@ local function saveScreenshotTo(path)
     return true
 end
 
+local function syncExploreBiomeMusic(forceResetBeat)
+    if not Game.audio then return end
+    local biomeId = StageRenderer.getBiomeAt(Game.puduU or 0)
+    local trackId = Audio.getBiomeTrackId(biomeId)
+    local changed = (Game.audio.currentTrackId ~= trackId)
+    if changed or forceResetBeat then
+        Game.audio:playTrack(trackId, false)
+        if Game.beatSync and (changed or forceResetBeat) then
+            local ts = Game.audio.getTrackState and Game.audio:getTrackState()
+            Game.beatSync:reset((ts and ts.bpm) or 116.0)
+        end
+    end
+end
+
 local function syncMusicForMode()
     if not Game.audio then return end
     if Game.mode == "battle" then
-        Game.audio:playTrack("user_battle", false)
+        local enc = Encounters.getByIndex(Game.encounterIndex)
+        local trackId = (enc and enc.track) or "user_battle"
+        if not Game.audio:playTrack(trackId, false) then
+            Game.audio:playTrack("user_battle", false)
+        end
         if Game.beatSync then
-            local ts = Game.audio:getTrackState()
-            Game.beatSync:reset((ts and ts.bpm) or 139.20)
+            local ts = Game.audio.getTrackState and Game.audio:getTrackState()
+            Game.beatSync:reset((ts and ts.bpm) or 138.0)
         end
     else
-        Game.audio:playTrack("overworld", false)
-        if Game.beatSync then
-            local ts = Game.audio:getTrackState()
-            Game.beatSync:reset((ts and ts.bpm) or 116.04)
-        end
+        syncExploreBiomeMusic(true)
     end
 end
 
@@ -489,6 +503,7 @@ local function submitPrompt(prompt, preview, automated)
     Game.battlePhase = "ritual"
     Game.enemyReaction = Game.cli.forceReaction or "idle"
     Game.ritual:start(prompt, nil, not automated)
+    if Game.audio then Game.audio:play("sfx_prompt_submit", 0.68) end
     b.nextAutoArrowAt = Game.demo and 0.12 or 0.26
     local props = {}
     for i, prop in ipairs(Game.battleFX:getPersistentProps()) do props[i] = prop.key end
@@ -540,6 +555,7 @@ local function acceptDecision(message)
     b.decision = message
     if not res.approved then
         Game.ritual:cancel()
+        if Game.audio then Game.audio:play("sfx_prompt_reject", 0.75) end
         Game.enemyReaction = Game.cli.forceReaction or b.reaction
         setSpeech(b, res.reject_reason)
         logTurn(b, 0)
@@ -620,9 +636,9 @@ local function startVictory(enc, ex, ey, w)
     Game.battlePhase, b.victoryAt = "victory", Game.elapsed
     Game.hud:closePrompt(true)
     setSpeech(b, enc.defeatLine)
-    Game.battleFX:startDefeatFinale(Game.enemyReaction, ex, ey)
+    Game.battleFX:startDefeatFinale(Game.enemyReaction, ex, ey, Game.audio)
     Game.battleFX:spawnParticles("confetti", w * 0.5, 100, 85)
-    Game.audio:playTrack("victory")
+    if Game.audio then Game.audio:playTrack("victory", true) end
 end
 
 local function endBattleTurn(enc, ex, ey, w)
@@ -637,6 +653,7 @@ local function endBattleTurn(enc, ex, ey, w)
     elseif b.hp == 0 then
         Game.battlePhase = "defeat"
         b.mood = "shocked"
+        if Game.audio then Game.audio:playTrack("defeat", true) end
     else
         enterPlayerTurn()
     end
@@ -700,6 +717,13 @@ local function reloadAssets(isHotReload)
     Game.assets = AssetLoader.loadAll(Encounters.SELECTABLE)
     if isHotReload then
         Game.stage:buildOverworldDecor(Game.overworldEncounters)
+        if Game.audio and Game.audio.reload then
+            Game.audio:reload()
+            if Game.beatSync and Game.audio.getTrackState then
+                local ts = Game.audio:getTrackState()
+                Game.beatSync:reset((ts and ts.bpm) or 120.0)
+            end
+        end
         Game.reloadCount = Game.reloadCount + 1
         local s = Game.assets.stats
         showToast(string.format("Hot-Reload #%d listo (%d reales / %d greybox)", Game.reloadCount, s.realCount, s.placeholderCount), 2.4)
@@ -787,13 +811,17 @@ local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
 
     if Game.audio then
         local enc = Encounters.getByIndex(targetIdx)
-        if not enc.finalBoss or not Game.audio:playTrack(enc.track, false) then
+        local trackId = (enc and enc.track) or "user_battle"
+        if not Game.audio:playTrack(trackId, false) then
             Game.audio:playTrack("user_battle", false)
+        end
+        if not skipEnterDash then
+            Game.audio:play("sfx_battle_enter", 0.75)
         end
     end
     if Game.beatSync then
-        local ts = Game.audio and Game.audio:getTrackState()
-        Game.beatSync:reset((ts and ts.bpm) or 139.20)
+        local ts = Game.audio and Game.audio.getTrackState and Game.audio:getTrackState()
+        Game.beatSync:reset((ts and ts.bpm) or 138.0)
     end
 end
 
@@ -881,7 +909,15 @@ end
 
 local function updateDesertArrival(dt)
     local arrival = Game.desertArrival
+    local prevElapsed = arrival.elapsed
     local finished = arrival:update(dt)
+    if Game.audio then
+        if prevElapsed < 0.32 and arrival.elapsed >= 0.32 then
+            Game.audio:play("sfx_truck_jump", 0.72)
+        elseif prevElapsed < 0.88 and arrival.elapsed >= 0.88 then
+            Game.audio:play("sfx_truck_land", 0.72)
+        end
+    end
     Game.puduU, Game.puduV = arrival.u, arrival.v
     Game.puduFacingRow = arrival.facingRow
     if finished then Game.desertArrival = nil end
@@ -898,7 +934,13 @@ local function updateExplore(dt)
     end
 
     -- Pause walk input while calm room-snapped camera pans between rooms (R7)
-    if Game.stage:isCameraPanning() then
+    local panning = Game.stage:isCameraPanning()
+    if panning and not Game.wasCameraPanning and Game.audio then
+        Game.audio:play("sfx_camera_pan", 0.32)
+    end
+    Game.wasCameraPanning = panning
+    if panning then
+        Game.lastStepBucket = nil
         Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
         return
     end
@@ -953,12 +995,27 @@ local function updateExplore(dt)
         local screenY = movedU * StageRenderer.ISO_UY + movedV * StageRenderer.ISO_VY
         Game.puduFacingRow = StageRenderer.screenDirToFacingRow(screenX, screenY)
         Game.puduWalkT = (Game.puduWalkT + distance / WALK_FRAME_DISTANCE) % 4
-    elseif hasInput then
-        Game.puduFacingRow = StageRenderer.screenDirToFacingRow(dx, dy)
+        local bucket = math.floor(Game.puduWalkT)
+        if bucket ~= Game.lastStepBucket then
+            Game.lastStepBucket = bucket
+            if (bucket == 1 or bucket == 3) and Game.audio then
+                local biomeId = StageRenderer.getBiomeAt(Game.puduU)
+                Game.audio:play(Audio.getBiomeStepSfx(biomeId), 0.26, 0.08)
+            end
+        end
+    else
+        Game.lastStepBucket = nil
+        if hasInput then
+            Game.puduFacingRow = StageRenderer.screenDirToFacingRow(dx, dy)
+        end
     end
 
     Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
-    if Game.stage:isCameraPanning() then stopPuduMovement() end
+    if Game.stage:isCameraPanning() then
+        Game.lastStepBucket = nil
+        stopPuduMovement()
+    end
+    syncExploreBiomeMusic(false)
 
     if not Game.completoPickedAt and distanceSquaredFromPudu(COMPLETO) <= COMPLETO.pickupRadius ^ 2 then
         Game.completoPickedAt = Game.elapsed
@@ -1066,6 +1123,13 @@ local function updateBattle(dt, realDt)
             b.hp = math.max(0, b.hp - b.result.enemy_counter_damage)
             if b.result.enemy_counter_damage > 0 then
                 b.mood = "shocked"
+                if Game.audio then
+                    local cfx = b.result.enemy_counter_fx
+                    if cfx and cfx ~= "none" then
+                        Game.audio:play("sfx_counter_" .. tostring(cfx), 0.78)
+                    end
+                    Game.audio:play("hurt", 0.75)
+                end
                 fx:spawnParticles(b.result.enemy_counter_fx, anchors.puduX, anchors.puduY - 75, 18)
                 fx:spawnFloatingText("-" .. b.result.enemy_counter_damage, anchors.puduX + 68,
                     anchors.puduY - 115, { 1, 0.47, 0.40 })
@@ -1576,9 +1640,11 @@ local function routeHudAction(action)
             Game.scorePage = clamp(Game.scorePage + delta, 1, pages)
         end
     elseif action == "music" then
+        if Game.audio then Game.audio:play("sfx_ui_click", 0.55) end
         local enabled = Game.audio:toggleMusic()
         showToast(enabled and "Música activada" or "Música desactivada", 1.8)
     elseif action == "map" then
+        if Game.audio then Game.audio:play("sfx_ui_click", 0.55) end
         if Game.mode == "battle" then
             triggerReturnToExplore()
         elseif not Game.desertArrival then
@@ -1588,8 +1654,10 @@ local function routeHudAction(action)
             end
         end
     elseif action == "retry" and Game.battlePhase == "defeat" then
+        if Game.audio then Game.audio:play("sfx_ui_click", 0.55) end
         enterBattleArenaImmediate(Game.encounterIndex, false)
     elseif action == "prompt" and promptAvailable() then
+        if not Game.hud.promptOpen and Game.audio then Game.audio:play("sfx_prompt_open", 0.55) end
         Game.hud:openPrompt()
     elseif action == "conjure" and promptAvailable() then
         submitPrompt(Game.hud.input)
@@ -1675,9 +1743,13 @@ function love.keypressed(key, scancode, isrepeat)
             triggerReturnToExplore()
         elseif promptAvailable() then
             if Game.hud.promptOpen then submitPrompt(Game.hud.input)
-            else Game.hud:openPrompt() end
+            else
+                if Game.audio then Game.audio:play("sfx_prompt_open", 0.55) end
+                Game.hud:openPrompt()
+            end
         end
     elseif promptAvailable() and key == "/" and not isrepeat and not Game.hud.promptOpen then
+        if Game.audio then Game.audio:play("sfx_prompt_open", 0.55) end
         Game.hud:openPrompt()
         Game.ignorePromptSlash = true
     elseif promptAvailable() and key == "backspace" then

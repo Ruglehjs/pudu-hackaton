@@ -9,32 +9,32 @@ local Spectacles = {}
 Spectacles.COMBO_THEMES = {
     combo_electro = {
         defaultName = "¡COMBO ELECTRO-CHARCO!", primary = {1, 0.86, 0.26}, accent = {0.20, 0.88, 1},
-        shakeMag = 9.5, sfx1 = "sfx_camera_flash", sfx2 = "parry_clash",
+        shakeMag = 9.5, sfx1 = "sfx_combo_electro", sfx2 = "parry_clash",
         burst = {{"flash", 8, -44}, {"sparkles", 28, -40}}, trail = {"sparkles", 4, -30},
     },
     combo_deep_freeze = {
         defaultName = "¡COMBO HIELO TOTAL!", primary = {0.80, 0.98, 1}, accent = {0.27, 0.68, 1},
-        shakeMag = 7.5, sfx1 = "chime_3", sfx2 = "bash_impact",
+        shakeMag = 7.5, sfx1 = "sfx_combo_deep_freeze", sfx2 = "chime_3",
         burst = {{"snow", 24, -105}, {"sparkles", 14, -46}}, trail = {"snow", 4, -122},
     },
     combo_steam_sauna = {
         defaultName = "¡COMBO SAUNA EXTREMO!", primary = {1, 0.90, 0.72}, accent = {1, 0.48, 0.60},
-        shakeMag = 7.0, sfx1 = "water_rush", sfx2 = "sfx_horn",
+        shakeMag = 7.0, sfx1 = "sfx_combo_steam_sauna", sfx2 = "water_rush",
         burst = {{"steam", 20, -20}, {"bubbles", 14, -25}}, trail = {"steam", 4, -12},
     },
     combo_slip_slide = {
         defaultName = "¡COMBO RESBALÓN TURBO!", primary = {1, 0.79, 0.24}, accent = {0.31, 0.94, 0.81},
-        shakeMag = 7.2, sfx1 = "sfx_boing", sfx2 = "sfx_rimshot",
+        shakeMag = 7.2, sfx1 = "sfx_combo_slip_slide", sfx2 = "sfx_rimshot",
         burst = {{"wind", 20, -36}, {"stars", 10, -78}, {"bubbles", 12, -22}}, trail = {"wind", 4, -30},
     },
     combo_fire_boom = {
         defaultName = "¡COMBO SUPER-EXPLOSIÓN!", primary = {1, 0.66, 0.19}, accent = {1, 0.35, 0.22},
-        shakeMag = 10.5, sfx1 = "bash_impact", sfx2 = "rock_fall",
+        shakeMag = 10.5, sfx1 = "sfx_combo_fire_boom", sfx2 = "rock_fall",
         burst = {{"explosion", 14, -38}, {"fire", 20, -28}, {"stars", 8, -72}}, trail = {"dust", 4, -30},
     },
     combo_chaos = {
         defaultName = "¡COMBO CAOS TOTAL!", primary = {0.87, 0.68, 1}, accent = {0.66, 0.41, 1},
-        shakeMag = 9.0, sfx1 = "sfx_spell_unleash", sfx2 = "sfx_rimshot",
+        shakeMag = 9.0, sfx1 = "sfx_combo_chaos", sfx2 = "sfx_rimshot",
         burst = {{"confetti", 42, -100}, {"stars", 16, -65}, {"sparkles", 12, -44}}, trail = {"confetti", 5, -92},
     },
 }
