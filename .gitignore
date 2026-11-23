@@ -21,6 +21,7 @@ dist/
 
 # Runtime Caches & Logs
 cache/
+assets/audio/lyria_raw/
 *.log
 victory_album.json
 stage_overrides.json

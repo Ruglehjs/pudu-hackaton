@@ -176,7 +176,7 @@ function SpellRitual:_extend()
     self.overchargeBannerTimer = 3.2
 end
 
-function SpellRitual:_startExtraWave()
+function SpellRitual:_startExtraWave(audio)
     self.waveCount = (self.waveCount or 1) + 1
     self.sequence = {}
     for _ = 1, 6 do
@@ -187,6 +187,7 @@ function SpellRitual:_startExtraWave()
     self.nextWaveAt = nil
     self.overchargeBannerText = ("¡OLEADA %d! +6 flechas"):format(self.waveCount)
     self.overchargeBannerTimer = 3.2
+    if audio then audio:play("sfx_ritual_wave", 0.72) end
 end
 
 function SpellRitual:_spawnWord(text)
@@ -279,7 +280,7 @@ function SpellRitual:_spawnOsuTarget()
     end
 end
 
-function SpellRitual:_awardOsuHit(x, y, color, bonusAdd, label, audio, comboStep)
+function SpellRitual:_awardOsuHit(x, y, color, bonusAdd, label, audio, comboStep, isSlider)
     self.osuHits = (self.osuHits or 0) + 1
     self.osuCombo = (self.osuCombo or 0) + (comboStep or 1)
     self.bestOsuCombo = math.max(self.bestOsuCombo, self.osuCombo)
@@ -288,7 +289,12 @@ function SpellRitual:_awardOsuHit(x, y, color, bonusAdd, label, audio, comboStep
     self:_recomputePower()
     self:_spawnOsuEffect(x, y, color, label)
     if audio then
-        audio:playArrowChime(self.osuCombo)
+        if isSlider then
+            audio:play("sfx_osu_slider", 0.72)
+        else
+            local rise = 2 ^ (math.min(self.osuCombo - 1, 7) / 12)
+            audio:play("sfx_osu_hit", 0.70, 0, rise)
+        end
         audio:play("orb_gain", 0.30)
     end
 end
@@ -346,7 +352,7 @@ function SpellRitual:onMouseReleased(x, y, button, audio)
         end
     end
     if s.slideT >= 0.55 then
-        self:_awardOsuHit(bx, by, s.color, 0.04, "¡DESLIZ +4%!", audio, 1)
+        self:_awardOsuHit(bx, by, s.color, 0.04, "¡DESLIZ +4%!", audio, 1, true)
     else
         self.osuCombo = 0
     end
@@ -460,9 +466,9 @@ function SpellRitual:update(dt, _, puduX, puduY, orbLift, audio)
                     table.remove(self.osuTargets, i)
                     local ratio = target.trackTotal > 0 and (target.trackGood / target.trackTotal) or 1
                     if ratio >= 0.40 then
-                        self:_awardOsuHit(target.x2, target.y2, GOLD, 0.10, "¡DESLIZ +10%!", audio, 2)
+                        self:_awardOsuHit(target.x2, target.y2, GOLD, 0.10, "¡DESLIZ +10%!", audio, 2, true)
                     else
-                        self:_awardOsuHit(target.x2, target.y2, target.color, 0.05, "¡DESLIZ +5%!", audio, 1)
+                        self:_awardOsuHit(target.x2, target.y2, target.color, 0.05, "¡DESLIZ +5%!", audio, 1, true)
                     end
                 end
             else
@@ -476,7 +482,7 @@ function SpellRitual:update(dt, _, puduX, puduY, orbLift, audio)
 
         -- Launch extra arrow wave if the player finished all 10 arrows while live sprite is still loading
         if self.nextWaveAt and self.elapsed >= self.nextWaveAt and not self:_canUnleashNow() then
-            self:_startExtraWave()
+            self:_startExtraWave(audio)
         end
     end
 

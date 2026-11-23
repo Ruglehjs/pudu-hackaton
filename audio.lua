@@ -14,143 +14,150 @@ Audio.TRACKS_OVERRIDE_PATHS = {
 }
 
 Audio.TRACK_META = {
-    -- 4 Biome Overworld Themes (8-bit / GBA Superstar Saga style)
+    -- 4 Biome Overworld Themes (Google Lyria 3 Chilean Eco-Adventure)
     overworld_desierto = {
-        path = "assets/audio/bgm_overworld_desierto.wav",
-        bpm = 116.0,
-        beats = 64,
+        path = "assets/audio/bgm_overworld_desierto.ogg",
+        bpm = 117.45,
+        beats = 56,
         beatOffset = 0.0,
         loop = true,
     },
     overworld_costa = {
-        path = "assets/audio/bgm_overworld_costa.wav",
-        bpm = 124.0,
-        beats = 64,
+        path = "assets/audio/bgm_overworld_costa.ogg",
+        bpm = 123.05,
+        beats = 52,
         beatOffset = 0.0,
         loop = true,
     },
-    overworld_bosque = {
-        path = "assets/audio/bgm_overworld_bosque.wav",
-        bpm = 112.0,
-        beats = 64,
+    overworld_montana = {
+        path = "assets/audio/bgm_overworld_montana.ogg",
+        bpm = 114.84,
+        beats = 56,
         beatOffset = 0.0,
         loop = true,
     },
     overworld_chiloe = {
-        path = "assets/audio/bgm_overworld_chiloe.wav",
-        bpm = 108.0,
-        beats = 64,
+        path = "assets/audio/bgm_overworld_chiloe.ogg",
+        bpm = 107.67,
+        beats = 52,
         beatOffset = 0.0,
         loop = true,
     },
 
-    -- 4 Campaign Battle Themes (distinct 8-bit/GBA identity per rival)
+    -- 4 Campaign Battle Themes (Google Lyria 3 Pokémon-inspired Eco-Bosses)
     battle_fardo = {
-        path = "assets/audio/bgm_battle_pila_ropa.wav",
-        bpm = 138.0,
-        beats = 64,
+        path = "assets/audio/bgm_battle_fardo.ogg",
+        bpm = 139.67,
+        beats = 68,
         beatOffset = 0.0,
         loop = true,
     },
     battle_mancha = {
-        path = "assets/audio/bgm_battle_gaviota.wav",
-        bpm = 132.0,
-        beats = 64,
-        beatOffset = 0.0,
-        loop = true,
-    },
-    battle_brasa = {
-        path = "assets/audio/bgm_battle_puma.wav",
-        bpm = 142.0,
+        path = "assets/audio/bgm_battle_mancha.ogg",
+        bpm = 136.00,
         beats = 64,
         beatOffset = 0.0,
         loop = true,
     },
     battle_tempano = {
-        path = "assets/audio/bgm_battle_caleuche.wav",
-        bpm = 148.0,
-        beats = 64,
+        path = "assets/audio/bgm_battle_tempano.ogg",
+        bpm = 143.55,
+        beats = 68,
         beatOffset = 0.0,
         loop = true,
     },
-    battle_pila_ropa = {
-        path = "assets/audio/bgm_battle_pila_ropa.wav",
-        bpm = 138.0,
-        beats = 64,
-        beatOffset = 0.0,
-        loop = true,
-    },
-    battle_gaviota = {
-        path = "assets/audio/bgm_battle_gaviota.wav",
-        bpm = 132.0,
-        beats = 64,
-        beatOffset = 0.0,
-        loop = true,
-    },
-    battle_puma = {
-        path = "assets/audio/bgm_battle_puma.wav",
-        bpm = 142.0,
-        beats = 64,
-        beatOffset = 0.0,
-        loop = true,
-    },
-    battle_caleuche = {
-        path = "assets/audio/bgm_battle_caleuche.wav",
-        bpm = 148.0,
-        beats = 64,
+    battle_brasa = {
+        path = "assets/audio/bgm_battle_brasa.ogg",
+        bpm = 152.00,
+        beats = 72,
         beatOffset = 0.0,
         loop = true,
     },
 
     -- Victory & Defeat Jingles
     victory = {
-        path = "assets/audio/bgm_victory.wav",
-        bpm = 138.0,
-        beats = 32,
+        path = "assets/audio/bgm_victory.ogg",
+        bpm = 138.00,
+        beats = 28,
         beatOffset = 0.0,
         loop = false,
     },
     defeat = {
-        path = "assets/audio/bgm_defeat.wav",
-        bpm = 104.0,
-        beats = 20,
+        path = "assets/audio/bgm_defeat.ogg",
+        bpm = 100.00,
+        beats = 13,
         beatOffset = 0.0,
         loop = false,
     },
 
     -- Backward-compatible track aliases (share cached Source by file path)
     overworld = {
-        path = "assets/audio/bgm_overworld_desierto.wav",
-        bpm = 116.0,
-        beats = 64,
+        path = "assets/audio/bgm_overworld_desierto.ogg",
+        bpm = 117.45,
+        beats = 56,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    overworld_bosque = {
+        path = "assets/audio/bgm_overworld_chiloe.ogg",
+        bpm = 107.67,
+        beats = 52,
         beatOffset = 0.0,
         loop = true,
     },
     user_battle = {
-        path = "assets/audio/bgm_battle_pila_ropa.wav",
-        bpm = 138.0,
-        beats = 64,
+        path = "assets/audio/bgm_battle_fardo.ogg",
+        bpm = 139.67,
+        beats = 68,
         beatOffset = 0.0,
         loop = true,
     },
     plaza = {
-        path = "assets/audio/bgm_battle_pila_ropa.wav",
-        bpm = 138.0,
-        beats = 64,
+        path = "assets/audio/bgm_battle_fardo.ogg",
+        bpm = 139.67,
+        beats = 68,
         beatOffset = 0.0,
         loop = true,
     },
     superstar = {
-        path = "assets/audio/bgm_battle_gaviota.wav",
-        bpm = 132.0,
+        path = "assets/audio/bgm_battle_mancha.ogg",
+        bpm = 136.00,
         beats = 64,
         beatOffset = 0.0,
         loop = true,
     },
     boss = {
-        path = "assets/audio/bgm_battle_caleuche.wav",
-        bpm = 148.0,
+        path = "assets/audio/bgm_battle_brasa.ogg",
+        bpm = 152.00,
+        beats = 72,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_pila_ropa = {
+        path = "assets/audio/bgm_battle_fardo.ogg",
+        bpm = 139.67,
+        beats = 68,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_gaviota = {
+        path = "assets/audio/bgm_battle_mancha.ogg",
+        bpm = 136.00,
         beats = 64,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_puma = {
+        path = "assets/audio/bgm_battle_brasa.ogg",
+        bpm = 152.00,
+        beats = 72,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_caleuche = {
+        path = "assets/audio/bgm_battle_tempano.ogg",
+        bpm = 143.55,
+        beats = 68,
         beatOffset = 0.0,
         loop = true,
     },
@@ -159,8 +166,8 @@ Audio.TRACK_META = {
 Audio.BIOME_TRACKS = {
     desierto = "overworld_desierto",
     costa = "overworld_costa",
-    montana = "overworld_bosque",
-    bosque = "overworld_bosque",
+    montana = "overworld_montana",
+    bosque = "overworld_chiloe",
     chiloe = "overworld_chiloe",
     ciudad = "overworld_chiloe",
 }
@@ -168,9 +175,9 @@ Audio.BIOME_TRACKS = {
 Audio.BIOME_STEP_SFX = {
     desierto = "sfx_step_sand",
     costa = "sfx_step_wood",
-    montana = "sfx_step_grass",
+    montana = "sfx_step_stone",
     bosque = "sfx_step_grass",
-    chiloe = "sfx_step_wood",
+    chiloe = "sfx_step_grass",
     ciudad = "sfx_step_wood",
 }
 
@@ -241,20 +248,29 @@ Audio.SFX_FILES = {
     sfx_counter_music    = "assets/audio/sfx_counter_music.wav",
     sfx_counter_sparkles = "assets/audio/sfx_counter_sparkles.wav",
 
-    -- Combat polish, UI & Overworld exploration SFX
-    sfx_crit_hit      = "assets/audio/sfx_crit_hit.wav",
-    sfx_prompt_reject = "assets/audio/sfx_prompt_reject.wav",
-    sfx_enemy_ko      = "assets/audio/sfx_enemy_ko.wav",
-    sfx_battle_enter  = "assets/audio/sfx_battle_enter.wav",
-    sfx_ui_click      = "assets/audio/sfx_ui_click.wav",
-    sfx_prompt_open   = "assets/audio/sfx_prompt_open.wav",
-    sfx_prompt_submit = "assets/audio/sfx_prompt_submit.wav",
-    sfx_truck_jump    = "assets/audio/sfx_truck_jump.wav",
-    sfx_truck_land    = "assets/audio/sfx_truck_land.wav",
-    sfx_step_sand     = "assets/audio/sfx_step_sand.wav",
-    sfx_step_wood     = "assets/audio/sfx_step_wood.wav",
-    sfx_step_grass    = "assets/audio/sfx_step_grass.wav",
-    sfx_camera_pan    = "assets/audio/sfx_camera_pan.wav",
+    -- Combat polish, VS presentation, PR #5 mechanics, UI & Overworld exploration SFX
+    sfx_crit_hit         = "assets/audio/sfx_crit_hit.wav",
+    sfx_prompt_reject    = "assets/audio/sfx_prompt_reject.wav",
+    sfx_enemy_ko         = "assets/audio/sfx_enemy_ko.wav",
+    sfx_battle_enter     = "assets/audio/sfx_battle_enter.wav",
+    sfx_versus_intro     = "assets/audio/sfx_versus_intro.wav",
+    sfx_versus_impact    = "assets/audio/sfx_versus_impact.wav",
+    sfx_scene_transition = "assets/audio/sfx_scene_transition.wav",
+    sfx_biome_restored   = "assets/audio/sfx_biome_restored.wav",
+    sfx_completo_pickup  = "assets/audio/sfx_completo_pickup.wav",
+    sfx_osu_hit          = "assets/audio/sfx_osu_hit.wav",
+    sfx_osu_slider       = "assets/audio/sfx_osu_slider.wav",
+    sfx_ritual_wave      = "assets/audio/sfx_ritual_wave.wav",
+    sfx_ui_click         = "assets/audio/sfx_ui_click.wav",
+    sfx_prompt_open      = "assets/audio/sfx_prompt_open.wav",
+    sfx_prompt_submit    = "assets/audio/sfx_prompt_submit.wav",
+    sfx_truck_jump       = "assets/audio/sfx_truck_jump.wav",
+    sfx_truck_land       = "assets/audio/sfx_truck_land.wav",
+    sfx_step_sand        = "assets/audio/sfx_step_sand.wav",
+    sfx_step_wood        = "assets/audio/sfx_step_wood.wav",
+    sfx_step_grass       = "assets/audio/sfx_step_grass.wav",
+    sfx_step_stone       = "assets/audio/sfx_step_stone.wav",
+    sfx_camera_pan       = "assets/audio/sfx_camera_pan.wav",
 }
 
 local function clamp(v, lo, hi)
@@ -491,8 +507,8 @@ function Audio.new(muted)
     local self = setmetatable({
         muted = muted and true or false,
         musicEnabled = true,
-        musicVolume = 0.52,
-        sfxVolume = 0.80,
+        musicVolume = 0.56,
+        sfxVolume = 0.82,
         trackMeta = {},
         tracks = {},
         trackDurations = {},
@@ -501,6 +517,16 @@ function Audio.new(muted)
         missing = {},
         currentTrackId = nil,
         currentTrack = nil,
+        fadeFromTrack = nil,
+        fadeProgress = 1.0,
+        fadeDuration = 0.0,
+        duckFactor = 1.0,
+        fadingOut = false,
+        fadeOutElapsed = 0.0,
+        fadeOutDuration = 0.0,
+        proximityTension = 0.0,
+        targetProximityTension = 0.0,
+        currentPitch = 1.0,
         trackPaused = false,
         loadedTrackCount = 0,
         totalTrackCount = 0,
@@ -516,11 +542,19 @@ end
 function Audio:reload()
     local prevTrackId = self.currentTrackId
     local wasPaused = self.trackPaused
+    if self.fadeFromTrack then
+        pcall(self.fadeFromTrack.stop, self.fadeFromTrack)
+        self.fadeFromTrack = nil
+    end
     if self.currentTrack then
         pcall(self.currentTrack.stop, self.currentTrack)
     end
     self.currentTrack = nil
     self.currentTrackId = nil
+    self.fadeProgress = 1.0
+    self.fadeDuration = 0.0
+    self.duckFactor = 1.0
+    self.fadingOut = false
 
     self:_loadAllAssets()
 
@@ -533,6 +567,10 @@ function Audio:reload()
     return self:getStats()
 end
 
+function Audio:_isOverworldTrack(trackId)
+    return type(trackId) == "string" and trackId:sub(1, 9) == "overworld"
+end
+
 function Audio:_effectiveMusicVolume()
     if self.muted or not self.musicEnabled then
         return 0.0
@@ -541,21 +579,117 @@ function Audio:_effectiveMusicVolume()
 end
 
 function Audio:_syncMusicVolume()
+    local baseVol = self:_effectiveMusicVolume()
+    local isOverworld = self:_isOverworldTrack(self.currentTrackId)
+    local tension = isOverworld and self.proximityTension or 0.0
+    local volBoost = 1.0 + 0.18 * tension
+    local pitch = 1.0 + 0.065 * tension
+    self.currentPitch = pitch
+
+    local inGain = 1.0
+    local outGain = 0.0
+    if self.fadeDuration > 0.0 and self.fadeProgress < 1.0 then
+        -- Equal-power crossfade / smooth fade-in curve (cos/sin) avoids any mid-transition volume dip!
+        local angle = clamp(self.fadeProgress, 0.0, 1.0) * (math.pi * 0.5)
+        inGain = math.sin(angle)
+        outGain = self.fadeFromTrack and math.cos(angle) or 0.0
+    end
+
     if self.currentTrack then
-        pcall(self.currentTrack.setVolume, self.currentTrack, self:_effectiveMusicVolume())
+        local targetVol = clamp(baseVol * inGain * self.duckFactor * volBoost, 0.0, 0.95)
+        pcall(self.currentTrack.setVolume, self.currentTrack, targetVol)
+        pcall(self.currentTrack.setPitch, self.currentTrack, clamp(pitch, 0.5, 2.0))
+    end
+    if self.fadeFromTrack then
+        local outVol = clamp(baseVol * outGain * self.duckFactor, 0.0, 0.95)
+        pcall(self.fadeFromTrack.setVolume, self.fadeFromTrack, outVol)
     end
 end
 
-function Audio:playTrack(trackId, restartIfSame)
+function Audio:setProximityTension(tension)
+    self.targetProximityTension = clamp(tonumber(tension) or 0.0, 0.0, 1.0)
+end
+
+function Audio:fadeOutMusic(duration)
+    local dur = tonumber(duration) or 0.25
+    if dur <= 0.0 then
+        self.duckFactor = 0.0
+        self.fadingOut = false
+        self:_syncMusicVolume()
+        return
+    end
+    self.fadingOut = true
+    self.fadeOutElapsed = 0.0
+    self.fadeOutDuration = dur
+end
+
+function Audio:update(dt)
+    local step = clamp(tonumber(dt) or 0.0, 0.0, 0.1)
+    if step <= 0.0 then
+        return
+    end
+
+    local dirty = false
+
+    -- 1. Advance equal-power crossfade / fade-in between biome/scene tracks
+    if self.fadeFromTrack or (self.fadeDuration > 0.0 and self.fadeProgress < 1.0) then
+        if self.fadeDuration > 0.0 then
+            self.fadeProgress = clamp(self.fadeProgress + step / self.fadeDuration, 0.0, 1.0)
+        else
+            self.fadeProgress = 1.0
+        end
+        dirty = true
+        if self.fadeProgress >= 1.0 then
+            if self.fadeFromTrack then
+                pcall(self.fadeFromTrack.stop, self.fadeFromTrack)
+                pcall(self.fadeFromTrack.setPitch, self.fadeFromTrack, 1.0)
+                self.fadeFromTrack = nil
+            end
+            self.fadeDuration = 0.0
+        end
+    end
+
+    -- 2. Advance quick fade-out ducking (e.g., battle alert transition)
+    if self.fadingOut then
+        self.fadeOutElapsed = self.fadeOutElapsed + step
+        local p = clamp(self.fadeOutElapsed / math.max(0.01, self.fadeOutDuration), 0.0, 1.0)
+        self.duckFactor = 1.0 - p
+        dirty = true
+        if p >= 1.0 then
+            self.fadingOut = false
+        end
+    end
+
+    -- 3. Smoothly interpolate boss-proximity tension (volume boost + beat acceleration)
+    local wantTension = self:_isOverworldTrack(self.currentTrackId) and self.targetProximityTension or 0.0
+    local diff = wantTension - self.proximityTension
+    if math.abs(diff) > 0.0005 then
+        local rate = clamp(step * 3.8, 0.0, 1.0)
+        self.proximityTension = self.proximityTension + diff * rate
+        dirty = true
+    elseif self.proximityTension ~= wantTension then
+        self.proximityTension = wantTension
+        dirty = true
+    end
+
+    if dirty then
+        self:_syncMusicVolume()
+    end
+end
+
+function Audio:playTrack(trackId, restartIfSame, fadeDuration)
     local meta = (self.trackMeta and self.trackMeta[trackId]) or Audio.TRACK_META[trackId]
     if not meta then
         return false
     end
 
     local src = self.tracks[trackId]
+    local fadeSec = tonumber(fadeDuration) or 0.0
 
     if (self.currentTrackId == trackId or (src and self.currentTrack == src)) and not restartIfSame then
         self.currentTrackId = trackId
+        self.fadingOut = false
+        self.duckFactor = 1.0
         if src then
             self:_syncMusicVolume()
             if not self.trackPaused then
@@ -569,18 +703,51 @@ function Audio:playTrack(trackId, restartIfSame)
         return false
     end
 
-    if self.currentTrack then
-        pcall(self.currentTrack.stop, self.currentTrack)
+    -- Clean up any previously fading-out track
+    if self.fadeFromTrack and self.fadeFromTrack ~= src then
+        pcall(self.fadeFromTrack.stop, self.fadeFromTrack)
+        pcall(self.fadeFromTrack.setPitch, self.fadeFromTrack, 1.0)
+        self.fadeFromTrack = nil
+    end
+
+    local prevTrack = self.currentTrack
+    local canCrossfade = (fadeSec > 0.05) and (prevTrack ~= nil) and (prevTrack ~= src)
+
+    if canCrossfade then
+        self.fadeFromTrack = prevTrack
+        self.fadeProgress = 0.0
+        self.fadeDuration = fadeSec
+    else
+        if prevTrack then
+            pcall(prevTrack.stop, prevTrack)
+            pcall(prevTrack.setPitch, prevTrack, 1.0)
+        end
+        self.fadeFromTrack = nil
+        self.fadeProgress = 1.0
+        self.fadeDuration = 0.0
     end
 
     self.currentTrackId = trackId
     self.currentTrack = src
     self.trackPaused = false
+    self.fadingOut = false
+    self.duckFactor = 1.0
+    if not self:_isOverworldTrack(trackId) then
+        self.proximityTension = 0.0
+        self.targetProximityTension = 0.0
+    end
 
     if src then
         pcall(src.stop, src)
         pcall(src.setLooping, src, meta.loop and true or false)
-        pcall(src.setVolume, src, self:_effectiveMusicVolume())
+        pcall(src.setPitch, src, 1.0)
+        -- If fadeSec > 0 without an outgoing track (e.g. fading in after battle), fade in smoothly!
+        if fadeSec > 0.05 and not canCrossfade then
+            self.fadeFromTrack = nil
+            self.fadeProgress = 0.0
+            self.fadeDuration = fadeSec
+        end
+        self:_syncMusicVolume()
         -- Always play even at volume 0.0 when muted so source:tell("seconds") stays locked to BPM.
         pcall(src.play, src)
         return true
@@ -623,6 +790,8 @@ function Audio:getTrackState()
         bpm = meta and meta.bpm or 120.0,
         beats = meta and meta.beats or 64,
         beatOffset = meta and meta.beatOffset or 0.0,
+        pitch = self.currentPitch or 1.0,
+        tension = self.proximityTension or 0.0,
         pos = pos,
         duration = duration,
         playing = playing,
@@ -720,9 +889,18 @@ function Audio:stopAll()
     end
     for _, src in pairs(self.tracks) do
         pcall(src.stop, src)
+        pcall(src.setPitch, src, 1.0)
     end
     self.currentTrack = nil
     self.currentTrackId = nil
+    self.fadeFromTrack = nil
+    self.fadeProgress = 1.0
+    self.fadeDuration = 0.0
+    self.fadingOut = false
+    self.duckFactor = 1.0
+    self.proximityTension = 0.0
+    self.targetProximityTension = 0.0
+    self.currentPitch = 1.0
     self.trackPaused = false
 end
 
