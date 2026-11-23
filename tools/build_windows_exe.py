@@ -9,6 +9,7 @@ LUA_FILES = (
     "conf.lua", "main.lua", "json.lua", "encounters.lua", "stage_renderer.lua",
     "asset_loader.lua", "audio.lua", "battle_judge.lua", "battle_worker.lua",
     "sprite_worker.lua", "worker_http.lua", "beat_sync.lua", "shaders.lua",
+    "spell_ritual.lua", "battle_hud.lua",
 )
 DLL_FILES = ("SDL2.dll", "love.dll", "lua51.dll", "OpenAL32.dll",
              "mpg123.dll", "msvcp120.dll", "msvcr120.dll")

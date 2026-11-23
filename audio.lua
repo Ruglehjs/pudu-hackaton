@@ -65,6 +65,11 @@ Audio.SFX_FILES = {
     stomp               = "assets/audio/stomp.wav",
     dog_bark            = "assets/audio/dog_bark.wav",
     chime_1             = "assets/audio/chime_1.wav",
+    chime_2             = "assets/audio/chime_2.wav",
+    chime_3             = "assets/audio/chime_3.wav",
+    orb_gain            = "assets/audio/orb_gain.wav",
+    sfx_spell_miss      = "assets/audio/sfx_spell_miss.wav",
+    sfx_spell_unleash   = "assets/audio/sfx_spell_unleash.wav",
     heal                = "assets/audio/heal.wav",
     puma_growl          = "assets/audio/puma_growl.wav",
     hurt                = "assets/audio/hurt.wav",
@@ -275,6 +280,15 @@ function Audio:play(sfxId, vol, jitter, pitch)
 
     local okPlay = pcall(src.play, src)
     return okPlay and true or false
+end
+
+function Audio:playArrowChime(index)
+    local tier = math.min(index, 3)
+    local rise = 2 ^ ((index - tier) / 12)
+    if self.sfx["chime_" .. tier] then
+        return self:play("chime_" .. tier, 0.65, 0, rise)
+    end
+    return self:play("chime_1", 0.65, 0, 2 ^ ((index - 1) / 12))
 end
 
 function Audio:setTrackPaused(paused)

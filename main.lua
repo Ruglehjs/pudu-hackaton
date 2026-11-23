@@ -1,12 +1,14 @@
 -- Pudú Fantasy: mapa, encuentros y combate por prompts (LÖVE 11.5).
 
-local utf8 = require("utf8")
 local AssetLoader = require("asset_loader")
 local Audio = require("audio")
 local Encounters = require("encounters")
 local StageRenderer = require("stage_renderer")
 local Shaders = require("shaders")
 local BeatSync = require("beat_sync")
+local BattleHUD = require("battle_hud")
+local SpellRitual = require("spell_ritual")
+local Judge = require("battle_judge")
 
 --------------------------------------------------------------------------------
 -- Custom Error Handler (prints traceback to stderr; exits 1 under --quit-after)
@@ -98,8 +100,8 @@ local function parseCliArgs(argList)
         screenshot = nil,
         quitAfter = nil,
         printPerf = false,
-        autoPrompt = nil,
-        testRitual = false,
+        autoPrompts = {},
+        testRitual = nil,
         demoCombo = nil,
         forceReaction = nil,
         transitionPreview = nil,
@@ -146,9 +148,10 @@ local function parseCliArgs(argList)
             if a:match("^%-%-print%-perf$") then cli.printPerf = true end
 
             v = a:match("^%-%-auto%-prompt=(.+)$")
-            if v then cli.autoPrompt = v end
+            if v then cli.autoPrompts[#cli.autoPrompts + 1] = v end
 
-            if a:match("^%-%-test%-ritual$") then cli.testRitual = true end
+            if a:match("^%-%-test%-ritual$") then cli.testRitual = "arrows" end
+            if a:match("^%-%-test%-ritual=bonus$") then cli.testRitual = "bonus" end
 
             v = a:match("^%-%-demo%-combo=(.+)$")
             if v then cli.demoCombo = v end
@@ -221,7 +224,7 @@ local Game = {
     puduMoving = false,
 
     -- Battle Arena & Dash-in State
-    battlePhase = "player_turn", -- "battle_enter" | "player_turn"
+    battlePhase = "player_turn",
     battleEnterT = 1.0,
     puduAnimMode = "battle_idle",
     enemyReaction = "idle",
@@ -280,11 +283,10 @@ local function loadFonts()
         return love.graphics.newFont(size)
     end
     return {
-        title = mk(20),
-        heading = mk(16),
+        title = mk(26),
+        heading = mk(17),
         body = mk(14),
         small = mk(12),
-        hasPackagedFont = hasFont,
     }
 end
 
@@ -363,9 +365,9 @@ end
 
 -- Each command follows the normal turn path, including setup, counter and KO.
 local comboDemos = {
-    combo_electro = { "balde de agua", "rayo" },
-    combo_deep_freeze = { "balde de agua", "hielo" },
-    combo_steam_sauna = { "hielo", "secador" },
+    combo_electro = { "charco", "rayo" },
+    combo_deep_freeze = { "charco", "hielo" },
+    combo_steam_sauna = { "escarcha", "secador" },
     combo_slip_slide = { "jabón", "plátano" },
     combo_fire_boom = { "aceite", "fósforo" },
     combo_chaos = { "oscuridad", "bocina" },
@@ -373,30 +375,48 @@ local comboDemos = {
 local demoAliases = { electro = "combo_electro", freeze = "combo_deep_freeze",
     steam = "combo_steam_sauna", slip = "combo_slip_slide", fire = "combo_fire_boom", chaos = "combo_chaos" }
 
+local function setSpeech(b, text, duration)
+    b.speech, b.speechTimer = text, duration or 4.0
+end
+
 local function beginBattle()
     local enc = Encounters.getByIndex(Game.encounterIndex)
     Game.stageStates = {}
+    Game.ritual:cancel()
+    Game.hud:closePrompt(true)
     Game.battle = {
-        hp = 100, enemyHp = enc.maxHp, turn = 1, phase = "input", input = "",
-        props = {}, reaction = "idle", misses = 0, speech = enc.introLine,
+        hp = 100, enemyHp = enc.maxHp, turn = 1, props = {}, reaction = "idle",
+        nonCritMissCount = 0, pendingSemiHint = false,
     }
-    love.keyboard.setTextInput(true)
+    setSpeech(Game.battle, enc.introLine, 5.2)
 end
 
-local function submitPrompt(prompt)
+local function submitPrompt(prompt, preview, automated)
     local b = Game.battle
-    if not b or b.phase ~= "input" or Game.battlePhase ~= "player_turn" or not prompt:find("%S") then return end
+    if not b or Game.battlePhase ~= "player_turn" or not BattleHUD.canSubmit(prompt) then return false end
     local enc = Encounters.getByIndex(Game.encounterIndex)
     Game.nextRequestId = Game.nextRequestId + 1
-    b.uid, b.prompt, b.phase, b.input = Game.nextRequestId, prompt, "waiting", ""
+    b.uid, b.prompt, b.preview, b.autoRitual = Game.nextRequestId, prompt, preview, automated
+    b.decision, b.pendingSummon, b.anticipationLine, b.summon = nil, nil, nil, nil
+    b.previewSpriteAt = nil
+    setSpeech(b, nil, 0)
+    Game.hud:closePrompt(true)
+    Game.battlePhase = "ritual"
+    Game.enemyReaction = Game.cli.forceReaction or "idle"
+    Game.ritual:start(prompt)
+    b.nextAutoArrowAt = Game.demo and 0.12 or 0.26
     local props = {}
     for i, prop in ipairs(b.props) do props[i] = prop.key end
+    b.request = {
+        id = enc.id, name = enc.name, category = enc.category, situation = enc.situation,
+        weaknesses = enc.weaknesses, hp = b.enemyHp, pudu_hp = b.hp, max_hp = enc.maxHp, turn = b.turn,
+        current_reaction = b.reaction, active_props = props, stage_states = Game.stageStates,
+    }
     Game.battleIn:push({
-        cmd = "prompt", id = b.uid, uid = b.uid, prompt = prompt, mock_mode = Game.cli.mock,
-        encounter = { id = enc.id, name = enc.name, category = enc.category, situation = enc.situation,
-            weaknesses = enc.weaknesses, hp = b.enemyHp, pudu_hp = b.hp, max_hp = enc.maxHp, turn = b.turn,
-            current_reaction = b.reaction, active_props = props, stage_states = Game.stageStates },
+        cmd = "prompt", id = b.uid, uid = b.uid, prompt = prompt,
+        mock_mode = Game.cli.mock or preview ~= nil or Game.demo ~= nil, encounter = b.request,
     })
+    return true
 end
 
 local function rememberState(value)
@@ -408,22 +428,69 @@ local function rememberState(value)
     if #Game.stageStates > 3 then table.remove(Game.stageStates, 1) end
 end
 
-local function finishTurn(message)
-    local b, res = Game.battle, message.result
-    if not b or b.phase ~= "waiting" or b.uid ~= message.uid or Game.transitionState == "to_explore" then return end
-    local enc = Encounters.getByIndex(Game.encounterIndex)
+local function logTurn(b, damage)
+    local message = b.decision
+    local res = message.result
     print(string.format("[BATALLA] turno=%d rival=%s juez=%s ms=%d aprobado=%s resultado=%s estado=%s combo=%s daño=%d",
-        b.turn, enc.id, message.source, message.latency_ms or 0, tostring(res.approved),
-        res.outcome_type, res.adds_stage_state, res.combo_triggered, res.damage_to_enemy))
+        b.turn, b.request.id, message.source, message.latency_ms or 0, tostring(res.approved),
+        res.outcome_type, res.adds_stage_state, res.combo_triggered, damage))
     io.stdout:flush()
-    b.result, b.phase = res, "input"
+end
+
+local function enterPlayerTurn()
+    local b = Game.battle
+    if b.pendingSemiHint then
+        local enc = Encounters.getByIndex(Game.encounterIndex)
+        setSpeech(b, enc.semiHintLine, 5.2)
+        b.pendingSemiHint = false
+    end
+    Game.battlePhase = "player_turn"
+    Game.hud:openPrompt()
+end
+
+local function acceptDecision(message)
+    local b, res = Game.battle, message.result
+    if not b or Game.battlePhase ~= "ritual" or b.uid ~= message.uid or b.decision
+        or Game.transitionState == "to_explore" then return end
+    b.decision = message
     if not res.approved then
-        b.speech, b.summon, b.summary = res.reject_reason, nil, nil
+        Game.ritual:cancel()
+        Game.enemyReaction = Game.cli.forceReaction or b.reaction
+        setSpeech(b, res.reject_reason)
+        logTurn(b, 0)
+        enterPlayerTurn()
         return
     end
 
-    b.summon = { key = res.existing_sprite ~= "none" and res.existing_sprite or res.summon_name, uid = b.uid,
-        name = res.summon_name, anchor = res.prop_anchor }
+    if b.preview ~= "arrows" then
+        local anticipation = res.anticipation_line
+        if res.is_critical or res.combo_triggered ~= "none" or res.outcome_type == "super_funny_ko" then
+            Game.enemyReaction = Game.cli.forceReaction or "scared"
+            if anticipation == "" then anticipation = "¡Espera... eso se ve muy malo!" end
+        elseif res.outcome_type == "backfire" then
+            Game.enemyReaction = Game.cli.forceReaction or "laughing"
+            if anticipation == "" then anticipation = "¿En serio vas a invocar eso?" end
+        end
+        b.anticipationLine = anticipation
+    end
+    b.pendingSummon = {
+        key = res.existing_sprite ~= "none" and res.existing_sprite or res.summon_name,
+        uid = b.uid, name = res.summon_name, anchor = res.prop_anchor,
+    }
+    local needsLive = res.sprite_mode == "generate_live" and message.source ~= "lua" and not Game.cli.mock
+    if b.preview == "bonus" then
+        needsLive = true
+        b.previewSpriteAt = Game.ritual.elapsed + 3.2
+    elseif needsLive then
+        Game.spriteIn:push({ cmd = "generate", uid = b.uid, name = res.summon_name, original_prompt = b.prompt,
+            sprite_prompt = res.sprite_prompt, keep_purple = res.keep_purple, target_dim = 80 })
+    end
+    Game.ritual:setAiReady(res, needsLive)
+end
+
+local function applySummonImpactEffects()
+    local b, res = Game.battle, Game.battle.decision.result
+    b.result = res
     if res.keep_prop_on_stage then
         for i, prop in ipairs(b.props) do
             if prop.key == b.summon.key then table.remove(b.props, i) break end
@@ -431,37 +498,48 @@ local function finishTurn(message)
         table.insert(b.props, b.summon)
         if #b.props > 3 then table.remove(b.props, 1) end
     end
-    if res.sprite_mode == "generate_live" and not Game.cli.mock and message.source ~= "lua" then
-        Game.spriteIn:push({ cmd = "generate", uid = b.uid, name = res.summon_name, original_prompt = b.prompt,
-            sprite_prompt = res.sprite_prompt, keep_purple = res.keep_purple, target_dim = 80 })
-    end
-
     rememberState(res.adds_stage_state)
     b.reaction = res.enemy_reaction
     Game.enemyReaction = Game.cli.forceReaction or b.reaction
-    b.enemyHp = math.max(0, b.enemyHp - res.damage_to_enemy)
-    b.hp = clamp(b.hp + res.heal_pudu - res.damage_to_pudu, 0, 100)
-    b.misses = res.is_critical and 0 or b.misses + 1
-    b.speech = b.misses >= 2 and enc.semiHintLine or res.enemy_speech
-    Game.audio:play(res.sfx)
-    Game.audio:play(res.reaction_sfx)
-    local recap = {}
-    if res.damage_to_enemy > 0 then table.insert(recap, ("Rival -%d PV"):format(res.damage_to_enemy)) end
-    if res.heal_pudu > 0 then table.insert(recap, ("Pudú +%d PV"):format(res.heal_pudu)) end
-    if res.damage_to_pudu > 0 then table.insert(recap, ("Autogol -%d PV"):format(res.damage_to_pudu)) end
-    if b.enemyHp > 0 and b.hp > 0 then
-        b.hp = math.max(0, b.hp - res.enemy_counter_damage)
-        table.insert(recap, ("%s  -%d PV al pudú"):format(res.enemy_counter_name, res.enemy_counter_damage))
+    b.damage = math.floor(res.damage_to_enemy * b.power + 0.5)
+    local heal = math.floor(res.heal_pudu * b.power + 0.5)
+    b.enemyHp = math.max(0, b.enemyHp - b.damage)
+    b.hp = clamp(b.hp + heal - res.damage_to_pudu, 0, 100)
+    b.mood = res.pudu_reaction == "shocked" and "shocked" or (res.pudu_reaction == "angry" and "angry" or "happy")
+
+    if res.is_critical then
+        b.nonCritMissCount, b.pendingSemiHint = 0, false
+    elseif res.outcome_type ~= "heal_pudu" then
+        b.nonCritMissCount = b.nonCritMissCount + 1
+        if b.nonCritMissCount >= 2 then
+            b.pendingSemiHint, b.nonCritMissCount = true, 0
+        end
     end
-    b.summary = table.concat(recap, "   /   ")
+
+    setSpeech(b, res.enemy_speech)
+    Game.audio:play(res.reaction_sfx)
+    local toast = res.combo_triggered ~= "none" and res.combo_name or res.narrator_text
+    showToast(toast, 2.5)
+end
+
+local function endBattleTurn()
+    local b = Game.battle
+    local enc = Encounters.getByIndex(Game.encounterIndex)
+    logTurn(b, b.damage)
+    b.turn = b.turn + 1
     if b.enemyHp == 0 then
-        b.phase, b.speech = "victory", enc.defeatLine
+        Game.battlePhase = "victory"
+        Game.toastText, Game.toastTimer = nil, 0
+        Game.enemyReaction = Game.cli.forceReaction or "defeated"
+        setSpeech(b, enc.defeatLine)
         Game.defeatedMap[enc.id] = true
         Game.audio:playTrack("victory")
     elseif b.hp == 0 then
-        b.phase, b.speech = "defeat", res.enemy_counter_line
+        Game.battlePhase = "defeat"
+        b.mood = "shocked"
+    else
+        enterPlayerTurn()
     end
-    b.turn = b.turn + 1
 end
 
 local function decodeSprite(data)
@@ -473,8 +551,11 @@ end
 
 local function acceptSprite(msg)
     local b = Game.battle
-    if not b or not msg.ok then return end
-    local target = b.summon
+    if not b or Game.transitionState == "to_explore" then return end
+    if b.uid == msg.uid and Game.battlePhase == "ritual" then Game.ritual:setSpriteReady() end
+    if not msg.ok then return end
+    local target = b.pendingSummon
+    if not target or target.uid ~= msg.uid then target = b.summon end
     if not target or target.uid ~= msg.uid then
         target = nil
         for _, prop in ipairs(b.props) do
@@ -500,7 +581,7 @@ end
 local function pollWorkers()
     local msg = Game.battleOut:pop()
     while msg do
-        if msg.kind == "prompt_result" then finishTurn(msg) end
+        if msg.kind == "prompt_result" then acceptDecision(msg) end
         msg = Game.battleOut:pop()
     end
     msg = Game.spriteOut:pop()
@@ -588,7 +669,7 @@ local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
     beginBattle()
 
     if skipEnterDash then
-        Game.battlePhase = "player_turn"
+        enterPlayerTurn()
         Game.battleEnterT = 1.0
         Game.puduAnimMode = "battle_idle"
     else
@@ -633,6 +714,8 @@ local function triggerReturnToExplore()
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then
         return
     end
+    Game.ritual:cancel()
+    Game.hud:closePrompt(true)
     Game.transitionState = "to_explore"
     Game.transitionTimer = 0.0
     Game.transitionSwitched = false
@@ -752,13 +835,71 @@ local function updateExplore(dt)
     end
 end
 
-local function updateBattle(dt)
-    if Game.battlePhase == "battle_enter" then
+local function getPuduRenderHeight(anchors, h)
+    return anchors.puduScaleH * math.min(1, h / 720)
+end
+
+local function getOrbLift(anchors, h)
+    -- The diagonal arena uses a larger foreground Pudú and a taller hat silhouette.
+    return math.max(134, getPuduRenderHeight(anchors, h) * 1.27)
+end
+
+local function updateBattle(dt, realDt)
+    local b = Game.battle
+    local phase = Game.battlePhase
+    if phase == "battle_enter" then
         Game.battleEnterT = math.min(1.0, Game.battleEnterT + dt / BATTLE_ENTER_DURATION)
-        Game.puduAnimMode = "battle_enter"
         if Game.battleEnterT >= 1.0 then
-            Game.battlePhase = "player_turn"
+            enterPlayerTurn()
             Game.puduAnimMode = "battle_idle"
+        end
+        return
+    end
+    b.speechTimer = math.max(0, b.speechTimer - dt)
+
+    if phase == "ritual" then
+        local ritual = Game.ritual
+        if b.previewSpriteAt and ritual.elapsed >= b.previewSpriteAt then
+            ritual:setSpriteReady()
+            b.previewSpriteAt = nil
+        end
+        if b.autoRitual and ritual.elapsed >= b.nextAutoArrowAt then
+            local arrow = ritual.sequence[ritual.cursor]
+            if arrow then ritual:onKeyPressed(arrow.direction, Game.audio) end
+            b.nextAutoArrowAt = b.nextAutoArrowAt + (Game.demo and 0.055 or 0.17)
+        end
+        local anchors = StageRenderer.getBattleAnchors()
+        ritual:update(realDt, Game.beatSync, anchors.puduX, anchors.puduY, getOrbLift(anchors, love.graphics.getHeight()))
+        if ritual.readyToUnleash and not b.decision then
+            local fallback = Judge.standaloneLuaEvaluate(b.prompt, b.request)
+            acceptDecision({ uid = b.uid, result = fallback, source = "lua", latency_ms = math.floor(ritual.elapsed * 1000) })
+        end
+        if ritual:isComplete() then
+            b.power, b.summon = ritual:getMultiplier(), b.pendingSummon
+            b.anticipationLine = nil
+            b.phaseTimer = Game.demo and 0.16 or 0.72
+            Game.battlePhase = "summon"
+            Game.audio:play("sfx_spell_unleash")
+            Game.audio:play(b.decision.result.sfx)
+        end
+    elseif phase == "summon" or phase == "enemy_counter" then
+        b.phaseTimer = b.phaseTimer - dt
+        if phase == "enemy_counter" and b.phaseTimer <= 0.60 and b.speech ~= b.result.enemy_counter_line then
+            setSpeech(b, b.result.enemy_counter_line)
+        end
+        if b.phaseTimer > 0 then return end
+        if phase == "summon" then
+            applySummonImpactEffects()
+            if b.hp > 0 and b.enemyHp > 0 then
+                b.phaseTimer = Game.demo and 0.35 or 1.15
+                Game.battlePhase = "enemy_counter"
+            else
+                endBattleTurn()
+            end
+        else
+            b.hp = math.max(0, b.hp - b.result.enemy_counter_damage)
+            if b.result.enemy_counter_damage > 0 then b.mood = "shocked" end
+            endBattleTurn()
         end
     end
 end
@@ -965,291 +1106,79 @@ local function drawEnemySprite(enc, x, y, targetH, groove, litShader)
 end
 
 --------------------------------------------------------------------------------
--- Minimalist Vector HUD Helpers (Rule R2: ZERO Unicode Tofu; Rule R6: Zero Overlap)
+-- Battle sprites and HUD state
 --------------------------------------------------------------------------------
 
-local function drawBevelBox(x, y, w, h, fillCol, borderCol)
-    love.graphics.setColor(0.02, 0.04, 0.10, 0.58)
-    love.graphics.rectangle("fill", x + 3, y + 4, w, h, 8, 8)
-
-    love.graphics.setColor(fillCol[1], fillCol[2], fillCol[3], fillCol[4] or 0.94)
-    love.graphics.rectangle("fill", x, y, w, h, 7, 7)
-
-    love.graphics.setLineWidth(2)
-    love.graphics.setColor(borderCol[1], borderCol[2], borderCol[3], borderCol[4] or 0.92)
-    love.graphics.rectangle("line", x, y, w, h, 7, 7)
-
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(1, 1, 1, 0.14)
-    love.graphics.rectangle("line", x + 3, y + 3, w - 6, h - 6, 5, 5)
-end
-
-local function drawMusicNoteIcon(x, y, muted)
-    local c = muted and { 0.62, 0.66, 0.74 } or { 0.98, 0.84, 0.34 }
-    love.graphics.setColor(c[1], c[2], c[3], 1)
-    love.graphics.ellipse("fill", x + 4, y + 13, 4, 3)
-    love.graphics.ellipse("fill", x + 13, y + 11, 4, 3)
-    love.graphics.rectangle("fill", x + 7, y + 2, 2, 11)
-    love.graphics.rectangle("fill", x + 16, y + 0, 2, 11)
-    love.graphics.polygon("fill", x + 7, y + 2, x + 18, y + 0, x + 18, y + 3, x + 7, y + 5)
-    if muted then
-        love.graphics.setColor(0.95, 0.34, 0.32, 1)
-        love.graphics.setLineWidth(2)
-        love.graphics.line(x + 1, y + 1, x + 19, y + 15)
-        love.graphics.setLineWidth(1)
-    end
-end
-
-local function drawSunLampIcon(x, y, presetId)
-    if presetId == "noche" then
-        love.graphics.setColor(0.76, 0.86, 1.0, 1)
-        love.graphics.circle("fill", x + 7, y + 8, 5.5)
-        love.graphics.setColor(0.08, 0.16, 0.36, 1)
-        love.graphics.circle("fill", x + 9.5, y + 6.5, 4.5)
-    elseif presetId == "atardecer" then
-        love.graphics.setColor(1.0, 0.68, 0.28, 1)
-        love.graphics.circle("fill", x + 7, y + 9, 5.0)
-        love.graphics.setColor(1.0, 0.88, 0.44, 0.9)
-        love.graphics.rectangle("fill", x + 1, y + 12, 12, 2)
-    elseif presetId == "dramatico" then
-        love.graphics.setColor(1.0, 0.90, 0.54, 1)
-        love.graphics.polygon("fill", x + 7, y + 2, x + 1, y + 14, x + 13, y + 14)
-    else
-        love.graphics.setColor(1.0, 0.88, 0.34, 1)
-        love.graphics.circle("fill", x + 7, y + 8, 4.2)
-        love.graphics.setLineWidth(1.5)
-        love.graphics.line(x + 7, y + 1, x + 7, y + 3)
-        love.graphics.line(x + 7, y + 13, x + 7, y + 15)
-        love.graphics.line(x + 0, y + 8, x + 2, y + 8)
-        love.graphics.line(x + 12, y + 8, x + 14, y + 8)
-        love.graphics.setLineWidth(1)
-    end
-end
-
-local function drawTopHud(w)
-    local fBody = Game.fonts.body
-    local fSmall = Game.fonts.small
-    local audioStats = Game.audio and Game.audio:getStats() or { muted = false }
-    local preset, presetId = Game.stage:getLightingPreset()
-
-    -- Left Context Chip (y = 12..44, strictly above minimap y = 58)
-    local leftLabel
-    local dotCol
-    if Game.mode == "explore" then
-        local biomeId = StageRenderer.getBiomeAt(Game.puduU)
-        local biome = Encounters.getBiome(biomeId)
-        leftLabel = biome.name
-        dotCol = biome.accentColor or { 0.36, 0.80, 0.44 }
-    else
-        local enc = Encounters.getByIndex(Game.encounterIndex)
-        leftLabel = string.format("Encuentro #%d: %s", Game.encounterIndex, enc and enc.name or "Rival")
-        dotCol = (enc and enc.color) or { 0.96, 0.42, 0.36 }
-    end
-
-    love.graphics.setFont(fBody)
-    local lw = fBody:getWidth(leftLabel) + 42
-    drawBevelBox(14, 12, lw, 32, { 0.08, 0.16, 0.36, 0.92 }, { 0.72, 0.82, 0.98, 0.90 })
-    love.graphics.setColor(dotCol[1], dotCol[2], dotCol[3], 1)
-    love.graphics.circle("fill", 30, 28, 5.5)
-    love.graphics.setColor(1, 1, 1, 0.7)
-    love.graphics.circle("line", 30, 28, 5.5)
-    love.graphics.setColor(0.98, 0.98, 1.0, 1)
-    love.graphics.print(leftLabel, 43, 19)
-
-    -- Right Compact Control Chips (y = 12..44)
-    love.graphics.setFont(fSmall)
-    local f5Text = "[F5]"
-    local tabText = Game.mode == "battle" and "[ESC/TAB] Mapa" or "[TAB] Combate"
-    local lightKey = Game.mode == "battle" and "F7" or "L"
-    local lightText = string.format("[%s] %s", lightKey, (preset and preset.label) or "Día")
-    local muteKey = Game.mode == "battle" and "F8" or "M"
-    local muteText = (audioStats.muted and "En silencio [" or "Audio [") .. muteKey .. "]"
-
-    local f5W = fSmall:getWidth(f5Text) + 18
-    local tabW = fSmall:getWidth(tabText) + 20
-    local lightW = fSmall:getWidth(lightText) + 34
-    local muteW = fSmall:getWidth(muteText) + 36
-
-    local rx = w - 14
-    -- [F5]
-    rx = rx - f5W
-    drawBevelBox(rx, 12, f5W, 32, { 0.08, 0.16, 0.36, 0.90 }, { 0.64, 0.78, 0.96, 0.86 })
-    love.graphics.setColor(0.94, 0.96, 1.0, 1)
-    love.graphics.print(f5Text, rx + 9, 21)
-
-    -- [TAB/ESC]
-    rx = rx - 8 - tabW
-    local tabFill = (Game.mode == "battle") and { 0.42, 0.22, 0.22, 0.92 } or { 0.14, 0.34, 0.56, 0.92 }
-    drawBevelBox(rx, 12, tabW, 32, tabFill, { 0.76, 0.86, 0.98, 0.90 })
-    love.graphics.setColor(0.99, 0.97, 0.88, 1)
-    love.graphics.print(tabText, rx + 10, 21)
-
-    -- [L] Lighting Preset
-    rx = rx - 8 - lightW
-    drawBevelBox(rx, 12, lightW, 32, { 0.10, 0.17, 0.36, 0.92 }, { 0.74, 0.84, 0.98, 0.88 })
-    drawSunLampIcon(rx + 8, 20, presetId)
-    love.graphics.setColor(0.98, 0.95, 0.86, 1)
-    love.graphics.print(lightText, rx + 26, 21)
-
-    -- [M] Music Note + Mute
-    rx = rx - 8 - muteW
-    drawBevelBox(rx, 12, muteW, 32, { 0.08, 0.16, 0.36, 0.90 }, { 0.64, 0.78, 0.96, 0.86 })
-    drawMusicNoteIcon(rx + 8, 20, audioStats.muted)
-    love.graphics.setColor(0.94, 0.96, 1.0, 1)
-    love.graphics.print(muteText, rx + 30, 21)
-
-    -- Center Toast (y = 14..42, auto-sized cleanly)
-    if Game.toastText then
-        local tw = fSmall:getWidth(Game.toastText) + 24
-        local tx = math.floor((lw + 24 + rx - tw) * 0.5)
-        if tx < lw + 24 or tx + tw > rx - 8 then return end
-        drawBevelBox(tx, 14, tw, 28, { 0.14, 0.42, 0.26, 0.94 }, { 0.66, 0.96, 0.76, 0.92 })
-        love.graphics.setColor(0.98, 1.0, 0.96, 1)
-        love.graphics.print(Game.toastText, tx + 12, 21)
-    end
-end
-
-local function drawExploreFooterHint(w, h)
-    local fSmall = Game.fonts.small
-    local text = "WASD / Flechas: Caminar   |   [L] Iluminación   |   Choca con un rival o [TAB] para combatir"
-    love.graphics.setFont(fSmall)
-    local bw = fSmall:getWidth(text) + 24
-    local bx = w - bw - 14
-    local by = h - 38
-    love.graphics.setColor(0.04, 0.07, 0.16, 0.78)
-    love.graphics.rectangle("fill", bx, by, bw, 26, 6, 6)
-    love.graphics.setColor(0.64, 0.78, 0.96, 0.55)
-    love.graphics.rectangle("line", bx, by, bw, 26, 6, 6)
-    love.graphics.setColor(0.90, 0.95, 1.0, 0.94)
-    love.graphics.print(text, bx + 12, by + 6)
-end
-
-local navy, edge = {0.06, 0.12, 0.25, 0.96}, {0.53, 0.70, 0.87}
-local ivory, gold = {0.98, 0.97, 0.92}, {1.0, 0.84, 0.42}
-
--- The input stays intact for the judge even when the installed font lacks a glyph.
-local function drawable(text, font)
-    if font:hasGlyphs(text) then return text end
-    return (text:gsub(utf8.charpattern, function(char)
-        return font:hasGlyphs(char) and char or "?"
-    end))
-end
-
-local function label(font, color, text, x, y, width, align)
-    love.graphics.setFont(font)
-    love.graphics.setColor(color)
-    love.graphics.printf(drawable(text, font), x, y, width, align or "left")
-end
-
-local function hpBar(x, y, w, hp, maxHp, color)
-    love.graphics.setColor(0.05, 0.07, 0.13)
-    love.graphics.rectangle("fill", x, y, w, 8, 3)
-    if hp > 0 then
-        love.graphics.setColor(color)
-        love.graphics.rectangle("fill", x + 2, y + 2, (w - 4) * hp / maxHp, 4, 2)
-    end
-end
-
-local function drawSummon(prop, x, y, size)
-    local pair = prop.images or Game.assets.gags[prop.key] or Game.assets.props[prop.key] or Game.assets.mysterySummon
-    local img = pair.diff
-    local iw, ih = img:getDimensions()
+local function drawSummon(prop, x, y, size, litShader)
+    local pair = prop.images or Game.assets.gags[prop.key] or Game.assets.props[prop.key]
+        or Game.assets.mysterySummon
+    local iw, ih = pair.diff:getDimensions()
     local scale = size / math.max(iw, ih)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(img, x, y, 0, scale, scale, iw / 2, ih / 2)
+    Game.stage:drawSpriteLit(pair, x, y, 0, scale, scale, iw / 2, ih / 2, nil, 0, nil, litShader, true)
 end
 
-local function drawBattleOverlay(w, h, enc, anchors, enemyOffX, enemyOffY)
-    local b, f = Game.battle, Game.fonts
-    local eOffX = enemyOffX or 0.0
-    local eOffY = enemyOffY or 0.0
-    local res, cx, ground = b.result, anchors.enemyX + eOffX, anchors.enemyY + eOffY
-    local isOver = b.phase == "victory" or b.phase == "defeat"
-
-    if res and res.approved then
-        local topW = math.min(680, w - 64)
-        local x = (w - topW) / 2
-        drawBevelBox(x, 56, topW, 71, navy, edge)
-        local name = res.combo_triggered ~= "none" and res.combo_name or res.summon_name
-        label(f.title, gold, name, x + 12, 62, topW - 24, "center")
-        label(f.body, ivory, res.narrator_text, x + 12, 89, topW - 24, "center")
-        label(f.small, edge, b.summary or "", x + 12, 108, topW - 24, "center")
-    end
-
-    -- Hide enemy speech bubble while sliding in during battle_enter for clean Pokémon-style reveal
-    if Game.battlePhase ~= "battle_enter" or Game.battleEnterT >= 0.88 then
-        local speechW = math.min(w * 0.34, 380)
-        local sx = clamp(cx - speechW * 0.52, 14, w - speechW - 14)
-        local speech = drawable(b.speech or "", f.body)
-        local _, lines = f.body:getWrap(speech, speechW - 28)
-        local speechH = 18 + #lines * f.body:getHeight()
-        local sy = clamp(ground - 156 - speechH, 132, ground - 142)
-        drawBevelBox(sx, sy, speechW, speechH, navy, edge)
-        love.graphics.setColor(navy)
-        local tipX = clamp(cx, sx + 20, sx + speechW - 20)
-        love.graphics.polygon("fill", tipX - 8, sy + speechH - 3, tipX + 9, sy + speechH - 3, tipX, sy + speechH + 8)
-        label(f.body, ivory, speech, sx + 14, sy + 8, speechW - 28, "center")
-    end
-
-    if b.summon then drawSummon(b.summon, w * 0.50, ground + 42, 112) end
-    local propX = w * 0.48
+local function drawBattleSummons(anchors, w, h, litShader)
+    local b = Game.battle
+    local storedX = anchors.enemyX - 152
     for _, prop in ipairs(b.props) do
         if prop ~= b.summon then
-            drawSummon(prop, propX, ground + 86, 44)
-            propX = propX + 42
+            drawSummon(prop, storedX, math.min(h - 116, anchors.enemyY + 58), 46, litShader)
+            storedX = storedX - 53
         end
     end
-    local ew, ey = 218, ground + 38
-    local barX = clamp(cx - ew / 2, 14, w - ew - 14)
-    drawBevelBox(barX, ey, ew, 37, navy, edge)
-    label(f.small, ivory, ("Rival   %d / %d PV"):format(b.enemyHp, enc.maxHp), barX, ey + 4, ew, "center")
-    hpBar(barX + 15, ey + 22, 188, b.enemyHp, enc.maxHp, {0.97, 0.49, 0.35})
-    if #Game.stageStates > 0 then
-        local states = table.concat(Game.stageStates, "  /  ")
-        local sw = f.small:getWidth(states) + 24
-        local stX = clamp(cx - sw / 2, 14, w - sw - 14)
-        drawBevelBox(stX, ey + 42, sw, 22, navy, edge)
-        label(f.small, ivory, states, stX, ey + 46, sw, "center")
-    end
+    local prop = b.summon
+    if not prop then return end
 
-    local y, fieldX = h - 86, 254
-    drawBevelBox(14, y, w - 28, 78, navy, edge)
-    local portrait = Game.assets.portraits[b.phase == "defeat" and "shocked" or "happy"]
-    if portrait then
-        local pw, ph = portrait:getDimensions()
-        local scale = 50 / math.max(pw, ph)
-        love.graphics.setColor(1, 1, 1)
-        love.graphics.draw(portrait, 55, y + 39, 0, scale, scale, pw / 2, ph / 2)
+    local x, y = w * 0.50, (anchors.puduY + anchors.enemyY) / 2
+    if prop.anchor == "above_enemy" then
+        x, y = anchors.enemyX - 105, anchors.enemyY - 122
+    elseif prop.anchor == "ground_enemy" then
+        x, y = anchors.enemyX - 130, anchors.enemyY + 29
+    elseif prop.anchor == "near_pudu" then
+        x, y = anchors.puduX + 106, anchors.puduY - 101
     end
-    label(f.heading, ivory, "Pudú", 88, y + 10, 60)
-    label(f.small, ivory, ("%d / 100 PV"):format(b.hp), 144, y + 13, 88, "right")
-    hpBar(88, y + 37, 144, b.hp, 100, {0.40, 0.84, 0.63})
-    label(f.small, edge, ("Turno %d"):format(isOver and b.turn - 1 or b.turn), 88, y + 52, 144)
-    local fieldW = w - fieldX - 30
-    local title = isOver and (b.phase == "victory" and "¡Camino despejado!" or "El pudú necesita un respiro") or "Tu invocación"
-    label(f.heading, gold, title, fieldX, y + 8, fieldW)
-    if isOver then
-        label(f.body, ivory, "Pulsa Enter para volver al mapa.", fieldX, y + 42, fieldW)
-    elseif Game.battlePhase == "battle_enter" then
-        label(f.body, ivory, "Entrando a la arena...", fieldX, y + 42, fieldW)
-    elseif b.phase == "waiting" then
-        label(f.body, ivory, "El juez está leyendo tu conjuro...", fieldX, y + 43, fieldW)
-    else
-        label(f.small, edge, "Enter para invocar", fieldX, y + 11, fieldW, "right")
-        love.graphics.setColor(0.035, 0.07, 0.15)
-        love.graphics.rectangle("fill", fieldX, y + 32, fieldW, 34, 4)
-        local prompt = b.input == "" and "Escribe lo que quieras invocar..." or drawable(b.input, f.body)
-        local textW = f.body:getWidth(prompt)
-        local textX = fieldX + 12 - math.max(0, textW - fieldW + 32)
-        love.graphics.setScissor(fieldX + 8, y + 32, fieldW - 16, 34)
-        love.graphics.setFont(f.body)
-        love.graphics.setColor(b.input == "" and edge or ivory)
-        love.graphics.print(prompt, textX, y + 41)
-        if b.input ~= "" and Game.elapsed % 1 < 0.58 then
-            love.graphics.rectangle("fill", textX + textW + 2, y + 40, 2, f.body:getHeight())
+    if Game.battlePhase == "summon" then
+        local duration = Game.demo and 0.16 or 0.72
+        local t = easeOutCubic(1 - b.phaseTimer / duration)
+        local fromX, fromY = anchors.puduX + 12, anchors.puduY - getOrbLift(anchors, h)
+        x, y = fromX + (x - fromX) * t, fromY + (y - fromY) * t - 50 * math.sin(t * math.pi)
+        drawSummon(prop, x, y, 56 + 52 * t, litShader)
+    elseif Game.battlePhase == "enemy_counter" or Game.battlePhase == "victory" then
+        drawSummon(prop, x, y, 108, litShader)
+    elseif b.result.keep_prop_on_stage then
+        drawSummon(prop, storedX, math.min(h - 116, anchors.enemyY + 58), 46, litShader)
+    end
+end
+
+local function getHudState(battleEnc)
+    local b = Game.battle
+    local audio = Game.audio:getStats()
+    local state = {
+        mode = Game.mode, battlePhase = b and Game.battlePhase or nil,
+        musicOff = audio.muted or not audio.musicEnabled,
+        toast = Game.toastText, elapsed = Game.elapsed,
+    }
+    if b then
+        state.context, state.contextColor = battleEnc.name, battleEnc.color
+        state.hp, state.enemyHp, state.enemyMaxHp = b.hp, b.enemyHp, battleEnc.maxHp
+        state.stageStates, state.portraits, state.mood = Game.stageStates, Game.assets.portraits, b.mood
+        state.speech, state.lastPrompt = b.speech, b.prompt
+        state.enemyStatusTag = b.result and b.result.status_tag
+        state.arrowsDone = Game.battlePhase == "ritual" and Game.ritual.cursor > #Game.ritual.sequence
+        local res = b.decision and b.decision.result
+        if res and res.approved then
+            state.summonName = res.summon_name
+            if res.combo_triggered ~= "none" then state.combo = res.combo_name end
         end
-        love.graphics.setScissor()
+    else
+        local biome = Encounters.getBiome(StageRenderer.getBiomeAt(Game.puduU))
+        local defeated = 0
+        for _ in pairs(Game.defeatedMap) do defeated = defeated + 1 end
+        state.context = ("%s (%d/%d)"):format(biome.name, defeated, Encounters.count())
+        state.contextColor = biome.accentColor
     end
+    return state
 end
 
 --------------------------------------------------------------------------------
@@ -1260,7 +1189,7 @@ function love.load(args)
     love.graphics.setDefaultFilter("nearest", "nearest")
 
     Game.cli = parseCliArgs(args)
-    Game.mode = Game.cli.mode
+    Game.mode = Game.cli.testRitual and "battle" or Game.cli.mode
     if Game.cli.demoCombo then
         local id = demoAliases[Game.cli.demoCombo] or Game.cli.demoCombo
         Game.demo = assert(comboDemos[id], "Combo desconocido: " .. id)
@@ -1268,6 +1197,9 @@ function love.load(args)
     end
     Game.encounterIndex = Game.cli.encounter
     Game.fonts = loadFonts()
+    Game.hud = BattleHUD.new(Game.fonts)
+    Game.ritual = SpellRitual.new()
+    Game.autoPromptIndex = 1
 
     reloadAssets(false)
     Game.audio = Audio.new(false)
@@ -1320,12 +1252,14 @@ function love.load(args)
         if Game.transitionPreview >= 0.50 then
             enterBattleArenaImmediate(Game.encounterIndex, true, 1.0)
         else
+            Game.mode = "explore"
             syncMusicForMode()
         end
     elseif Game.mode == "battle" or Game.cli.battleEnterPreview then
         -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-slide
         local seedT = Game.cli.battleEnterPreview and 0.22 or 0.0
-        enterBattleArenaImmediate(Game.encounterIndex, false, seedT)
+        enterBattleArenaImmediate(Game.encounterIndex, (Game.demo ~= nil or Game.cli.testRitual ~= nil)
+            and not Game.cli.battleEnterPreview, seedT)
     else
         syncMusicForMode()
     end
@@ -1336,7 +1270,10 @@ function love.load(args)
     Game.spriteWorker = love.thread.newThread("sprite_worker.lua")
     Game.battleWorker:start()
     Game.spriteWorker:start()
-    if not Game.cli.mock then Game.battleIn:push({ cmd = "health" }) end
+    if not Game.cli.mock and not Game.demo and not Game.cli.testRitual then
+        Game.battleIn:push({ cmd = "health" })
+    end
+    Game.ritualPreview = Game.cli.testRitual
     love.keyboard.setKeyRepeat(true)
 end
 
@@ -1350,12 +1287,21 @@ function love.update(dt)
     Game.cliElapsed = Game.cliElapsed + dt
     pollWorkers()
     local b = Game.battle
-    if b and b.phase == "input" and Game.battlePhase == "player_turn"
-        and Game.transitionState == "none" and not Game.transitionPreview then
-        local auto = Game.demo and Game.demo[b.turn] or Game.cli.autoPrompt
-        if auto then
-            Game.cli.autoPrompt = nil
-            submitPrompt(auto)
+    if b and Game.battlePhase == "player_turn" and Game.transitionState == "none" and not Game.transitionPreview then
+        if Game.ritualPreview then
+            local preview = Game.ritualPreview
+            Game.ritualPreview = nil
+            local prompt = preview == "bonus" and "ornitorrinco dj" or "chispa mágica"
+            submitPrompt(prompt, preview, preview == "bonus")
+        elseif Game.demo then
+            local prompt = Game.demo[b.turn]
+            if prompt then submitPrompt(prompt, nil, true) end
+        else
+            local prompt = Game.cli.autoPrompts[Game.autoPromptIndex]
+            if prompt then
+                Game.autoPromptIndex = Game.autoPromptIndex + 1
+                submitPrompt(prompt, nil, true)
+            end
         end
     end
 
@@ -1378,7 +1324,7 @@ function love.update(dt)
         elseif Game.mode == "explore" then
             updateExplore(safeDt)
         elseif Game.mode == "battle" then
-            updateBattle(safeDt)
+            updateBattle(safeDt, dt)
         end
     end
 
@@ -1408,28 +1354,51 @@ function love.update(dt)
     end
 end
 
-local function appendInput(text)
-    local b = Game.battle
-    if not b or b.phase ~= "input" or Game.battlePhase ~= "player_turn" or Game.transitionState ~= "none" then return end
-    local input = b.input .. text:gsub("[%c]+", " ")
-    if not utf8.len(input) then return end
-    local limit = utf8.offset(input, 281)
-    b.input = limit and input:sub(1, limit - 1) or input
+local function promptAvailable()
+    return Game.mode == "battle" and Game.battlePhase == "player_turn"
+        and Game.transitionState == "none" and Game.transitionPreview == nil
 end
 
 function love.textinput(text)
-    appendInput(text)
+    if promptAvailable() then
+        if Game.ignorePromptSlash and text == "/" then
+            Game.ignorePromptSlash = false
+            return
+        end
+        Game.hud:addText(text)
+    end
+end
+
+local function routeHudAction(action)
+    if action == "music" then
+        local enabled = Game.audio:toggleMusic()
+        showToast(enabled and "Música activada" or "Música desactivada", 1.8)
+    elseif action == "map" then
+        if Game.mode == "battle" then triggerReturnToExplore()
+        else triggerEncounterTransition(findNearestEncounterIndex(true)) end
+    elseif action == "retry" and (Game.battlePhase == "victory" or Game.battlePhase == "defeat") then
+        enterBattleArenaImmediate(Game.encounterIndex, false, 0)
+    elseif action == "prompt" and promptAvailable() then
+        Game.hud:openPrompt()
+    elseif action == "conjure" and promptAvailable() then
+        submitPrompt(Game.hud.input)
+    end
+end
+
+function love.mousepressed(x, y, button)
+    if button ~= 1 or Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    routeHudAction(Game.hud:hitTest(x, y))
 end
 
 function love.keypressed(key, scancode, isrepeat)
-    -- Tool hotkeys always work even during transitions (Contract 3.1)
+    Game.ignorePromptSlash = false
     if key == "f5" then
         reloadAssets(true)
         return
     elseif key == "f8" or (key == "m" and Game.mode == "explore") then
         if Game.audio then
             local muted = Game.audio:toggleMute()
-            showToast(muted and "Audio silenciado (reloj BPM activo)" or "Audio activado", 1.8)
+            showToast(muted and "Audio silenciado" or "Audio activado", 1.8)
         end
         return
     elseif key == "f7" or (key == "l" and Game.mode == "explore") then
@@ -1443,10 +1412,8 @@ function love.keypressed(key, scancode, isrepeat)
         return
     end
 
-    -- Lock gameplay input during transitions
-    if Game.transitionState ~= "none" or Game.transitionPreview then
-        return
-    end
+    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    if Game.battlePhase == "ritual" and not isrepeat and Game.ritual:onKeyPressed(key, Game.audio) then return end
 
     local b = Game.battle
     local num = Game.mode == "battle" and tonumber(key)
@@ -1456,26 +1423,24 @@ function love.keypressed(key, scancode, isrepeat)
         return
     end
     if b and (key == "return" or key == "kpenter") and not isrepeat then
-        if b.phase == "victory" or b.phase == "defeat" then triggerReturnToExplore()
-        else submitPrompt(b.input) end
-    elseif b and b.phase == "input" and key == "backspace" then
-        local pos = utf8.offset(b.input, -1)
-        if pos then b.input = b.input:sub(1, pos - 1) end
-    elseif b and key == "v" and love.keyboard.isDown("lctrl", "rctrl", "lgui", "rgui") then
-        appendInput(love.system.getClipboardText() or "")
+        if Game.battlePhase == "victory" or Game.battlePhase == "defeat" then
+            triggerReturnToExplore()
+        elseif promptAvailable() then
+            if Game.hud.promptOpen then submitPrompt(Game.hud.input)
+            else Game.hud:openPrompt() end
+        end
+    elseif promptAvailable() and key == "/" and not isrepeat and not Game.hud.promptOpen then
+        Game.hud:openPrompt()
+        Game.ignorePromptSlash = true
+    elseif promptAvailable() and key == "backspace" then
+        Game.hud:backspace()
+    elseif promptAvailable() and key == "v" and love.keyboard.isDown("lctrl", "rctrl", "lgui", "rgui") then
+        Game.hud:addText(love.system.getClipboardText() or "")
     elseif key == "tab" and not isrepeat then
-        if Game.mode == "explore" then
-            local nearIdx = findNearestEncounterIndex(true)
-            triggerEncounterTransition(nearIdx)
-        elseif Game.mode == "battle" then
-            triggerReturnToExplore()
-        end
+        routeHudAction("map")
     elseif key == "escape" then
-        if Game.mode == "battle" then
-            triggerReturnToExplore()
-        else
-            love.event.quit(0)
-        end
+        if Game.mode == "battle" then triggerReturnToExplore()
+        else love.event.quit(0) end
     end
 end
 
@@ -1486,7 +1451,7 @@ function love.draw()
 
     local battleEnc = nil
     local battleTheme = nil
-    local battleAnchors = nil
+    local battleAnchors, enemyGroove = nil, nil
     local puduEnterOffX, puduEnterOffY = 0.0, 0.0
     local enemyEnterOffX, enemyEnterOffY = 0.0, 0.0
 
@@ -1531,6 +1496,10 @@ function love.draw()
         battleEnc = Encounters.getByIndex(Game.encounterIndex) or Encounters.LIST[1]
         battleTheme = Encounters.getTheme(battleEnc.stage)
         local lights = Game.stage:collectBattleLights(battleEnc, w, h, Game.elapsed)
+        if Game.battlePhase == "ritual" then
+            Game.ritual:collectLights(lights)
+            if #lights > 10 then table.remove(lights, 10) end
+        end
         local litShader = Game.stage:configureLitShader(battleTheme, w, h, Game.elapsed, lights)
         local beatPulse = Game.beatSync and Game.beatSync:getBeatPulse() or 0.0
 
@@ -1566,7 +1535,11 @@ function love.draw()
 
         -- Face 3/4 back-right (row 3 = NE) looking diagonally up-right toward the Rival!
         local puduPose = Game.beatSync and Game.beatSync:getPuduDancePose(Game.puduAnimMode, 3) or nil
-        local enemyGroove = Game.beatSync and Game.beatSync:getEnemyGroove(Game.enemyReaction) or nil
+        enemyGroove = Game.beatSync and Game.beatSync:getEnemyGroove(Game.enemyReaction) or nil
+
+        if Game.battlePhase == "ritual" then
+            Game.ritual:drawCircle(battleAnchors.puduX, math.min(battleAnchors.puduY, h - 81))
+        end
 
         -- Draw upper-right Rival first (background depth), then foreground bottom-left Pudú (cropped cleanly behind bottom strip)
         drawEnemySprite(
@@ -1580,11 +1553,12 @@ function love.draw()
         drawPuduSprite(
             battleAnchors.puduX + puduEnterOffX,
             battleAnchors.puduY + puduEnterOffY,
-            battleAnchors.puduScaleH or 212.0,
+            getPuduRenderHeight(battleAnchors, h),
             puduPose,
             litShader
         )
 
+        drawBattleSummons(battleAnchors, w, h, litShader)
         Game.stage:drawBattleArenaForeground(battleEnc, Game.assets, w, h, Game.elapsed, litShader)
         Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
     end
@@ -1600,8 +1574,9 @@ function love.draw()
     love.graphics.setBlendMode("alpha")
     love.graphics.setColor(1, 1, 1, 1)
 
+    local hudState = getHudState(battleEnc)
+    Game.hud:drawTopBar(hudState, w)
     if Game.mode == "explore" then
-        drawTopHud(w)
         Game.stage:drawOverworldMinimap(
             Game.puduU,
             Game.puduV,
@@ -1611,10 +1586,23 @@ function love.draw()
             h,
             Game.fonts.small
         )
-        drawExploreFooterHint(w, h)
+        Game.hud:drawExploreBar(w, h)
     else
-        drawTopHud(w)
-        drawBattleOverlay(w, h, battleEnc, battleAnchors, enemyEnterOffX, enemyEnterOffY)
+        local b, phase = Game.battle, Game.battlePhase
+        local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0) + enemyEnterOffX
+        local ey = battleAnchors.enemyY + (battleEnc.offsetY or 0) + enemyEnterOffY
+        local speechY = ey + (enemyGroove and enemyGroove.offsetY or 0)
+        if phase == "ritual" then
+            Game.hud:drawSpeech(b.anticipationLine, w, ex, speechY, true)
+            Game.ritual:draw(w, h, battleAnchors.puduX, battleAnchors.puduY, Game.fonts, Game.beatSync, getOrbLift(battleAnchors, h))
+        elseif phase ~= "battle_enter" and phase ~= "victory" and phase ~= "defeat" and b.speechTimer > 0 then
+            Game.hud:drawSpeech(b.speech, w, ex, speechY)
+        end
+        if phase ~= "battle_enter" or Game.battleEnterT >= 0.88 then
+            Game.hud:drawRivalStageBar(hudState, ex, ey, w)
+        end
+        Game.hud:drawBattleStrip(hudState, w, h)
+        Game.hud:drawVictoryOrDefeat(hudState, w, h)
     end
 
     -- 4. JRPG Battle Transition Overlay (live or --transition-preview)

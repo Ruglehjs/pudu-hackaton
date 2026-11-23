@@ -20,6 +20,7 @@ require("game_main")
 local updateGame = love.update
 local ordinaryPrint = print
 local turns, step, elapsed = 0, 1, 0
+local arrows, nextArrow, arrowTimer = {"up", "left", "down", "right"}, 1, 0
 function print(line, ...)
     ordinaryPrint(line, ...)
     if type(line) == "string" and line:match("^%[BATALLA%]") then turns = turns + 1 end
@@ -35,12 +36,20 @@ end
 function love.update(dt)
     updateGame(dt)
     elapsed = elapsed + math.min(dt, 0.05)
+    if (step == 3 and turns == 1) or (step == 4 and turns == 2) or (step == 7 and turns == 3) then
+        arrowTimer = arrowTimer + dt
+        if arrowTimer >= 0.09 then
+            key(arrows[nextArrow])
+            nextArrow = nextArrow % #arrows + 1
+            arrowTimer = 0
+        end
+    end
     if step == 1 and elapsed > 1.0 then
         love.event.push("textinput", "modo diosá")
         key("backspace")
         key("return")
     elseif step == 2 and turns == 1 then
-        cast("balde de agua")
+        cast("charco")
     elseif step == 3 and turns == 2 then
         local signal = io.open(os.getenv("PUDU_SMOKE_DISCONNECTED"), "rb")
         if not signal then return end
