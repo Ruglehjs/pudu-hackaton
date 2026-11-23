@@ -81,6 +81,12 @@ local function smoothstep01(t)
     return x * x * (3.0 - 2.0 * x)
 end
 
+local function easeOutCubic(t)
+    local x = clamp(t or 0.0, 0.0, 1.0)
+    local inv = 1.0 - x
+    return 1.0 - inv * inv * inv
+end
+
 local function parseCliArgs(argList)
     local cli = {
         mode = "explore",
@@ -1153,9 +1159,11 @@ local function drawSummon(prop, x, y, size)
     love.graphics.draw(img, x, y, 0, scale, scale, iw / 2, ih / 2)
 end
 
-local function drawBattleOverlay(w, h, enc, anchors)
+local function drawBattleOverlay(w, h, enc, anchors, enemyOffX, enemyOffY)
     local b, f = Game.battle, Game.fonts
-    local res, cx, ground = b.result, anchors.enemyX, anchors.enemyY
+    local eOffX = enemyOffX or 0.0
+    local eOffY = enemyOffY or 0.0
+    local res, cx, ground = b.result, anchors.enemyX + eOffX, anchors.enemyY + eOffY
     local isOver = b.phase == "victory" or b.phase == "defeat"
 
     if res and res.approved then
@@ -1168,33 +1176,40 @@ local function drawBattleOverlay(w, h, enc, anchors)
         label(f.small, edge, b.summary or "", x + 12, 108, topW - 24, "center")
     end
 
-    local speechW = math.min(w * 0.36, 400)
-    local sx, sy = cx - speechW * 0.42, math.max(133, ground - 226)
-    local speech = drawable(b.speech or "", f.body)
-    local _, lines = f.body:getWrap(speech, speechW - 28)
-    local speechH = 18 + #lines * f.body:getHeight()
-    drawBevelBox(sx, sy, speechW, speechH, navy, edge)
-    love.graphics.setColor(navy)
-    love.graphics.polygon("fill", cx - 8, sy + speechH - 3, cx + 9, sy + speechH - 3, cx, sy + speechH + 8)
-    label(f.body, ivory, speech, sx + 14, sy + 8, speechW - 28, "center")
+    -- Hide enemy speech bubble while sliding in during battle_enter for clean Pokémon-style reveal
+    if Game.battlePhase ~= "battle_enter" or Game.battleEnterT >= 0.88 then
+        local speechW = math.min(w * 0.34, 380)
+        local sx = clamp(cx - speechW * 0.52, 14, w - speechW - 14)
+        local speech = drawable(b.speech or "", f.body)
+        local _, lines = f.body:getWrap(speech, speechW - 28)
+        local speechH = 18 + #lines * f.body:getHeight()
+        local sy = clamp(ground - 156 - speechH, 132, ground - 142)
+        drawBevelBox(sx, sy, speechW, speechH, navy, edge)
+        love.graphics.setColor(navy)
+        local tipX = clamp(cx, sx + 20, sx + speechW - 20)
+        love.graphics.polygon("fill", tipX - 8, sy + speechH - 3, tipX + 9, sy + speechH - 3, tipX, sy + speechH + 8)
+        label(f.body, ivory, speech, sx + 14, sy + 8, speechW - 28, "center")
+    end
 
-    if b.summon then drawSummon(b.summon, w / 2, ground - 48, 112) end
-    local propX = w * 0.47
+    if b.summon then drawSummon(b.summon, w * 0.50, ground + 42, 112) end
+    local propX = w * 0.48
     for _, prop in ipairs(b.props) do
         if prop ~= b.summon then
-            drawSummon(prop, propX, ground + 18, 44)
-            propX = propX + 40
+            drawSummon(prop, propX, ground + 86, 44)
+            propX = propX + 42
         end
     end
-    local ew, ey = 218, ground + 26
-    drawBevelBox(cx - ew / 2, ey, ew, 37, navy, edge)
-    label(f.small, ivory, ("Rival   %d / %d PV"):format(b.enemyHp, enc.maxHp), cx - ew / 2, ey + 4, ew, "center")
-    hpBar(cx - 94, ey + 22, 188, b.enemyHp, enc.maxHp, {0.97, 0.49, 0.35})
+    local ew, ey = 218, ground + 38
+    local barX = clamp(cx - ew / 2, 14, w - ew - 14)
+    drawBevelBox(barX, ey, ew, 37, navy, edge)
+    label(f.small, ivory, ("Rival   %d / %d PV"):format(b.enemyHp, enc.maxHp), barX, ey + 4, ew, "center")
+    hpBar(barX + 15, ey + 22, 188, b.enemyHp, enc.maxHp, {0.97, 0.49, 0.35})
     if #Game.stageStates > 0 then
         local states = table.concat(Game.stageStates, "  /  ")
         local sw = f.small:getWidth(states) + 24
-        drawBevelBox(cx - sw / 2, ey + 42, sw, 22, navy, edge)
-        label(f.small, ivory, states, cx - sw / 2, ey + 46, sw, "center")
+        local stX = clamp(cx - sw / 2, 14, w - sw - 14)
+        drawBevelBox(stX, ey + 42, sw, 22, navy, edge)
+        label(f.small, ivory, states, stX, ey + 46, sw, "center")
     end
 
     local y, fieldX = h - 86, 254
@@ -1308,8 +1323,8 @@ function love.load(args)
             syncMusicForMode()
         end
     elseif Game.mode == "battle" or Game.cli.battleEnterPreview then
-        -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-dash
-        local seedT = Game.cli.battleEnterPreview and 0.30 or 0.0
+        -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-slide
+        local seedT = Game.cli.battleEnterPreview and 0.22 or 0.0
         enterBattleArenaImmediate(Game.encounterIndex, false, seedT)
     else
         syncMusicForMode()
@@ -1472,7 +1487,8 @@ function love.draw()
     local battleEnc = nil
     local battleTheme = nil
     local battleAnchors = nil
-    local battleSlideOff = 0.0
+    local puduEnterOffX, puduEnterOffY = 0.0, 0.0
+    local enemyEnterOffX, enemyEnterOffY = 0.0, 0.0
 
     -- 1. Render HD-2D World (Overworld or Battle Arena + Atmospheric Lighting) into worldCanvas
     if canvas then
@@ -1518,6 +1534,24 @@ function love.draw()
         local litShader = Game.stage:configureLitShader(battleTheme, w, h, Game.elapsed, lights)
         local beatPulse = Game.beatSync and Game.beatSync:getBeatPulse() or 0.0
 
+        -- Classic Pokémon diagonal entrance slide:
+        -- Pudú + foreground pad enter from bottom-left; Rival + upper-right pad enter from right
+        if Game.battlePhase == "battle_enter" then
+            local rem = 1.0 - easeOutCubic(Game.battleEnterT)
+            puduEnterOffX = -rem * 360.0
+            puduEnterOffY = rem * 68.0
+            enemyEnterOffX = rem * 380.0
+            enemyEnterOffY = -rem * 26.0
+        end
+
+        local enterOffsets = {
+            puduOffX = puduEnterOffX,
+            puduOffY = puduEnterOffY,
+            enemyOffX = enemyEnterOffX,
+            enemyOffY = enemyEnterOffY,
+            enterT = (Game.battlePhase == "battle_enter") and Game.battleEnterT or 1.0,
+        }
+
         battleAnchors = Game.stage:drawBattleArena(
             battleEnc,
             Encounters.STAGE_THEMES,
@@ -1526,18 +1560,30 @@ function love.draw()
             w,
             h,
             Game.elapsed,
-            litShader
+            litShader,
+            enterOffsets
         )
 
-        if Game.battlePhase == "battle_enter" then
-            battleSlideOff = (1.0 - smoothstep01(Game.battleEnterT)) * BATTLE_ENTER_SLIDE_PX
-        end
-
-        local puduPose = Game.beatSync and Game.beatSync:getPuduDancePose(Game.puduAnimMode) or nil
+        -- Face 3/4 back-right (row 3 = NE) looking diagonally up-right toward the Rival!
+        local puduPose = Game.beatSync and Game.beatSync:getPuduDancePose(Game.puduAnimMode, 3) or nil
         local enemyGroove = Game.beatSync and Game.beatSync:getEnemyGroove(Game.enemyReaction) or nil
 
-        drawPuduSprite(battleAnchors.puduX - battleSlideOff, battleAnchors.puduY, 126.0, puduPose, litShader)
-        drawEnemySprite(battleEnc, battleAnchors.enemyX + battleSlideOff, battleAnchors.enemyY, 152.0, enemyGroove, litShader)
+        -- Draw upper-right Rival first (background depth), then foreground bottom-left Pudú (cropped cleanly behind bottom strip)
+        drawEnemySprite(
+            battleEnc,
+            battleAnchors.enemyX + enemyEnterOffX,
+            battleAnchors.enemyY + enemyEnterOffY,
+            battleAnchors.enemyScaleH or 148.0,
+            enemyGroove,
+            litShader
+        )
+        drawPuduSprite(
+            battleAnchors.puduX + puduEnterOffX,
+            battleAnchors.puduY + puduEnterOffY,
+            battleAnchors.puduScaleH or 212.0,
+            puduPose,
+            litShader
+        )
 
         Game.stage:drawBattleArenaForeground(battleEnc, Game.assets, w, h, Game.elapsed, litShader)
         Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
@@ -1568,7 +1614,7 @@ function love.draw()
         drawExploreFooterHint(w, h)
     else
         drawTopHud(w)
-        drawBattleOverlay(w, h, battleEnc, battleAnchors)
+        drawBattleOverlay(w, h, battleEnc, battleAnchors, enemyEnterOffX, enemyEnterOffY)
     end
 
     -- 4. JRPG Battle Transition Overlay (live or --transition-preview)

@@ -289,102 +289,102 @@ StageRenderer.THEME_TILES = {
 -- Foreground corner framing props (layer = "fg") sit strictly at xFrac = 0.03 and 0.97, yFrac = 0.84.
 StageRenderer.BATTLE_STAGE_DECOR = {
     plaza = {
-        { kind = "stone_pedestal",  xFrac = 0.50, yFrac = 0.46, scale = 0.72, biome = "bosque" },
-        { kind = "araucaria_tree",  xFrac = 0.09, yFrac = 0.48, scale = 0.96, biome = "bosque" },
-        { kind = "lantern_post",    xFrac = 0.16, yFrac = 0.48, scale = 0.82, biome = "bosque" },
-        { kind = "lantern_post",    xFrac = 0.84, yFrac = 0.48, scale = 0.82, biome = "bosque" },
-        { kind = "araucaria_tree",  xFrac = 0.91, yFrac = 0.48, scale = 0.98, biome = "bosque" },
-        { kind = "lantern_post",    xFrac = 0.08, yFrac = 0.58, scale = 1.06, biome = "bosque" },
-        { kind = "lantern_post",    xFrac = 0.92, yFrac = 0.58, scale = 1.06, biome = "bosque" },
-        { kind = "copihue",         xFrac = 0.13, yFrac = 0.62, scale = 0.96, biome = "bosque" },
-        { kind = "valdivian_shrub", xFrac = 0.87, yFrac = 0.62, scale = 0.96, biome = "bosque" },
+        { kind = "stone_pedestal",  xFrac = 0.48, yFrac = 0.39, scale = 0.68, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.09, yFrac = 0.40, scale = 0.92, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.17, yFrac = 0.41, scale = 0.78, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.86, yFrac = 0.40, scale = 0.78, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.93, yFrac = 0.41, scale = 0.94, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.07, yFrac = 0.56, scale = 1.02, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.93, yFrac = 0.58, scale = 1.04, biome = "bosque" },
+        { kind = "copihue",         xFrac = 0.12, yFrac = 0.62, scale = 0.92, biome = "bosque" },
+        { kind = "valdivian_shrub", xFrac = 0.89, yFrac = 0.64, scale = 0.96, biome = "bosque" },
         { kind = "copihue",         xFrac = 0.03, yFrac = 0.84, scale = 1.08, biome = "bosque", layer = "fg" },
         { kind = "valdivian_fern",  xFrac = 0.97, yFrac = 0.84, scale = 1.08, biome = "bosque", layer = "fg" },
     },
     bosque = {
-        { kind = "rewe_totem",      xFrac = 0.45, yFrac = 0.46, scale = 0.78, biome = "bosque" },
-        { kind = "orb_shrine",      xFrac = 0.56, yFrac = 0.47, scale = 0.74, biome = "bosque" },
-        { kind = "ancient_tree",    xFrac = 0.12, yFrac = 0.48, scale = 1.04, biome = "bosque" },
-        { kind = "araucaria_tree",  xFrac = 0.89, yFrac = 0.48, scale = 1.06, biome = "bosque" },
-        { kind = "araucaria_tree",  xFrac = 0.06, yFrac = 0.58, scale = 1.16, biome = "bosque" },
-        { kind = "ancient_tree",    xFrac = 0.94, yFrac = 0.58, scale = 1.12, biome = "bosque" },
-        { kind = "mossy_boulder",   xFrac = 0.14, yFrac = 0.61, scale = 0.92, biome = "bosque" },
-        { kind = "valdivian_fern",  xFrac = 0.86, yFrac = 0.62, scale = 1.00, biome = "bosque" },
+        { kind = "rewe_totem",      xFrac = 0.44, yFrac = 0.39, scale = 0.74, biome = "bosque" },
+        { kind = "orb_shrine",      xFrac = 0.54, yFrac = 0.40, scale = 0.70, biome = "bosque" },
+        { kind = "ancient_tree",    xFrac = 0.12, yFrac = 0.40, scale = 0.98, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.91, yFrac = 0.40, scale = 1.00, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.06, yFrac = 0.56, scale = 1.12, biome = "bosque" },
+        { kind = "ancient_tree",    xFrac = 0.94, yFrac = 0.58, scale = 1.10, biome = "bosque" },
+        { kind = "mossy_boulder",   xFrac = 0.13, yFrac = 0.60, scale = 0.90, biome = "bosque" },
+        { kind = "valdivian_fern",  xFrac = 0.88, yFrac = 0.64, scale = 1.00, biome = "bosque" },
         { kind = "valdivian_fern",  xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "bosque", layer = "fg" },
         { kind = "copihue",         xFrac = 0.97, yFrac = 0.84, scale = 1.10, biome = "bosque", layer = "fg" },
     },
     mirador = {
-        { kind = "apacheta_sundial", xFrac = 0.50, yFrac = 0.46, scale = 0.82, biome = "desierto" },
-        { kind = "rock_monolith",    xFrac = 0.12, yFrac = 0.47, scale = 0.94, biome = "desierto" },
-        { kind = "mountain_crystal", xFrac = 0.84, yFrac = 0.48, scale = 0.86, biome = "desierto" },
-        { kind = "desert_cactus",    xFrac = 0.91, yFrac = 0.48, scale = 0.92, biome = "desierto" },
-        { kind = "desert_cactus",    xFrac = 0.07, yFrac = 0.58, scale = 1.12, biome = "desierto" },
-        { kind = "rock_monolith",    xFrac = 0.93, yFrac = 0.58, scale = 1.04, biome = "desierto" },
-        { kind = "mountain_crystal", xFrac = 0.14, yFrac = 0.61, scale = 0.98, biome = "desierto" },
-        { kind = "mountain_crystal", xFrac = 0.86, yFrac = 0.61, scale = 1.00, biome = "desierto" },
+        { kind = "apacheta_sundial", xFrac = 0.48, yFrac = 0.39, scale = 0.78, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.12, yFrac = 0.40, scale = 0.90, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.86, yFrac = 0.40, scale = 0.82, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.93, yFrac = 0.41, scale = 0.88, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.07, yFrac = 0.56, scale = 1.08, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.93, yFrac = 0.58, scale = 1.02, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.13, yFrac = 0.60, scale = 0.96, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.88, yFrac = 0.63, scale = 1.00, biome = "desierto" },
         { kind = "desert_cactus",    xFrac = 0.03, yFrac = 0.84, scale = 1.02, biome = "desierto", layer = "fg" },
         { kind = "mountain_crystal", xFrac = 0.97, yFrac = 0.84, scale = 1.06, biome = "desierto", layer = "fg" },
     },
     vereda = {
-        { kind = "moai_relic",       xFrac = 0.51, yFrac = 0.46, scale = 0.82, biome = "desierto" },
-        { kind = "desert_cactus",    xFrac = 0.10, yFrac = 0.48, scale = 0.94, biome = "desierto" },
-        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "desierto" },
-        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "desierto" },
-        { kind = "desert_cactus",    xFrac = 0.91, yFrac = 0.48, scale = 0.94, biome = "desierto" },
-        { kind = "lantern_post",     xFrac = 0.08, yFrac = 0.58, scale = 1.06, biome = "desierto" },
-        { kind = "desert_cactus",    xFrac = 0.92, yFrac = 0.59, scale = 1.08, biome = "desierto" },
-        { kind = "apacheta_sundial", xFrac = 0.14, yFrac = 0.62, scale = 0.92, biome = "desierto" },
-        { kind = "rock_monolith",    xFrac = 0.86, yFrac = 0.62, scale = 0.88, biome = "desierto" },
+        { kind = "moai_relic",       xFrac = 0.49, yFrac = 0.39, scale = 0.78, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.10, yFrac = 0.40, scale = 0.90, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.17, yFrac = 0.41, scale = 0.80, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.86, yFrac = 0.40, scale = 0.80, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.93, yFrac = 0.41, scale = 0.90, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.07, yFrac = 0.56, scale = 1.02, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.92, yFrac = 0.59, scale = 1.06, biome = "desierto" },
+        { kind = "apacheta_sundial", xFrac = 0.13, yFrac = 0.61, scale = 0.90, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.88, yFrac = 0.63, scale = 0.88, biome = "desierto" },
         { kind = "apacheta_sundial", xFrac = 0.03, yFrac = 0.84, scale = 1.00, biome = "desierto", layer = "fg" },
         { kind = "desert_cactus",    xFrac = 0.97, yFrac = 0.84, scale = 1.00, biome = "desierto", layer = "fg" },
     },
     muelle = {
-        { kind = "pincoya_shrine",   xFrac = 0.56, yFrac = 0.46, scale = 0.72, biome = "costa" },
-        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.86, biome = "costa" },
-        { kind = "lantern_post",     xFrac = 0.82, yFrac = 0.48, scale = 0.86, biome = "costa" },
-        { kind = "coast_lighthouse", xFrac = 0.92, yFrac = 0.48, scale = 0.98, biome = "costa" },
-        { kind = "lantern_post",     xFrac = 0.07, yFrac = 0.59, scale = 1.08, biome = "costa" },
-        { kind = "lantern_post",     xFrac = 0.87, yFrac = 0.59, scale = 1.06, biome = "costa" },
-        { kind = "mossy_boulder",    xFrac = 0.14, yFrac = 0.63, scale = 0.84, biome = "costa" },
-        { kind = "valdivian_shrub",  xFrac = 0.94, yFrac = 0.63, scale = 0.84, biome = "costa" },
+        { kind = "pincoya_shrine",   xFrac = 0.52, yFrac = 0.39, scale = 0.68, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.40, scale = 0.82, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.40, scale = 0.82, biome = "costa" },
+        { kind = "coast_lighthouse", xFrac = 0.93, yFrac = 0.40, scale = 0.94, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.07, yFrac = 0.57, scale = 1.04, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.91, yFrac = 0.59, scale = 1.04, biome = "costa" },
+        { kind = "mossy_boulder",    xFrac = 0.13, yFrac = 0.62, scale = 0.82, biome = "costa" },
+        { kind = "valdivian_shrub",  xFrac = 0.94, yFrac = 0.64, scale = 0.84, biome = "costa" },
         { kind = "stanchion",        xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
         { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
     },
     pantano = {
-        { kind = "pincoya_shrine",   xFrac = 0.50, yFrac = 0.46, scale = 0.80, biome = "costa" },
-        { kind = "ancient_tree",     xFrac = 0.09, yFrac = 0.48, scale = 0.98, biome = "costa" },
-        { kind = "valdivian_fern",   xFrac = 0.60, yFrac = 0.48, scale = 0.86, biome = "costa" },
-        { kind = "ancient_tree",     xFrac = 0.91, yFrac = 0.48, scale = 0.98, biome = "costa" },
-        { kind = "valdivian_fern",   xFrac = 0.08, yFrac = 0.58, scale = 1.10, biome = "costa" },
-        { kind = "mossy_boulder",    xFrac = 0.92, yFrac = 0.58, scale = 1.04, biome = "costa" },
-        { kind = "lily_pad",         xFrac = 0.14, yFrac = 0.63, scale = 1.05, biome = "costa" },
-        { kind = "lily_pad",         xFrac = 0.86, yFrac = 0.63, scale = 1.05, biome = "costa" },
+        { kind = "pincoya_shrine",   xFrac = 0.48, yFrac = 0.39, scale = 0.76, biome = "costa" },
+        { kind = "ancient_tree",     xFrac = 0.09, yFrac = 0.40, scale = 0.94, biome = "costa" },
+        { kind = "valdivian_fern",   xFrac = 0.58, yFrac = 0.40, scale = 0.82, biome = "costa" },
+        { kind = "ancient_tree",     xFrac = 0.92, yFrac = 0.40, scale = 0.94, biome = "costa" },
+        { kind = "valdivian_fern",   xFrac = 0.07, yFrac = 0.56, scale = 1.06, biome = "costa" },
+        { kind = "mossy_boulder",    xFrac = 0.93, yFrac = 0.58, scale = 1.02, biome = "costa" },
+        { kind = "lily_pad",         xFrac = 0.13, yFrac = 0.62, scale = 1.02, biome = "costa" },
+        { kind = "lily_pad",         xFrac = 0.88, yFrac = 0.64, scale = 1.02, biome = "costa" },
         { kind = "valdivian_fern",   xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
         { kind = "lily_pad",         xFrac = 0.97, yFrac = 0.84, scale = 1.08, biome = "costa", layer = "fg" },
     },
     esquina = {
-        { kind = "stone_pedestal",   xFrac = 0.50, yFrac = 0.46, scale = 0.74, biome = "ciudad" },
-        { kind = "biome_arch",       xFrac = 0.10, yFrac = 0.48, scale = 0.90, biome = "ciudad", extra = "harbor" },
-        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
-        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
-        { kind = "biome_arch",       xFrac = 0.90, yFrac = 0.48, scale = 0.90, biome = "ciudad", extra = "harbor" },
-        { kind = "lantern_post",     xFrac = 0.08, yFrac = 0.59, scale = 1.08, biome = "ciudad" },
-        { kind = "lantern_post",     xFrac = 0.92, yFrac = 0.59, scale = 1.08, biome = "ciudad" },
-        { kind = "stone_pedestal",   xFrac = 0.86, yFrac = 0.62, scale = 0.88, biome = "ciudad" },
-        { kind = "debris_pile",      xFrac = 0.14, yFrac = 0.63, scale = 0.90, biome = "ciudad" },
+        { kind = "stone_pedestal",   xFrac = 0.48, yFrac = 0.39, scale = 0.70, biome = "ciudad" },
+        { kind = "biome_arch",       xFrac = 0.10, yFrac = 0.40, scale = 0.86, biome = "ciudad", extra = "harbor" },
+        { kind = "lantern_post",     xFrac = 0.17, yFrac = 0.41, scale = 0.80, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.85, yFrac = 0.40, scale = 0.80, biome = "ciudad" },
+        { kind = "biome_arch",       xFrac = 0.92, yFrac = 0.40, scale = 0.86, biome = "ciudad", extra = "harbor" },
+        { kind = "lantern_post",     xFrac = 0.07, yFrac = 0.57, scale = 1.04, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.93, yFrac = 0.59, scale = 1.04, biome = "ciudad" },
+        { kind = "stone_pedestal",   xFrac = 0.88, yFrac = 0.64, scale = 0.88, biome = "ciudad" },
+        { kind = "debris_pile",      xFrac = 0.13, yFrac = 0.62, scale = 0.88, biome = "ciudad" },
         { kind = "debris_pile",      xFrac = 0.03, yFrac = 0.84, scale = 1.00, biome = "ciudad", layer = "fg" },
         { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.12, biome = "ciudad", layer = "fg" },
     },
     oficina = {
-        { kind = "orb_shrine",       xFrac = 0.50, yFrac = 0.46, scale = 0.84, biome = "ciudad" },
-        { kind = "office_column",    xFrac = 0.10, yFrac = 0.48, scale = 1.04, biome = "ciudad" },
-        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
-        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
-        { kind = "office_column",    xFrac = 0.90, yFrac = 0.48, scale = 1.04, biome = "ciudad" },
-        { kind = "office_column",    xFrac = 0.06, yFrac = 0.60, scale = 1.16, biome = "ciudad" },
-        { kind = "office_column",    xFrac = 0.94, yFrac = 0.60, scale = 1.16, biome = "ciudad" },
-        { kind = "stanchion",        xFrac = 0.14, yFrac = 0.62, scale = 1.04, biome = "ciudad" },
-        { kind = "stanchion",        xFrac = 0.86, yFrac = 0.62, scale = 1.04, biome = "ciudad" },
+        { kind = "orb_shrine",       xFrac = 0.48, yFrac = 0.39, scale = 0.80, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.10, yFrac = 0.40, scale = 0.98, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.17, yFrac = 0.41, scale = 0.80, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.85, yFrac = 0.40, scale = 0.80, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.92, yFrac = 0.40, scale = 0.98, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.06, yFrac = 0.58, scale = 1.12, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.94, yFrac = 0.60, scale = 1.12, biome = "ciudad" },
+        { kind = "stanchion",        xFrac = 0.13, yFrac = 0.62, scale = 1.00, biome = "ciudad" },
+        { kind = "stanchion",        xFrac = 0.88, yFrac = 0.64, scale = 1.04, biome = "ciudad" },
         { kind = "stanchion",        xFrac = 0.03, yFrac = 0.84, scale = 1.14, biome = "ciudad", layer = "fg" },
         { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.14, biome = "ciudad", layer = "fg" },
     },
@@ -881,11 +881,16 @@ end
 function StageRenderer.getBattleAnchors(w, h)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
+    -- Classic Pokémon-style diagonal battle perspective:
+    -- Pudú foreground bottom-left (lower hooves tucked cleanly behind bottom strip)
+    -- Rival upper-right with generous top/right padding
     return {
-        puduX = sw * 0.28,
-        puduY = sh * 0.65,
+        puduX = sw * 0.27,
+        puduY = sh * 0.915,
         enemyX = sw * 0.72,
-        enemyY = sh * 0.65,
+        enemyY = sh * 0.50,
+        puduScaleH = 212.0,
+        enemyScaleH = 148.0,
     }
 end
 
@@ -1301,7 +1306,7 @@ local function drawHorizonCaleuche(sx, sy, s, tNow, tr, tg, tb, isNightOrDramati
 
     -- Mode A optional sprite support for distant horizon Caleuche
     local pair = assetsOpt and assetsOpt.props and assetsOpt.props.caleuche_ship
-    if pair and pair.diff then
+    if pair and pair.diff and not pair.isPlaceholder then
         local img = pair.diff
         local iw, ih = img:getDimensions()
         local sc = (68.0 * s) / max(1, ih)
@@ -2532,7 +2537,7 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
 
     -- Mode A drop-in: if a real prop sprite exists in propsMap[kind].diff, draw it lit!
     local pair = (type(propsMap) == "table") and propsMap[prop.kind] or nil
-    if type(pair) == "table" and pair.diff then
+    if type(pair) == "table" and pair.diff and not pair.isPlaceholder then
         local img = pair.diff
         local iw, ih = img:getDimensions()
         local targetH = 86.0 * (prop.scale or 1.0) * z
@@ -3621,7 +3626,7 @@ local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw,
     end
 end
 
-function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAssets, beatPulse, w, h, time, litShader)
+function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAssets, beatPulse, w, h, time, litShader, enterOffsets)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
@@ -3662,8 +3667,8 @@ function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAsse
         activeLit = nil
     end
 
-    -- LAYER 1: Sky & Biome Parallax Horizon (horizonFrac = 0.44)
-    local horizonFrac = 0.44
+    -- LAYER 1: Sky & Biome Parallax Horizon (horizonFrac = 0.36 for deep Pokémon diagonal battle plane)
+    local horizonFrac = 0.36
     local horizonY = floor(sh * horizonFrac)
     local floorH = sh - horizonY
     self:drawSkyAndHorizon(theme, sw, sh, tNow, horizonFrac, stageKind, propSpritesOrAssets)
@@ -3780,32 +3785,84 @@ function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAsse
         end
     end
 
-    -- LAYER 5: Breathing Stance Rings at Canonical Battle Anchors (0.28w, 0.65h) & (0.72w, 0.65h)
+    -- LAYER 5: Pokémon-Style Sliding Diagonal Battle Pads & Beat-Pulsing Stance Rings
     local anchors = StageRenderer.getBattleAnchors(sw, sh)
     local ringPulse = pulse
     if beatPulse == nil then
         ringPulse = 0.5 + 0.5 * sin(tNow * 4.2)
     end
 
-    -- Pudu cyan-gold stance ring
-    love.graphics.setColor(0.20, 0.84, 0.98, 0.20 + 0.14 * ringPulse)
-    love.graphics.ellipse("fill", anchors.puduX, anchors.puduY + 8, 66 + ringPulse * 8, 21 + ringPulse * 2.8)
+    local pOffX = (enterOffsets and enterOffsets.puduOffX) or 0.0
+    local pOffY = (enterOffsets and enterOffsets.puduOffY) or 0.0
+    local eOffX = (enterOffsets and enterOffsets.enemyOffX) or 0.0
+    local eOffY = (enterOffsets and enterOffsets.enemyOffY) or 0.0
+    local enterT = (enterOffsets and enterOffsets.enterT) or 1.0
+
+    -- Subtle Pokémon-style dynamic diagonal speed streaks while platforms slide into place
+    if enterT < 0.96 then
+        local streakA = clamp((1.0 - enterT) * 0.38, 0.0, 0.34)
+        love.graphics.setColor(1.0, 0.98, 0.90, streakA)
+        for sIdx = 1, 7 do
+            local sy = sh * (0.14 + sIdx * 0.105)
+            local sx = ((sIdx * 210 + tNow * 1400) % (sw + 320)) - 160
+            local len = 140 + (sIdx % 3) * 75
+            love.graphics.rectangle("fill", sx, sy, len, 2.5)
+        end
+    end
+
+    -- Biome-harmonized battle pad colors (lit softly by preset skyTint)
+    local padFillR = clamp(lerp(pal.groundA[1], 0.90, 0.32) * lerp(1.0, st[1], 0.65), 0.10, 0.96)
+    local padFillG = clamp(lerp(pal.groundA[2], 0.92, 0.32) * lerp(1.0, st[2], 0.65), 0.12, 0.96)
+    local padFillB = clamp(lerp(pal.groundA[3], 0.84, 0.28) * lerp(1.0, st[3], 0.65), 0.12, 0.96)
+    local padRimR = clamp(padFillR * 0.72, 0.06, 0.90)
+    local padRimG = clamp(padFillG * 0.72, 0.06, 0.90)
+    local padRimB = clamp(padFillB * 0.74, 0.08, 0.90)
+
+    -- Upper-Right Rival Battle Platform (with generous top/right padding)
+    local exPad = anchors.enemyX + eOffX
+    local eyPad = anchors.enemyY + eOffY + 6
+    love.graphics.setColor(0.03, 0.04, 0.09, 0.32)
+    love.graphics.ellipse("fill", exPad, eyPad + 7, 124, 34)
+    love.graphics.setColor(padRimR, padRimG, padRimB, 0.94)
+    love.graphics.ellipse("fill", exPad, eyPad + 3, 120, 32)
+    love.graphics.setColor(padFillR, padFillG, padFillB, 0.96)
+    love.graphics.ellipse("fill", exPad, eyPad - 1, 114, 29)
+    love.graphics.setColor(1.0, 0.98, 0.90, 0.24)
+    love.graphics.setLineWidth(2.0)
+    love.graphics.ellipse("line", exPad, eyPad - 1, 112, 28)
+
+    -- Rival crimson-gold stance ring on upper-right pad
+    love.graphics.setColor(0.98, 0.30, 0.26, 0.18 + 0.12 * ringPulse)
+    love.graphics.ellipse("fill", exPad, eyPad - 1, 74 + ringPulse * 7, 21 + ringPulse * 2.2)
+    love.graphics.setLineWidth(2.2)
+    love.graphics.setColor(1.00, 0.38, 0.30, 0.76 + 0.18 * ringPulse)
+    love.graphics.ellipse("line", exPad, eyPad - 1, 68 + ringPulse * 6, 19 + ringPulse * 2.0)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.setColor(1.00, 0.82, 0.34, 0.72 + 0.20 * ringPulse)
+    love.graphics.ellipse("line", exPad, eyPad - 1, 50 + ringPulse * 4.5, 14 + ringPulse * 1.6)
+
+    -- Bottom-Left Foreground Pudú Battle Platform (partially tucked behind bottom strip!)
+    local pxPad = anchors.puduX + pOffX
+    local pyPad = anchors.puduY + pOffY - 14
+    love.graphics.setColor(0.03, 0.04, 0.09, 0.34)
+    love.graphics.ellipse("fill", pxPad, pyPad + 8, 174, 48)
+    love.graphics.setColor(padRimR, padRimG, padRimB, 0.94)
+    love.graphics.ellipse("fill", pxPad, pyPad + 3, 168, 45)
+    love.graphics.setColor(padFillR, padFillG, padFillB, 0.96)
+    love.graphics.ellipse("fill", pxPad, pyPad - 2, 160, 41)
+    love.graphics.setColor(1.0, 0.98, 0.90, 0.26)
+    love.graphics.setLineWidth(2.2)
+    love.graphics.ellipse("line", pxPad, pyPad - 2, 158, 40)
+
+    -- Pudú cyan-gold stance ring on foreground bottom-left pad
+    love.graphics.setColor(0.20, 0.84, 0.98, 0.18 + 0.12 * ringPulse)
+    love.graphics.ellipse("fill", pxPad, pyPad - 2, 108 + ringPulse * 10, 29 + ringPulse * 3.0)
     love.graphics.setLineWidth(2.4)
     love.graphics.setColor(0.36, 0.94, 1.00, 0.78 + 0.18 * ringPulse)
-    love.graphics.ellipse("line", anchors.puduX, anchors.puduY + 8, 62 + ringPulse * 7, 19.5 + ringPulse * 2.4)
+    love.graphics.ellipse("line", pxPad, pyPad - 2, 100 + ringPulse * 9, 27 + ringPulse * 2.8)
     love.graphics.setLineWidth(1.6)
-    love.graphics.setColor(1.00, 0.88, 0.38, 0.72 + 0.22 * ringPulse)
-    love.graphics.ellipse("line", anchors.puduX, anchors.puduY + 8, 46 + ringPulse * 5, 14 + ringPulse * 1.8)
-
-    -- Rival crimson-gold stance ring
-    love.graphics.setColor(0.98, 0.30, 0.26, 0.20 + 0.14 * ringPulse)
-    love.graphics.ellipse("fill", anchors.enemyX, anchors.enemyY + 8, 72 + ringPulse * 8, 23 + ringPulse * 2.8)
-    love.graphics.setLineWidth(2.4)
-    love.graphics.setColor(1.00, 0.38, 0.30, 0.78 + 0.18 * ringPulse)
-    love.graphics.ellipse("line", anchors.enemyX, anchors.enemyY + 8, 68 + ringPulse * 7, 21.5 + ringPulse * 2.4)
-    love.graphics.setLineWidth(1.6)
-    love.graphics.setColor(1.00, 0.82, 0.34, 0.74 + 0.20 * ringPulse)
-    love.graphics.ellipse("line", anchors.enemyX, anchors.enemyY + 8, 50 + ringPulse * 5, 15.5 + ringPulse * 1.8)
+    love.graphics.setColor(1.00, 0.88, 0.38, 0.72 + 0.20 * ringPulse)
+    love.graphics.ellipse("line", pxPad, pyPad - 2, 74 + ringPulse * 6.5, 20 + ringPulse * 2.0)
     love.graphics.setLineWidth(1)
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -3897,13 +3954,13 @@ function StageRenderer:collectBattleLights(encounter, w, h, time)
 
     self:_resetLightCollection()
 
-    -- Priority 1: Character key/fill pools in noche & dramatico (litShader illumination ONLY; haloScale = 0 so no foggy orb covers character faces!)
+    -- Priority 1: Character key/fill pools in noche & dramatico (Pokémon diagonal anchors; haloScale = 0)
     if self.lightingPreset == "noche" then
-        self:_pushLight(sw * 0.28, sh * 0.58, 285, 1.00, 0.86, 0.64, 0.46, 0.0, 108)
-        self:_pushLight(sw * 0.72, sh * 0.58, 295, 0.96, 0.84, 0.70, 0.46, 0.0, 108)
+        self:_pushLight(sw * 0.27, sh * 0.76, 320, 1.00, 0.86, 0.64, 0.50, 0.0, 118)
+        self:_pushLight(sw * 0.72, sh * 0.44, 285, 0.96, 0.84, 0.70, 0.48, 0.0, 104)
     elseif self.lightingPreset == "dramatico" then
-        self:_pushLight(sw * 0.28, sh * 0.56, 280, 1.00, 0.90, 0.66, 0.48, 0.0, 136)
-        self:_pushLight(sw * 0.72, sh * 0.56, 290, 1.00, 0.86, 0.66, 0.48, 0.0, 136)
+        self:_pushLight(sw * 0.27, sh * 0.74, 315, 1.00, 0.90, 0.66, 0.52, 0.0, 144)
+        self:_pushLight(sw * 0.72, sh * 0.44, 285, 1.00, 0.86, 0.66, 0.50, 0.0, 132)
     end
 
     -- Priority 2: Emissive props in the active stage arena (exact match to ARENA_PROP_Z anchor!)
@@ -3989,7 +4046,7 @@ function StageRenderer:collectBattleLights(encounter, w, h, time)
     -- Priority 3: Coastal Caleuche spectral stern lantern on horizon in muelle stage
     if stageKind == "muelle" then
         local shipX = sw * 0.40 + sin(tNow * 0.28) * 20.0
-        local shipY = floor(sh * 0.44) - 18
+        local shipY = floor(sh * 0.36) - 18
         self:_pushLight(shipX - 22, shipY, 135, 0.40, 0.96, 0.88, 0.52 * max(0.45, boost), 0.52, 48)
     end
 
