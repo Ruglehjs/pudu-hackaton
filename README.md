@@ -10,6 +10,7 @@ Abre **Jugar_Windows.bat**. El lanzador busca LÖVE 11.5 en `tools/love-win64/` 
 - En la arena, escribe una idea y pulsa Enter. Puedes pegar con Ctrl+V y corregir con Retroceso.
 - Esc o Tab te devuelve al mapa. Los rivales vencidos quedan marcados durante la partida.
 - F8 alterna el sonido y F12 guarda una captura. F5 recarga el arte.
+- En combate, F7 cambia la iluminación y Ctrl+1 a Ctrl+9 salta a un rival para pruebas.
 
 Para entrar directamente en una pelea o reproducir un combo desde PowerShell:
 

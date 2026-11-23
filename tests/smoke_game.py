@@ -35,7 +35,7 @@ end
 function love.update(dt)
     updateGame(dt)
     elapsed = elapsed + math.min(dt, 0.05)
-    if step == 1 and elapsed > 0.15 then
+    if step == 1 and elapsed > 1.0 then
         love.event.push("textinput", "modo diosá")
         key("backspace")
         key("return")
@@ -50,7 +50,7 @@ function love.update(dt)
         key("return")
     elseif step == 5 and elapsed > 1.1 then
         key("tab")
-    elseif step == 6 and elapsed > 1.8 then
+    elseif step == 6 and elapsed > 2.6 then
         cast("rayo")
     elseif step == 7 and turns == 4 then
         key("escape")

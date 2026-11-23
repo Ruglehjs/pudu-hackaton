@@ -5,6 +5,8 @@ local AssetLoader = require("asset_loader")
 local Audio = require("audio")
 local Encounters = require("encounters")
 local StageRenderer = require("stage_renderer")
+local Shaders = require("shaders")
+local BeatSync = require("beat_sync")
 
 --------------------------------------------------------------------------------
 -- Custom Error Handler (prints traceback to stderr; exits 1 under --quit-after)
@@ -65,13 +67,18 @@ function love.errorhandler(msg)
 end
 
 --------------------------------------------------------------------------------
--- CLI Parser (every literal hyphen escaped as %-%-)
+-- Math & CLI Parser (every literal hyphen escaped as %-%- per Rule R5)
 --------------------------------------------------------------------------------
 
 local function clamp(v, lo, hi)
     if v < lo then return lo end
     if v > hi then return hi end
     return v
+end
+
+local function smoothstep01(t)
+    local x = clamp(t or 0.0, 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
 end
 
 local function parseCliArgs(argList)
@@ -120,7 +127,7 @@ local function parseCliArgs(argList)
             end
 
             v = a:match("^%-%-lighting=(.+)$")
-            if v then cli.lighting = v end
+            if v and v ~= "" then cli.lighting = v end
 
             if a:match("^%-%-mock$") then cli.mock = true end
 
@@ -141,7 +148,7 @@ local function parseCliArgs(argList)
             if v then cli.demoCombo = v end
 
             v = a:match("^%-%-force%-reaction=(.+)$")
-            if v then cli.forceReaction = v end
+            if v and v ~= "" then cli.forceReaction = v end
 
             v = a:match("^%-%-transition%-preview=(%d+%.?%d*)$")
             if v then cli.transitionPreview = clamp(tonumber(v) or 0.0, 0.0, 1.0) end
@@ -158,14 +165,29 @@ local function parseCliArgs(argList)
 end
 
 --------------------------------------------------------------------------------
--- Game State & Helpers
+-- Constants & Game State
 --------------------------------------------------------------------------------
 
 local ALERT_DURATION = 0.40
 local TO_BATTLE_DURATION = 1.05
 local TO_EXPLORE_DURATION = 0.72
+local BATTLE_ENTER_DURATION = 0.88
+local BATTLE_ENTER_SLIDE_PX = 320.0
 local ENCOUNTER_TRIGGER_DIST = 1.75
 local WALK_SPEED = 6.2
+
+-- Wizard hat head-anchor offsets per Pudú facing row (0..7) in 64px base units
+-- Rows: 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
+local HAT_HEAD_OFFSETS = {
+    [0] = { x = 0.0,  y = -40.0 },
+    [1] = { x = 5.0,  y = -40.0 },
+    [2] = { x = 8.5,  y = -41.0 },
+    [3] = { x = 5.0,  y = -41.0 },
+    [4] = { x = 0.0,  y = -41.0 },
+    [5] = { x = -5.0, y = -41.0 },
+    [6] = { x = -8.5, y = -41.0 },
+    [7] = { x = -5.0, y = -40.0 },
+}
 
 local Game = {
     cli = nil,
@@ -174,6 +196,11 @@ local Game = {
     assets = nil,
     audio = nil,
     stage = nil,
+    shaders = nil,
+    beatSync = nil,
+    worldCanvas = nil,
+    worldCanvasW = 0,
+    worldCanvasH = 0,
     fonts = {},
     defeatedMap = {},
     nextRequestId = 0,
@@ -185,6 +212,13 @@ local Game = {
     puduWalkT = 0.0,
     puduAnimCol = 1,
     puduBobY = 0.0,
+    puduMoving = false,
+
+    -- Battle Arena & Dash-in State
+    battlePhase = "player_turn", -- "battle_enter" | "player_turn"
+    battleEnterT = 1.0,
+    puduAnimMode = "battle_idle",
+    enemyReaction = "idle",
 
     -- JRPG Encounter Transition State ("none" | "alert" | "to_battle" | "to_explore")
     transitionState = "none",
@@ -204,6 +238,30 @@ local Game = {
     toastText = nil,
     toastTimer = 0.0,
 }
+
+--------------------------------------------------------------------------------
+-- Canvas, Font, Screenshot & Asset Helpers
+--------------------------------------------------------------------------------
+
+local function ensureWorldCanvas(w, h)
+    local cw = math.max(1, math.floor(w or love.graphics.getWidth()))
+    local ch = math.max(1, math.floor(h or love.graphics.getHeight()))
+    if Game.worldCanvas and Game.worldCanvasW == cw and Game.worldCanvasH == ch then
+        return Game.worldCanvas
+    end
+    if Game.worldCanvas then
+        pcall(Game.worldCanvas.release, Game.worldCanvas)
+        Game.worldCanvas = nil
+    end
+    local ok, canvas = pcall(love.graphics.newCanvas, cw, ch)
+    if ok and canvas then
+        canvas:setFilter("linear", "linear")
+        Game.worldCanvas = canvas
+        Game.worldCanvasW = cw
+        Game.worldCanvasH = ch
+    end
+    return Game.worldCanvas
+end
 
 local function loadFonts()
     local fontPath = "assets/fonts/PTSans.ttc"
@@ -283,11 +341,17 @@ end
 local function syncMusicForMode()
     if not Game.audio then return end
     if Game.mode == "battle" then
-        local enc = Encounters.getByIndex(Game.encounterIndex)
-        local trackId = (enc and enc.track) or "user_battle"
-        Game.audio:playTrack(trackId, false)
+        Game.audio:playTrack("user_battle", false)
+        if Game.beatSync then
+            local ts = Game.audio:getTrackState()
+            Game.beatSync:reset((ts and ts.bpm) or 139.20)
+        end
     else
         Game.audio:playTrack("overworld", false)
+        if Game.beatSync then
+            local ts = Game.audio:getTrackState()
+            Game.beatSync:reset((ts and ts.bpm) or 116.04)
+        end
     end
 end
 
@@ -315,7 +379,7 @@ end
 
 local function submitPrompt(prompt)
     local b = Game.battle
-    if not b or b.phase ~= "input" or not prompt:find("%S") then return end
+    if not b or b.phase ~= "input" or Game.battlePhase ~= "player_turn" or not prompt:find("%S") then return end
     local enc = Encounters.getByIndex(Game.encounterIndex)
     Game.nextRequestId = Game.nextRequestId + 1
     b.uid, b.prompt, b.phase, b.input = Game.nextRequestId, prompt, "waiting", ""
@@ -368,6 +432,7 @@ local function finishTurn(message)
 
     rememberState(res.adds_stage_state)
     b.reaction = res.enemy_reaction
+    Game.enemyReaction = Game.cli.forceReaction or b.reaction
     b.enemyHp = math.max(0, b.enemyHp - res.damage_to_enemy)
     b.hp = clamp(b.hp + res.heal_pudu - res.damage_to_pudu, 0, 100)
     b.misses = res.is_critical and 0 or b.misses + 1
@@ -452,6 +517,10 @@ local function reloadAssets(isHotReload)
     end
 end
 
+--------------------------------------------------------------------------------
+-- Overworld Navigation & Battle Entry Helpers
+--------------------------------------------------------------------------------
+
 -- Map screen-space input direction (dx, dy) to the 8 Pudu facing rows:
 -- 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
 local function screenDirToFacingRow(dx, dy)
@@ -505,6 +574,34 @@ local function findNearestEncounterIndex(preferUndefeated)
     return bestIdx
 end
 
+local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
+    local targetIdx = clamp(math.floor(tonumber(idx) or Game.encounterIndex or 1), 1, Encounters.count())
+    Game.encounterIndex = targetIdx
+    Game.mode = "battle"
+    Game.alertEncounterIdx = nil
+    beginBattle()
+
+    if skipEnterDash then
+        Game.battlePhase = "player_turn"
+        Game.battleEnterT = 1.0
+        Game.puduAnimMode = "battle_idle"
+    else
+        Game.battlePhase = "battle_enter"
+        Game.battleEnterT = clamp(initialEnterT or 0.0, 0.0, 0.99)
+        Game.puduAnimMode = "battle_enter"
+    end
+
+    Game.enemyReaction = (Game.cli and Game.cli.forceReaction) or "idle"
+
+    if Game.audio then
+        Game.audio:playTrack("user_battle", false)
+    end
+    if Game.beatSync then
+        local ts = Game.audio and Game.audio:getTrackState()
+        Game.beatSync:reset((ts and ts.bpm) or 139.20)
+    end
+end
+
 --------------------------------------------------------------------------------
 -- JRPG Encounter Transition State Machine
 --------------------------------------------------------------------------------
@@ -547,11 +644,8 @@ local function updateTransition(dt)
         Game.transitionTimer = Game.transitionTimer + dt
         local p = Game.transitionTimer / TO_BATTLE_DURATION
         if p >= 0.50 and not Game.transitionSwitched then
-            Game.mode = "battle"
-            beginBattle()
-            Game.alertEncounterIdx = nil
             Game.transitionSwitched = true
-            syncMusicForMode()
+            enterBattleArenaImmediate(Game.encounterIndex, false, 0.0)
         end
         if p >= 1.0 then
             Game.transitionState = "none"
@@ -586,7 +680,7 @@ local function updateTransition(dt)
 end
 
 --------------------------------------------------------------------------------
--- Overworld Exploration Update (Slide Collisions + Room-Snapped Camera)
+-- Overworld & Battle Update Loops
 --------------------------------------------------------------------------------
 
 local function updateExplore(dt)
@@ -596,6 +690,7 @@ local function updateExplore(dt)
 
     -- Pause walk input while calm room-snapped camera pans between rooms (R7)
     if Game.stage:isCameraPanning() then
+        Game.puduMoving = false
         Game.puduAnimCol = 1
         Game.puduBobY = 0.0
         Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
@@ -609,12 +704,13 @@ local function updateExplore(dt)
     if love.keyboard.isDown("d", "right") then dx = dx + 1 end
 
     if dx ~= 0 or dy ~= 0 then
+        Game.puduMoving = true
         Game.puduFacingRow = screenDirToFacingRow(dx, dy)
         local du, dv = StageRenderer.screenVecToIso(dx, dy, WALK_SPEED)
         local candU = Game.puduU + du * dt
         local candV = Game.puduV + dv * dt
 
-        -- Separate-axis sliding collision check (smoothly slides along riverbanks, cliffs, pier edges)
+        -- Separate-axis sliding collision check
         if StageRenderer.isWalkable(candU, candV) then
             Game.puduU, Game.puduV = candU, candV
         elseif StageRenderer.isWalkable(candU, Game.puduV) then
@@ -627,6 +723,7 @@ local function updateExplore(dt)
         Game.puduAnimCol = (math.floor(Game.puduWalkT) % 6) + 1
         Game.puduBobY = -math.abs(math.sin(Game.puduWalkT * 1.15)) * 3.2
     else
+        Game.puduMoving = false
         Game.puduAnimCol = 1
         Game.puduBobY = math.sin(Game.elapsed * 3.0) * 1.2
     end
@@ -646,6 +743,218 @@ local function updateExplore(dt)
                 end
             end
         end
+    end
+end
+
+local function updateBattle(dt)
+    if Game.battlePhase == "battle_enter" then
+        Game.battleEnterT = math.min(1.0, Game.battleEnterT + dt / BATTLE_ENTER_DURATION)
+        Game.puduAnimMode = "battle_enter"
+        if Game.battleEnterT >= 1.0 then
+            Game.battlePhase = "player_turn"
+            Game.puduAnimMode = "battle_idle"
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Battle Actor Renderers (Lit HD-2D Pudú + Spring Wizard Hat + Rival Groove)
+--------------------------------------------------------------------------------
+
+local function drawBattleDashDust(x, y, enterT, time)
+    if enterT >= 0.94 then
+        return
+    end
+    local fade = clamp(1.0 - enterT * 0.9, 0.15, 0.85)
+    love.graphics.setShader()
+    for i = 1, 4 do
+        local lag = i * 24.0 + ((time * 90.0 + i * 17.0) % 18.0)
+        local r = (11.5 - i * 1.8) * (0.8 + 0.2 * math.sin(time * 16.0 + i))
+        local dy = -i * 2.5 - math.abs(math.sin(time * 12.0 + i * 1.3)) * 5.0
+        love.graphics.setColor(0.94, 0.90, 0.80, fade * (0.48 - i * 0.08))
+        love.graphics.circle("fill", x - lag, y + dy, math.max(2.5, r))
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function drawPuduSprite(x, y, targetH, pose, litShader)
+    local assets = Game.assets
+    if not assets then return end
+
+    local p = pose or {
+        row = 1, col = 1, scaleX = 1, scaleY = 1,
+        jumpY = 0, tilt = 0, stepX = 0, stepY = 0,
+        hatOffsetY = 0, hatTilt = 0, noteSparkle = false,
+    }
+    local row = clamp(math.floor(p.row or 1), 0, 7)
+    local col = clamp(math.floor(p.col or 1), 1, 6)
+    local px = x + (p.stepX or 0.0)
+    local py = y + (p.stepY or 0.0)
+    local jumpY = p.jumpY or 0.0
+    local tilt = p.tilt or 0.0
+    local sxMul = p.scaleX or 1.0
+    local syMul = p.scaleY or 1.0
+
+    -- Contact shadow on ground shrinks gently as Pudú hops into the air
+    local airFrac = clamp(-jumpY / 24.0, 0.0, 1.0)
+    local shScale = 1.0 - airFrac * 0.30
+    love.graphics.setShader()
+    love.graphics.setColor(0.03, 0.04, 0.08, 0.36 * (1.0 - airFrac * 0.28))
+    love.graphics.ellipse("fill", px, py + 4, targetH * 0.31 * shScale, targetH * 0.105 * shScale)
+
+    -- Subtle comic motion dust during battle_enter trot (zero music notes!)
+    if Game.battlePhase == "battle_enter" then
+        drawBattleDashDust(px, py + 2, Game.battleEnterT, Game.elapsed)
+    end
+
+    local puduPair = assets.pudu
+    local quads = assets.puduQuads
+    local sc = targetH / 64.0
+    local isPlaceholderSheet = true
+
+    if puduPair and puduPair.diff and quads and quads[row] and quads[row][col] then
+        local quad = quads[row][col]
+        local _, _, qw, qh = quad:getViewport()
+        sc = targetH / math.max(1, qh)
+        isPlaceholderSheet = puduPair.isPlaceholder and true or false
+        love.graphics.setColor(1, 1, 1, 1)
+        Game.stage:drawSpriteLit(
+            puduPair,
+            px,
+            py + jumpY,
+            tilt,
+            sc * sxMul,
+            sc * syMul,
+            qw * 0.50,
+            qh * 0.88,
+            quad,
+            0.0,
+            nil,
+            litShader,
+            true
+        )
+    else
+        love.graphics.setColor(0.58, 0.35, 0.20, 1.0)
+        love.graphics.circle("fill", px, py - targetH * 0.4 + jumpY, targetH * 0.28)
+    end
+
+    -- Pointy brown wizard hat with head-offset anchoring + spring follow-through
+    local hatPair = assets.wizardHat
+    if hatPair and hatPair.diff then
+        local hw, hh = hatPair.diff:getDimensions()
+        local unit = targetH / 64.0
+        local off = HAT_HEAD_OFFSETS[row] or HAT_HEAD_OFFSETS[1]
+
+        -- Air-tuck / dash head shift when col == 5 (full on real sheet, subtle on procedural placeholder)
+        local dashShiftX, dashShiftY = 0.0, 0.0
+        if col == 5 then
+            local flip = (row == 5 or row == 6 or row == 7) and -1.0 or 1.0
+            local shiftFactor = isPlaceholderSheet and 0.25 or 1.0
+            dashShiftX = flip * 7.0 * unit * shiftFactor
+            dashShiftY = 6.5 * unit * shiftFactor
+        end
+
+        -- Transform local head offset by Pudú's squash/stretch and body tilt
+        local localX = (off.x * unit + dashShiftX) * sxMul
+        local localY = (off.y * unit + dashShiftY) * syMul
+        local cosT = math.cos(tilt)
+        local sinT = math.sin(tilt)
+        local rotX = localX * cosT - localY * sinT
+        local rotY = localX * sinT + localY * cosT
+
+        local hatX = px + rotX
+        local hatY = py + jumpY + rotY + (p.hatOffsetY or 0.0)
+        local hatRot = p.hatTilt or tilt
+
+        -- Exact visual proportion in both Modo A (tight 34x24 PNG -> sc * 0.92) & Modo B (64x64 procedural)
+        local hatSc
+        if hatPair.isPlaceholder then
+            hatSc = (targetH * 0.58) / math.max(1, hh)
+        else
+            hatSc = sc * 0.92
+        end
+
+        -- Slight elastic squash/stretch echo on hat
+        local hatSx = hatSc * (1.0 + (sxMul - 1.0) * 0.45)
+        local hatSy = hatSc * (1.0 + (syMul - 1.0) * 0.45)
+
+        love.graphics.setColor(1, 1, 1, 1)
+        Game.stage:drawSpriteLit(
+            hatPair,
+            hatX,
+            hatY,
+            hatRot,
+            hatSx,
+            hatSy,
+            hw * 0.50,
+            hh * 0.82,
+            nil,
+            0.0,
+            nil,
+            litShader,
+            true
+        )
+    end
+end
+
+local function drawEnemySprite(enc, x, y, targetH, groove, litShader)
+    if not enc or not Game.assets then return end
+    local g = groove or { offsetX = 0, offsetY = 0, scaleX = 1, scaleY = 1, tilt = 0 }
+
+    local ex = x + (enc.offsetX or 0.0) + (g.offsetX or 0.0)
+    local ey = y + (enc.offsetY or 0.0)
+    local dy = g.offsetY or 0.0
+    local tilt = g.tilt or 0.0
+    local sxMul = g.scaleX or 1.0
+    local syMul = g.scaleY or 1.0
+
+    -- Soft contact shadow beneath rival feet
+    local airFrac = clamp(-dy / 22.0, 0.0, 1.0)
+    local shScale = 1.0 - airFrac * 0.25
+    love.graphics.setShader()
+    love.graphics.setColor(0.03, 0.04, 0.08, 0.36 * (1.0 - airFrac * 0.25))
+    love.graphics.ellipse("fill", ex, ey + 4, 46 * shScale, 15 * shScale)
+
+    local encPair = Game.assets.encounters and Game.assets.encounters[enc.id]
+    if encPair and encPair.diff then
+        local img = encPair.diff
+        local quad = nil
+        local fw, fh
+        if encPair.isSheet and encPair.quads then
+            local rowTable = encPair.quads[enc.sheetRow or 1] or encPair.quads[0]
+            if rowTable and #rowTable > 0 then
+                local colIdx = (math.floor(Game.elapsed * 5.0) % #rowTable) + 1
+                quad = rowTable[colIdx]
+                local _, _, qw, qh = quad:getViewport()
+                fw, fh = qw, qh
+            end
+        end
+        if not fw then
+            fw, fh = img:getDimensions()
+        end
+
+        local scaleFactor = (enc.scale or 2.55) / 2.55
+        local sc = (targetH * scaleFactor) / math.max(1, fh)
+        love.graphics.setColor(1, 1, 1, 1)
+        Game.stage:drawSpriteLit(
+            encPair,
+            ex,
+            ey + dy,
+            tilt,
+            sc * sxMul,
+            sc * syMul,
+            fw * 0.50,
+            fh * 0.92,
+            quad,
+            0.0,
+            nil,
+            litShader,
+            true
+        )
+    else
+        local c = enc.color or { 0.88, 0.36, 0.36 }
+        love.graphics.setColor(c[1], c[2], c[3], 1.0)
+        love.graphics.ellipse("fill", ex, ey - targetH * 0.45 + dy, 34, targetH * 0.45)
     end
 end
 
@@ -685,10 +994,37 @@ local function drawMusicNoteIcon(x, y, muted)
     end
 end
 
+local function drawSunLampIcon(x, y, presetId)
+    if presetId == "noche" then
+        love.graphics.setColor(0.76, 0.86, 1.0, 1)
+        love.graphics.circle("fill", x + 7, y + 8, 5.5)
+        love.graphics.setColor(0.08, 0.16, 0.36, 1)
+        love.graphics.circle("fill", x + 9.5, y + 6.5, 4.5)
+    elseif presetId == "atardecer" then
+        love.graphics.setColor(1.0, 0.68, 0.28, 1)
+        love.graphics.circle("fill", x + 7, y + 9, 5.0)
+        love.graphics.setColor(1.0, 0.88, 0.44, 0.9)
+        love.graphics.rectangle("fill", x + 1, y + 12, 12, 2)
+    elseif presetId == "dramatico" then
+        love.graphics.setColor(1.0, 0.90, 0.54, 1)
+        love.graphics.polygon("fill", x + 7, y + 2, x + 1, y + 14, x + 13, y + 14)
+    else
+        love.graphics.setColor(1.0, 0.88, 0.34, 1)
+        love.graphics.circle("fill", x + 7, y + 8, 4.2)
+        love.graphics.setLineWidth(1.5)
+        love.graphics.line(x + 7, y + 1, x + 7, y + 3)
+        love.graphics.line(x + 7, y + 13, x + 7, y + 15)
+        love.graphics.line(x + 0, y + 8, x + 2, y + 8)
+        love.graphics.line(x + 12, y + 8, x + 14, y + 8)
+        love.graphics.setLineWidth(1)
+    end
+end
+
 local function drawTopHud(w)
     local fBody = Game.fonts.body
     local fSmall = Game.fonts.small
     local audioStats = Game.audio and Game.audio:getStats() or { muted = false }
+    local preset, presetId = Game.stage:getLightingPreset()
 
     -- Left Context Chip (y = 12..44, strictly above minimap y = 58)
     local leftLabel
@@ -716,37 +1052,47 @@ local function drawTopHud(w)
 
     -- Right Compact Control Chips (y = 12..44)
     love.graphics.setFont(fSmall)
-    local f5Text = "[F5] Recargar"
-    local tabText = (Game.mode == "battle") and "[ESC/TAB] Mapa" or "[TAB] Combate"
-    local muteKey = Game.mode == "battle" and "[F8]" or "[M]"
-    local muteText = (audioStats.muted and "En silencio " or "Audio ") .. muteKey
+    local f5Text = "[F5]"
+    local tabText = Game.mode == "battle" and "[ESC/TAB] Mapa" or "[TAB] Combate"
+    local lightKey = Game.mode == "battle" and "F7" or "L"
+    local lightText = string.format("[%s] %s", lightKey, (preset and preset.label) or "Día")
+    local muteKey = Game.mode == "battle" and "F8" or "M"
+    local muteText = (audioStats.muted and "En silencio [" or "Audio [") .. muteKey .. "]"
 
-    local f5W = fSmall:getWidth(f5Text) + 20
+    local f5W = fSmall:getWidth(f5Text) + 18
     local tabW = fSmall:getWidth(tabText) + 20
-    local muteW = fSmall:getWidth(muteText) + 38
+    local lightW = fSmall:getWidth(lightText) + 34
+    local muteW = fSmall:getWidth(muteText) + 36
 
     local rx = w - 14
     -- [F5]
     rx = rx - f5W
     drawBevelBox(rx, 12, f5W, 32, { 0.08, 0.16, 0.36, 0.90 }, { 0.64, 0.78, 0.96, 0.86 })
     love.graphics.setColor(0.94, 0.96, 1.0, 1)
-    love.graphics.print(f5Text, rx + 10, 21)
+    love.graphics.print(f5Text, rx + 9, 21)
 
-    -- [TAB]
+    -- [TAB/ESC]
     rx = rx - 8 - tabW
     local tabFill = (Game.mode == "battle") and { 0.42, 0.22, 0.22, 0.92 } or { 0.14, 0.34, 0.56, 0.92 }
     drawBevelBox(rx, 12, tabW, 32, tabFill, { 0.76, 0.86, 0.98, 0.90 })
     love.graphics.setColor(0.99, 0.97, 0.88, 1)
     love.graphics.print(tabText, rx + 10, 21)
 
+    -- [L] Lighting Preset
+    rx = rx - 8 - lightW
+    drawBevelBox(rx, 12, lightW, 32, { 0.10, 0.17, 0.36, 0.92 }, { 0.74, 0.84, 0.98, 0.88 })
+    drawSunLampIcon(rx + 8, 20, presetId)
+    love.graphics.setColor(0.98, 0.95, 0.86, 1)
+    love.graphics.print(lightText, rx + 26, 21)
+
     -- [M] Music Note + Mute
     rx = rx - 8 - muteW
     drawBevelBox(rx, 12, muteW, 32, { 0.08, 0.16, 0.36, 0.90 }, { 0.64, 0.78, 0.96, 0.86 })
     drawMusicNoteIcon(rx + 8, 20, audioStats.muted)
     love.graphics.setColor(0.94, 0.96, 1.0, 1)
-    love.graphics.print(muteText, rx + 31, 21)
+    love.graphics.print(muteText, rx + 30, 21)
 
-    -- Center Toast (y = 14..42, never overlaps left or right chips)
+    -- Center Toast (y = 14..42, auto-sized cleanly)
     if Game.toastText then
         local tw = fSmall:getWidth(Game.toastText) + 24
         local tx = math.floor((lw + 24 + rx - tw) * 0.5)
@@ -759,7 +1105,7 @@ end
 
 local function drawExploreFooterHint(w, h)
     local fSmall = Game.fonts.small
-    local text = "WASD / Flechas: Caminar   |   Choca con un rival o [TAB] para combatir"
+    local text = "WASD / Flechas: Caminar   |   [L] Iluminación   |   Choca con un rival o [TAB] para combatir"
     love.graphics.setFont(fSmall)
     local bw = fSmall:getWidth(text) + 24
     local bx = w - bw - 14
@@ -807,9 +1153,9 @@ local function drawSummon(prop, x, y, size)
     love.graphics.draw(img, x, y, 0, scale, scale, iw / 2, ih / 2)
 end
 
-local function drawBattleOverlay(w, h, enc)
+local function drawBattleOverlay(w, h, enc, anchors)
     local b, f = Game.battle, Game.fonts
-    local res, cx, ground = b.result, w * 0.72, h * 0.65
+    local res, cx, ground = b.result, anchors.enemyX, anchors.enemyY
     local isOver = b.phase == "victory" or b.phase == "defeat"
 
     if res and res.approved then
@@ -851,17 +1197,26 @@ local function drawBattleOverlay(w, h, enc)
         label(f.small, ivory, states, cx - sw / 2, ey + 46, sw, "center")
     end
 
-    local y, fieldX = h - 86, 196
+    local y, fieldX = h - 86, 254
     drawBevelBox(14, y, w - 28, 78, navy, edge)
-    label(f.heading, ivory, "Pudú", 30, y + 10, 60)
-    label(f.small, ivory, ("%d / 100 PV"):format(b.hp), 86, y + 13, 88, "right")
-    hpBar(30, y + 37, 144, b.hp, 100, {0.40, 0.84, 0.63})
-    label(f.small, edge, ("Turno %d"):format(isOver and b.turn - 1 or b.turn), 30, y + 52, 144)
+    local portrait = Game.assets.portraits[b.phase == "defeat" and "shocked" or "happy"]
+    if portrait then
+        local pw, ph = portrait:getDimensions()
+        local scale = 50 / math.max(pw, ph)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(portrait, 55, y + 39, 0, scale, scale, pw / 2, ph / 2)
+    end
+    label(f.heading, ivory, "Pudú", 88, y + 10, 60)
+    label(f.small, ivory, ("%d / 100 PV"):format(b.hp), 144, y + 13, 88, "right")
+    hpBar(88, y + 37, 144, b.hp, 100, {0.40, 0.84, 0.63})
+    label(f.small, edge, ("Turno %d"):format(isOver and b.turn - 1 or b.turn), 88, y + 52, 144)
     local fieldW = w - fieldX - 30
     local title = isOver and (b.phase == "victory" and "¡Camino despejado!" or "El pudú necesita un respiro") or "Tu invocación"
     label(f.heading, gold, title, fieldX, y + 8, fieldW)
     if isOver then
         label(f.body, ivory, "Pulsa Enter para volver al mapa.", fieldX, y + 42, fieldW)
+    elseif Game.battlePhase == "battle_enter" then
+        label(f.body, ivory, "Entrando a la arena...", fieldX, y + 42, fieldW)
     elseif b.phase == "waiting" then
         label(f.body, ivory, "El juez está leyendo tu conjuro...", fieldX, y + 43, fieldW)
     else
@@ -901,11 +1256,29 @@ function love.load(args)
 
     reloadAssets(false)
     Game.audio = Audio.new(false)
+    Game.shaders = Shaders.load()
+    Game.beatSync = BeatSync.new(139.20)
+
+    local shaderWarnings = Shaders.getWarnings(Game.shaders)
+    if shaderWarnings and #shaderWarnings > 0 then
+        for _, warnMsg in ipairs(shaderWarnings) do
+            io.stderr:write("[PUDU FANTASY SHADER WARN] " .. tostring(warnMsg) .. "\n")
+        end
+        io.stderr:flush()
+    end
 
     Game.stage = StageRenderer.new()
+    Game.stage:setShaders(Game.shaders)
+    Game.stage:setLightingPreset(Game.cli.lighting)
+    if Game.cli.disableBloom then
+        Game.stage:setBloomEnabled(false)
+    end
     Game.stage:buildOverworldDecor(Encounters.LIST)
 
-    -- Initial Pudu position & camera snap
+    local w, h = love.graphics.getDimensions()
+    ensureWorldCanvas(w, h)
+
+    -- Initial Pudu overworld position & camera snap
     if Game.cli.biome then
         local biome = Encounters.getBiome(Game.cli.biome)
         Game.puduU = biome.spawnU or 3.8
@@ -930,8 +1303,16 @@ function love.load(args)
         Game.transitionPreview = Game.cli.transitionPreview
         Game.alertEncounterIdx = Game.encounterIndex
         if Game.transitionPreview >= 0.50 then
-            Game.mode = "battle"
+            enterBattleArenaImmediate(Game.encounterIndex, true, 1.0)
+        else
+            syncMusicForMode()
         end
+    elseif Game.mode == "battle" or Game.cli.battleEnterPreview then
+        -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-dash
+        local seedT = Game.cli.battleEnterPreview and 0.30 or 0.0
+        enterBattleArenaImmediate(Game.encounterIndex, false, seedT)
+    else
+        syncMusicForMode()
     end
 
     Game.battleIn, Game.battleOut = love.thread.getChannel("battle_in"), love.thread.getChannel("battle_out")
@@ -941,9 +1322,11 @@ function love.load(args)
     Game.battleWorker:start()
     Game.spriteWorker:start()
     if not Game.cli.mock then Game.battleIn:push({ cmd = "health" }) end
-    if Game.mode == "battle" then beginBattle() end
     love.keyboard.setKeyRepeat(true)
-    syncMusicForMode()
+end
+
+function love.resize(w, h)
+    ensureWorldCanvas(w, h)
 end
 
 function love.update(dt)
@@ -952,7 +1335,8 @@ function love.update(dt)
     Game.cliElapsed = Game.cliElapsed + dt
     pollWorkers()
     local b = Game.battle
-    if b and b.phase == "input" and Game.transitionState == "none" and not Game.transitionPreview then
+    if b and b.phase == "input" and Game.battlePhase == "player_turn"
+        and Game.transitionState == "none" and not Game.transitionPreview then
         local auto = Game.demo and Game.demo[b.turn] or Game.cli.autoPrompt
         if auto then
             Game.cli.autoPrompt = nil
@@ -967,11 +1351,19 @@ function love.update(dt)
         end
     end
 
+    -- Always update BeatSync PLL against real audio clock (stays locked even when muted!)
+    if Game.beatSync then
+        local trackState = Game.audio and Game.audio:getTrackState() or nil
+        Game.beatSync:update(safeDt, trackState)
+    end
+
     if Game.transitionPreview == nil then
         if Game.transitionState ~= "none" then
             updateTransition(safeDt)
         elseif Game.mode == "explore" then
             updateExplore(safeDt)
+        elseif Game.mode == "battle" then
+            updateBattle(safeDt)
         end
     end
 
@@ -988,9 +1380,11 @@ function love.update(dt)
             error("La secuencia no completó " .. Game.demoId)
         end
         if Game.cli.printPerf then
+            local bloomOn = (not Game.cli.disableBloom) and (Game.shaders and Game.shaders.post ~= nil)
             io.stdout:write(string.format(
-                "[PERF] fps=%d deferred=false gi=false bloom=false drawcalls=%d\n",
+                "[PERF] fps=%d deferred=false gi=false bloom=%s drawcalls=%d\n",
                 love.timer.getFPS(),
+                tostring(bloomOn),
                 Game.lastDrawCalls
             ))
             io.stdout:flush()
@@ -1001,7 +1395,7 @@ end
 
 local function appendInput(text)
     local b = Game.battle
-    if not b or b.phase ~= "input" or Game.transitionState ~= "none" then return end
+    if not b or b.phase ~= "input" or Game.battlePhase ~= "player_turn" or Game.transitionState ~= "none" then return end
     local input = b.input .. text:gsub("[%c]+", " ")
     if not utf8.len(input) then return end
     local limit = utf8.offset(input, 281)
@@ -1023,6 +1417,10 @@ function love.keypressed(key, scancode, isrepeat)
             showToast(muted and "Audio silenciado (reloj BPM activo)" or "Audio activado", 1.8)
         end
         return
+    elseif key == "f7" or (key == "l" and Game.mode == "explore") then
+        local _, preset = Game.stage:cycleLightingPreset()
+        showToast("Iluminación: " .. ((preset and preset.label) or "Día"), 1.8)
+        return
     elseif key == "f12" then
         local out = string.format("screenshots/manual_%d.png", os.time())
         saveScreenshotTo(out)
@@ -1036,6 +1434,12 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     local b = Game.battle
+    local num = Game.mode == "battle" and tonumber(key)
+    if not isrepeat and num and num >= 1 and num <= Encounters.count()
+        and love.keyboard.isDown("lctrl", "rctrl") then
+        enterBattleArenaImmediate(num, false, 0.0)
+        return
+    end
     if b and (key == "return" or key == "kpenter") and not isrepeat then
         if b.phase == "victory" or b.phase == "defeat" then triggerReturnToExplore()
         else submitPrompt(b.input) end
@@ -1063,8 +1467,30 @@ end
 function love.draw()
     Game.framesDrawn = Game.framesDrawn + 1
     local w, h = love.graphics.getDimensions()
+    local canvas = ensureWorldCanvas(w, h)
+
+    local battleEnc = nil
+    local battleTheme = nil
+    local battleAnchors = nil
+    local battleSlideOff = 0.0
+
+    -- 1. Render HD-2D World (Overworld or Battle Arena + Atmospheric Lighting) into worldCanvas
+    if canvas then
+        love.graphics.setCanvas(canvas)
+        love.graphics.clear(0.05, 0.07, 0.14, 1.0)
+    end
 
     if Game.mode == "explore" then
+        local biomeId = StageRenderer.getBiomeAt(Game.stage.camU)
+        local biome = Encounters.getBiome(biomeId)
+        local theme = Encounters.getTheme(biome.stageDefault)
+        local lights = Game.stage:collectZoneLights(w, h, Game.elapsed)
+        local litShader = Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights)
+        local overPose = Game.beatSync and Game.beatSync:getPuduDancePose(
+            Game.puduMoving and "walk" or "overworld_idle",
+            Game.puduFacingRow
+        )
+
         Game.stage:drawOverworld({
             w = w,
             h = h,
@@ -1077,10 +1503,58 @@ function love.draw()
             puduFacingRow = Game.puduFacingRow,
             puduAnimCol = Game.puduAnimCol,
             puduBobY = Game.puduBobY,
+            puduHatOffsetY = overPose and overPose.hatOffsetY or 0.0,
+            puduHatTilt = overPose and overPose.hatTilt or 0.0,
             alertEncounterIdx = Game.alertEncounterIdx,
             alertTimer = (Game.transitionState == "alert") and Game.transitionTimer or 0.25,
             fonts = Game.fonts,
+            litShader = litShader,
         })
+        Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
+    else
+        battleEnc = Encounters.getByIndex(Game.encounterIndex) or Encounters.LIST[1]
+        battleTheme = Encounters.getTheme(battleEnc.stage)
+        local lights = Game.stage:collectBattleLights(battleEnc, w, h, Game.elapsed)
+        local litShader = Game.stage:configureLitShader(battleTheme, w, h, Game.elapsed, lights)
+        local beatPulse = Game.beatSync and Game.beatSync:getBeatPulse() or 0.0
+
+        battleAnchors = Game.stage:drawBattleArena(
+            battleEnc,
+            Encounters.STAGE_THEMES,
+            Game.assets,
+            beatPulse,
+            w,
+            h,
+            Game.elapsed,
+            litShader
+        )
+
+        if Game.battlePhase == "battle_enter" then
+            battleSlideOff = (1.0 - smoothstep01(Game.battleEnterT)) * BATTLE_ENTER_SLIDE_PX
+        end
+
+        local puduPose = Game.beatSync and Game.beatSync:getPuduDancePose(Game.puduAnimMode) or nil
+        local enemyGroove = Game.beatSync and Game.beatSync:getEnemyGroove(Game.enemyReaction) or nil
+
+        drawPuduSprite(battleAnchors.puduX - battleSlideOff, battleAnchors.puduY, 126.0, puduPose, litShader)
+        drawEnemySprite(battleEnc, battleAnchors.enemyX + battleSlideOff, battleAnchors.enemyY, 152.0, enemyGroove, litShader)
+
+        Game.stage:drawBattleArenaForeground(battleEnc, Game.assets, w, h, Game.elapsed, litShader)
+        Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
+    end
+
+    if canvas then
+        love.graphics.setCanvas()
+        -- 2. Post-processed world output (safe bloom + vignette)
+        Game.stage:drawPostProcessed(canvas, w, h)
+    end
+
+    -- 3. Razor-sharp UI Layer (drawn AFTER post-processing -> zero bloom on text!)
+    love.graphics.setShader()
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(1, 1, 1, 1)
+
+    if Game.mode == "explore" then
         drawTopHud(w)
         Game.stage:drawOverworldMinimap(
             Game.puduU,
@@ -1093,22 +1567,11 @@ function love.draw()
         )
         drawExploreFooterHint(w, h)
     else
-        local enc = Encounters.getByIndex(Game.encounterIndex) or Encounters.LIST[1]
-        local theme = Encounters.getTheme(enc.stage)
-        Game.stage:drawBattlePlaceholderStage({
-            w = w,
-            h = h,
-            time = Game.elapsed,
-            encounter = enc,
-            theme = theme,
-            assets = Game.assets,
-            drawActors = true,
-        })
         drawTopHud(w)
-        drawBattleOverlay(w, h, enc)
+        drawBattleOverlay(w, h, battleEnc, battleAnchors)
     end
 
-    -- JRPG Battle Transition Overlay (live or --transition-preview)
+    -- 4. JRPG Battle Transition Overlay (live or --transition-preview)
     if Game.transitionPreview ~= nil then
         Game.stage:drawBattleTransition(Game.transitionPreview, w, h)
     elseif Game.transitionState == "to_battle" then
