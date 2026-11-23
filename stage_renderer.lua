@@ -1,8 +1,9 @@
 -- stage_renderer.lua
 -- Overworld isometric diagonal (NE / up-right) renderer, 3D irregular terrain,
 -- calm room-snapped camera, biome landmarks/decor (Modo A & Modo B seamless),
--- diagonal minimap, JRPG battle transition, and clean battle placeholder stage.
--- LÖVE2D 11.5 (LuaJIT) — Zero Unicode tofu (R2), zero per-frame GPU allocations.
+-- diagonal minimap, JRPG battle transition, dedicated side-view HD-2D Battle Arena,
+-- 4 lighting presets, dynamic point lights, atmospheric halos/sunbeams, and post-processing.
+-- LÖVE2D 11.5 (LuaJIT) — Zero Unicode tofu (R2), safeSend/hasUniform (R4), zero per-frame GPU allocations.
 
 local StageRenderer = {}
 StageRenderer.__index = StageRenderer
@@ -16,6 +17,50 @@ local sin = math.sin
 local cos = math.cos
 local sqrt = math.sqrt
 local pi = math.pi
+local unpack = table.unpack or unpack
+
+--------------------------------------------------------------------------------
+-- 0. Rule R4 Safe GLSL Uniform Dispatch (Cached hasUniform, ZERO raw :send)
+--------------------------------------------------------------------------------
+
+local _uniformCache = setmetatable({}, { __mode = "k" })
+
+local function hasUniformCached(shader, name)
+    if not shader or type(name) ~= "string" then
+        return false
+    end
+    local cache = _uniformCache[shader]
+    if not cache then
+        cache = {}
+        _uniformCache[shader] = cache
+    end
+    local known = cache[name]
+    if known == nil then
+        local ok, exists = pcall(shader.hasUniform, shader, name)
+        known = (ok and exists == true)
+        cache[name] = known
+    end
+    return known
+end
+
+local function safeSend(shader, name, ...)
+    if select("#", ...) == 0 or select(1, ...) == nil then
+        return false
+    end
+    if hasUniformCached(shader, name) then
+        local ok = pcall(shader.send, shader, name, ...)
+        return ok == true
+    end
+    return false
+end
+
+local function normalizeVec3(x, y, z)
+    local len = sqrt(x * x + y * y + z * z)
+    if len <= 1e-6 then
+        return { 0.0, -0.707107, 0.707107 }
+    end
+    return { x / len, y / len, z / len }
+end
 
 --------------------------------------------------------------------------------
 -- 1. Canonical Constants & World Geometry
@@ -45,14 +90,14 @@ StageRenderer.SIDE_ALCOVES = {
 -- Wizard hat head-anchor offsets (in 64x64 sprite pixels relative to bottom-center foot anchor)
 -- Rows: 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
 StageRenderer.HAT_HEAD_OFFSETS = {
-    [0] = { x = 0.0,  y = -38.0 },
-    [1] = { x = 5.0,  y = -38.0 },
-    [2] = { x = 8.5,  y = -39.0 },
-    [3] = { x = 5.0,  y = -39.0 },
-    [4] = { x = 0.0,  y = -39.0 },
-    [5] = { x = -5.0, y = -39.0 },
-    [6] = { x = -8.5, y = -39.0 },
-    [7] = { x = -5.0, y = -38.0 },
+    [0] = { x = 0.0,  y = -40.0 },
+    [1] = { x = 5.0,  y = -40.0 },
+    [2] = { x = 8.5,  y = -41.0 },
+    [3] = { x = 5.0,  y = -41.0 },
+    [4] = { x = 0.0,  y = -41.0 },
+    [5] = { x = -5.0, y = -41.0 },
+    [6] = { x = -8.5, y = -41.0 },
+    [7] = { x = -5.0, y = -40.0 },
 }
 
 -- Biome visual palette & tile mapping (used for 3D skirts, minimap, and Modo B fallback)
@@ -129,6 +174,219 @@ StageRenderer.BIOME_VISUALS = {
         cliffBand = { 0.64, 0.68, 0.80 },
         miniCol = { 0.56, 0.46, 0.78 },
         hazeCol = { 0.92, 0.80, 0.68 },
+    },
+}
+
+--------------------------------------------------------------------------------
+-- 1B. HD-2D Lighting Presets, Stage Tile Map & Battle Arena Decor (8 Stages)
+--------------------------------------------------------------------------------
+
+StageRenderer.LIGHTING_ORDER = { "dia", "atardecer", "noche", "dramatico" }
+
+StageRenderer.LIGHTING_PRESETS = {
+    dia = {
+        id = "dia",
+        label = "Día Soleado",
+        ambientMul = { 0.72, 0.76, 0.84 },
+        ambientAdd = { 0.07, 0.07, 0.06 },
+        sunEnergy = 1.15,
+        sunColor = { 1.00, 0.96, 0.86 },
+        sunDir = normalizeVec3(-0.46, -0.58, 0.67),
+        skyTint = { 1.00, 1.00, 1.00 },
+        skyDarken = 0.0,
+        vignette = 0.14,
+        bloomStrength = 0.14,
+        beamStrength = 0.24,
+        beamColor = { 1.00, 0.96, 0.82 },
+        lanternBoost = 0.25,
+        showStars = false,
+        isMoon = false,
+        dofEnabled = 0.0,
+    },
+    atardecer = {
+        id = "atardecer",
+        label = "Atardecer Dorado",
+        ambientMul = { 0.74, 0.56, 0.52 },
+        ambientAdd = { 0.08, 0.03, 0.01 },
+        sunEnergy = 1.25,
+        sunColor = { 1.00, 0.68, 0.34 },
+        sunDir = normalizeVec3(-0.70, -0.36, 0.62),
+        skyTint = { 1.04, 0.72, 0.56 },
+        skyDarken = 0.14,
+        vignette = 0.22,
+        bloomStrength = 0.20,
+        beamStrength = 0.56,
+        beamColor = { 1.00, 0.76, 0.38 },
+        lanternBoost = 0.72,
+        showStars = false,
+        isMoon = false,
+        dofEnabled = 0.0,
+    },
+    noche = {
+        id = "noche",
+        label = "Noche Neón",
+        ambientMul = { 0.44, 0.52, 0.76 },
+        ambientAdd = { 0.05, 0.07, 0.12 },
+        sunEnergy = 0.42,
+        sunColor = { 0.58, 0.74, 1.00 },
+        sunDir = normalizeVec3(0.36, -0.64, 0.68),
+        skyTint = { 0.26, 0.34, 0.58 },
+        skyDarken = 0.52,
+        vignette = 0.30,
+        bloomStrength = 0.22,
+        beamStrength = 0.0,
+        beamColor = { 0.58, 0.76, 1.00 },
+        lanternBoost = 1.35,
+        showStars = true,
+        isMoon = true,
+        dofEnabled = 0.0,
+    },
+    dramatico = {
+        id = "dramatico",
+        label = "Foco Teatral",
+        ambientMul = { 0.36, 0.38, 0.52 },
+        ambientAdd = { 0.03, 0.03, 0.05 },
+        sunEnergy = 1.28,
+        sunColor = { 1.00, 0.90, 0.68 },
+        sunDir = normalizeVec3(-0.28, -0.82, 0.50),
+        skyTint = { 0.52, 0.48, 0.66 },
+        skyDarken = 0.38,
+        vignette = 0.36,
+        bloomStrength = 0.22,
+        beamStrength = 0.62,
+        beamColor = { 1.00, 0.92, 0.66 },
+        lanternBoost = 1.10,
+        showStars = false,
+        isMoon = false,
+        dofEnabled = 0.0,
+    },
+}
+
+local LIGHTING_ALIASES = {
+    dia = "dia",
+    ["día"] = "dia",
+    atardecer = "atardecer",
+    noche = "noche",
+    dramatico = "dramatico",
+    ["dramático"] = "dramatico",
+    teatral = "dramatico",
+}
+
+StageRenderer.THEME_TILES = {
+    plaza   = { floor = "grass_floor",  path = "stone_floor" },
+    bosque  = { floor = "grass_floor",  path = "stone_floor" },
+    mirador = { floor = "desert_floor", path = "stone_floor" },
+    vereda  = { floor = "desert_floor", path = "stone_floor" },
+    muelle  = { floor = "coast_floor",  path = "stone_floor" },
+    pantano = { floor = "coast_floor",  path = "stone_floor" },
+    esquina = { floor = "stone_floor",  path = "mountain_floor" },
+    oficina = { floor = "stone_floor",  path = "mountain_floor" },
+}
+
+-- Curated HD-2D side-view battle arena framing props for all 8 stages.
+-- Composition rule: Pudú at (0.28w, 0.65h) and Rival at (0.72w, 0.65h) stay 100% unobstructed.
+-- All non-fg props are placed along the far horizon (yFrac <= 0.50) or outer flanks (xFrac <= 0.16 or >= 0.84).
+-- Foreground corner framing props (layer = "fg") sit strictly at xFrac = 0.03 and 0.97, yFrac = 0.84.
+StageRenderer.BATTLE_STAGE_DECOR = {
+    plaza = {
+        { kind = "stone_pedestal",  xFrac = 0.50, yFrac = 0.46, scale = 0.72, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.09, yFrac = 0.48, scale = 0.96, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.16, yFrac = 0.48, scale = 0.82, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.84, yFrac = 0.48, scale = 0.82, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.91, yFrac = 0.48, scale = 0.98, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.08, yFrac = 0.58, scale = 1.06, biome = "bosque" },
+        { kind = "lantern_post",    xFrac = 0.92, yFrac = 0.58, scale = 1.06, biome = "bosque" },
+        { kind = "copihue",         xFrac = 0.13, yFrac = 0.62, scale = 0.96, biome = "bosque" },
+        { kind = "valdivian_shrub", xFrac = 0.87, yFrac = 0.62, scale = 0.96, biome = "bosque" },
+        { kind = "copihue",         xFrac = 0.03, yFrac = 0.84, scale = 1.08, biome = "bosque", layer = "fg" },
+        { kind = "valdivian_fern",  xFrac = 0.97, yFrac = 0.84, scale = 1.08, biome = "bosque", layer = "fg" },
+    },
+    bosque = {
+        { kind = "rewe_totem",      xFrac = 0.45, yFrac = 0.46, scale = 0.78, biome = "bosque" },
+        { kind = "orb_shrine",      xFrac = 0.56, yFrac = 0.47, scale = 0.74, biome = "bosque" },
+        { kind = "ancient_tree",    xFrac = 0.12, yFrac = 0.48, scale = 1.04, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.89, yFrac = 0.48, scale = 1.06, biome = "bosque" },
+        { kind = "araucaria_tree",  xFrac = 0.06, yFrac = 0.58, scale = 1.16, biome = "bosque" },
+        { kind = "ancient_tree",    xFrac = 0.94, yFrac = 0.58, scale = 1.12, biome = "bosque" },
+        { kind = "mossy_boulder",   xFrac = 0.14, yFrac = 0.61, scale = 0.92, biome = "bosque" },
+        { kind = "valdivian_fern",  xFrac = 0.86, yFrac = 0.62, scale = 1.00, biome = "bosque" },
+        { kind = "valdivian_fern",  xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "bosque", layer = "fg" },
+        { kind = "copihue",         xFrac = 0.97, yFrac = 0.84, scale = 1.10, biome = "bosque", layer = "fg" },
+    },
+    mirador = {
+        { kind = "apacheta_sundial", xFrac = 0.50, yFrac = 0.46, scale = 0.82, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.12, yFrac = 0.47, scale = 0.94, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.84, yFrac = 0.48, scale = 0.86, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.91, yFrac = 0.48, scale = 0.92, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.07, yFrac = 0.58, scale = 1.12, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.93, yFrac = 0.58, scale = 1.04, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.14, yFrac = 0.61, scale = 0.98, biome = "desierto" },
+        { kind = "mountain_crystal", xFrac = 0.86, yFrac = 0.61, scale = 1.00, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.03, yFrac = 0.84, scale = 1.02, biome = "desierto", layer = "fg" },
+        { kind = "mountain_crystal", xFrac = 0.97, yFrac = 0.84, scale = 1.06, biome = "desierto", layer = "fg" },
+    },
+    vereda = {
+        { kind = "moai_relic",       xFrac = 0.51, yFrac = 0.46, scale = 0.82, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.10, yFrac = 0.48, scale = 0.94, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.91, yFrac = 0.48, scale = 0.94, biome = "desierto" },
+        { kind = "lantern_post",     xFrac = 0.08, yFrac = 0.58, scale = 1.06, biome = "desierto" },
+        { kind = "desert_cactus",    xFrac = 0.92, yFrac = 0.59, scale = 1.08, biome = "desierto" },
+        { kind = "apacheta_sundial", xFrac = 0.14, yFrac = 0.62, scale = 0.92, biome = "desierto" },
+        { kind = "rock_monolith",    xFrac = 0.86, yFrac = 0.62, scale = 0.88, biome = "desierto" },
+        { kind = "apacheta_sundial", xFrac = 0.03, yFrac = 0.84, scale = 1.00, biome = "desierto", layer = "fg" },
+        { kind = "desert_cactus",    xFrac = 0.97, yFrac = 0.84, scale = 1.00, biome = "desierto", layer = "fg" },
+    },
+    muelle = {
+        { kind = "pincoya_shrine",   xFrac = 0.56, yFrac = 0.46, scale = 0.72, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.86, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.82, yFrac = 0.48, scale = 0.86, biome = "costa" },
+        { kind = "coast_lighthouse", xFrac = 0.92, yFrac = 0.48, scale = 0.98, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.07, yFrac = 0.59, scale = 1.08, biome = "costa" },
+        { kind = "lantern_post",     xFrac = 0.87, yFrac = 0.59, scale = 1.06, biome = "costa" },
+        { kind = "mossy_boulder",    xFrac = 0.14, yFrac = 0.63, scale = 0.84, biome = "costa" },
+        { kind = "valdivian_shrub",  xFrac = 0.94, yFrac = 0.63, scale = 0.84, biome = "costa" },
+        { kind = "stanchion",        xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
+        { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
+    },
+    pantano = {
+        { kind = "pincoya_shrine",   xFrac = 0.50, yFrac = 0.46, scale = 0.80, biome = "costa" },
+        { kind = "ancient_tree",     xFrac = 0.09, yFrac = 0.48, scale = 0.98, biome = "costa" },
+        { kind = "valdivian_fern",   xFrac = 0.60, yFrac = 0.48, scale = 0.86, biome = "costa" },
+        { kind = "ancient_tree",     xFrac = 0.91, yFrac = 0.48, scale = 0.98, biome = "costa" },
+        { kind = "valdivian_fern",   xFrac = 0.08, yFrac = 0.58, scale = 1.10, biome = "costa" },
+        { kind = "mossy_boulder",    xFrac = 0.92, yFrac = 0.58, scale = 1.04, biome = "costa" },
+        { kind = "lily_pad",         xFrac = 0.14, yFrac = 0.63, scale = 1.05, biome = "costa" },
+        { kind = "lily_pad",         xFrac = 0.86, yFrac = 0.63, scale = 1.05, biome = "costa" },
+        { kind = "valdivian_fern",   xFrac = 0.03, yFrac = 0.84, scale = 1.12, biome = "costa", layer = "fg" },
+        { kind = "lily_pad",         xFrac = 0.97, yFrac = 0.84, scale = 1.08, biome = "costa", layer = "fg" },
+    },
+    esquina = {
+        { kind = "stone_pedestal",   xFrac = 0.50, yFrac = 0.46, scale = 0.74, biome = "ciudad" },
+        { kind = "biome_arch",       xFrac = 0.10, yFrac = 0.48, scale = 0.90, biome = "ciudad", extra = "harbor" },
+        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
+        { kind = "biome_arch",       xFrac = 0.90, yFrac = 0.48, scale = 0.90, biome = "ciudad", extra = "harbor" },
+        { kind = "lantern_post",     xFrac = 0.08, yFrac = 0.59, scale = 1.08, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.92, yFrac = 0.59, scale = 1.08, biome = "ciudad" },
+        { kind = "stone_pedestal",   xFrac = 0.86, yFrac = 0.62, scale = 0.88, biome = "ciudad" },
+        { kind = "debris_pile",      xFrac = 0.14, yFrac = 0.63, scale = 0.90, biome = "ciudad" },
+        { kind = "debris_pile",      xFrac = 0.03, yFrac = 0.84, scale = 1.00, biome = "ciudad", layer = "fg" },
+        { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.12, biome = "ciudad", layer = "fg" },
+    },
+    oficina = {
+        { kind = "orb_shrine",       xFrac = 0.50, yFrac = 0.46, scale = 0.84, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.10, yFrac = 0.48, scale = 1.04, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.16, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
+        { kind = "lantern_post",     xFrac = 0.84, yFrac = 0.48, scale = 0.84, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.90, yFrac = 0.48, scale = 1.04, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.06, yFrac = 0.60, scale = 1.16, biome = "ciudad" },
+        { kind = "office_column",    xFrac = 0.94, yFrac = 0.60, scale = 1.16, biome = "ciudad" },
+        { kind = "stanchion",        xFrac = 0.14, yFrac = 0.62, scale = 1.04, biome = "ciudad" },
+        { kind = "stanchion",        xFrac = 0.86, yFrac = 0.62, scale = 1.04, biome = "ciudad" },
+        { kind = "stanchion",        xFrac = 0.03, yFrac = 0.84, scale = 1.14, biome = "ciudad", layer = "fg" },
+        { kind = "stanchion",        xFrac = 0.97, yFrac = 0.84, scale = 1.14, biome = "ciudad", layer = "fg" },
     },
 }
 
@@ -649,6 +907,17 @@ end
 
 function StageRenderer.new()
     local cu, cv, idx = StageRenderer.roomCenter(3.8)
+    local lightPosBuf = {}
+    local lightColBuf = {}
+    local lightsPool = {}
+    for i = 1, 10 do
+        lightPosBuf[i] = { 0.0, 0.0, 1.0, 0.0 }
+        lightColBuf[i] = { 0.0, 0.0, 0.0, 0.0 }
+        lightsPool[i] = {
+            x = 0.0, y = 0.0, radius = 120.0, height = 60.0,
+            r = 1.0, g = 0.8, b = 0.4, energy = 0.0, haloScale = 0.75,
+        }
+    end
     local self = setmetatable({
         camZoom = 0.72,
         camPanDuration = 0.65,
@@ -663,12 +932,265 @@ function StageRenderer.new()
         overworldDecor = {},
         _decorBuilt = false,
         _tileMesh = nil,
+        _floorBandMesh = nil,
+        _unitWhite = nil,
         _elevCache = {},
         _drawList = {},
         _drawPool = {},
         _drawCount = 0,
+        -- Phase 2 HD-2D Lighting & Shader State
+        lightingPreset = "dia",
+        shaders = nil,
+        useLitShader = true,
+        disableBloom = false,
+        _ambBuf = { 0.5, 0.5, 0.6 },
+        _sunDirBuf = { -0.46, -0.58, 0.67 },
+        _sunColBuf = { 1.0, 0.96, 0.86 },
+        _screenSizeBuf = { 1280.0, 720.0 },
+        _texelSizeBuf = { 1.0 / 1280.0, 1.0 / 720.0 },
+        _emissiveColBuf = { 1.0, 1.0, 1.0 },
+        _lightPosBuf = lightPosBuf,
+        _lightColBuf = lightColBuf,
+        _lightsList = {},
+        _lightsPool = lightsPool,
+        _lightsCount = 0,
     }, StageRenderer)
     return self
+end
+
+--------------------------------------------------------------------------------
+-- 4B. HD-2D Lighting Presets, Shader Config & Lit Sprite Pipeline
+--------------------------------------------------------------------------------
+
+function StageRenderer:setShaders(shaderSet)
+    self.shaders = shaderSet
+end
+
+function StageRenderer:setLightingPreset(presetId)
+    local raw = (type(presetId) == "string") and presetId:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
+    local resolved = LIGHTING_ALIASES[raw]
+    if resolved and StageRenderer.LIGHTING_PRESETS[resolved] then
+        self.lightingPreset = resolved
+    elseif raw == "" then
+        self.lightingPreset = "dia"
+    end
+    return self.lightingPreset, StageRenderer.LIGHTING_PRESETS[self.lightingPreset]
+end
+
+function StageRenderer:cycleLightingPreset()
+    local order = StageRenderer.LIGHTING_ORDER
+    local cur = self.lightingPreset or "dia"
+    local nextIdx = 1
+    for i = 1, #order do
+        if order[i] == cur then
+            nextIdx = (i % #order) + 1
+            break
+        end
+    end
+    self.lightingPreset = order[nextIdx]
+    return self.lightingPreset, StageRenderer.LIGHTING_PRESETS[self.lightingPreset]
+end
+
+function StageRenderer:getLightingPreset()
+    local id = self.lightingPreset or "dia"
+    local preset = StageRenderer.LIGHTING_PRESETS[id] or StageRenderer.LIGHTING_PRESETS.dia
+    return preset, preset.id
+end
+
+function StageRenderer:setBloomEnabled(enabled)
+    self.disableBloom = (enabled == false)
+end
+
+function StageRenderer:_getUnitWhite()
+    if not self._unitWhite then
+        local data = love.image.newImageData(2, 2)
+        for y = 0, 1 do
+            for x = 0, 1 do
+                data:setPixel(x, y, 1, 1, 1, 1)
+            end
+        end
+        local img = love.graphics.newImage(data)
+        img:setFilter("nearest", "nearest")
+        self._unitWhite = img
+    end
+    return self._unitWhite
+end
+
+function StageRenderer:_ensureFloorBandMesh()
+    if not self._floorBandMesh then
+        self._floorBandMesh = love.graphics.newMesh(4, "fan", "stream")
+    end
+    return self._floorBandMesh
+end
+
+function StageRenderer:configureLitShader(theme, screenW, screenH, time, extraLights, litShaderOpt)
+    local litShader = litShaderOpt or (self.shaders and self.shaders.lit)
+    if not litShader or not self.useLitShader then
+        return nil
+    end
+
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local sw = screenW or love.graphics.getWidth()
+    local sh = screenH or love.graphics.getHeight()
+
+    local themeTbl = nil
+    if type(theme) == "table" then
+        themeTbl = theme
+    elseif type(theme) == "string" then
+        local bId = STAGE_TO_BIOME[theme] or theme
+        themeTbl = DEFAULT_SKY_THEMES[bId] or DEFAULT_SKY_THEMES.bosque
+    end
+
+    -- Harmonize biome ambient with active preset (high readability across dia/atardecer/noche/dramatico)
+    local tAmb = (themeTbl and themeTbl.ambientColor) or { 0.48, 0.52, 0.60 }
+    local baseR = lerp(1.0, tAmb[1] or 0.48, 0.52)
+    local baseG = lerp(1.0, tAmb[2] or 0.52, 0.52)
+    local baseB = lerp(1.0, tAmb[3] or 0.60, 0.52)
+
+    local mul = preset.ambientMul
+    local add = preset.ambientAdd or { 0.0, 0.0, 0.0 }
+    local ambBuf = self._ambBuf
+    ambBuf[1] = clamp(baseR * mul[1] + add[1], 0.08, 1.15)
+    ambBuf[2] = clamp(baseG * mul[2] + add[2], 0.08, 1.15)
+    ambBuf[3] = clamp(baseB * mul[3] + add[3], 0.10, 1.20)
+
+    -- Normalized sun/moon direction (preset angle dominates in atardecer/noche/dramatico, blends with biome in dia)
+    local pDir = preset.sunDir
+    local tDir = themeTbl and themeTbl.sunDir
+    local dx, dy, dz
+    if self.lightingPreset == "dia" and tDir then
+        dx = lerp(pDir[1], tDir[1] or pDir[1], 0.50)
+        dy = lerp(pDir[2], tDir[2] or pDir[2], 0.50)
+        dz = lerp(pDir[3], tDir[3] or pDir[3], 0.50)
+    else
+        dx, dy, dz = pDir[1], pDir[2], pDir[3]
+    end
+    local dLen = sqrt(dx * dx + dy * dy + dz * dz)
+    if dLen <= 1e-6 then
+        dx, dy, dz = 0.0, -0.707107, 0.707107
+    else
+        dx, dy, dz = dx / dLen, dy / dLen, dz / dLen
+    end
+    local sunDirBuf = self._sunDirBuf
+    sunDirBuf[1], sunDirBuf[2], sunDirBuf[3] = dx, dy, dz
+
+    -- Sun color & calibrated directional energy
+    local tSun = (themeTbl and themeTbl.sunColor) or preset.sunColor
+    local pSun = preset.sunColor
+    local sunBlend = (self.lightingPreset == "dia") and 0.45 or 0.20
+    local sunColBuf = self._sunColBuf
+    sunColBuf[1] = lerp(pSun[1], tSun[1] or pSun[1], sunBlend)
+    sunColBuf[2] = lerp(pSun[2], tSun[2] or pSun[2], sunBlend)
+    sunColBuf[3] = lerp(pSun[3], tSun[3] or pSun[3], sunBlend)
+
+    local themeSunFactor = clamp(((themeTbl and themeTbl.sunEnergy) or 1.30) / 1.30, 0.78, 1.14)
+    local sunEnergy = preset.sunEnergy * themeSunFactor
+
+    -- Pack up to 10 dynamic point lights into pre-allocated vec4 buffers
+    local posBuf = self._lightPosBuf
+    local colBuf = self._lightColBuf
+    local count = 0
+    if type(extraLights) == "table" then
+        local total = min(10, #extraLights)
+        for i = 1, total do
+            local L = extraLights[i]
+            if type(L) == "table" and (L.energy or 0.0) > 0.001 then
+                count = count + 1
+                local p = posBuf[count]
+                p[1] = L.x or 0.0
+                p[2] = L.y or 0.0
+                p[3] = max(1.0, L.radius or 160.0)
+                p[4] = L.height or 64.0
+
+                local c = colBuf[count]
+                c[1] = L.r or (L.color and L.color[1]) or 1.0
+                c[2] = L.g or (L.color and L.color[2]) or 0.82
+                c[3] = L.b or (L.color and L.color[3]) or 0.45
+                c[4] = L.energy or 0.8
+            end
+        end
+    end
+    for i = count + 1, 10 do
+        local p = posBuf[i]
+        p[1], p[2], p[3], p[4] = 0.0, 0.0, 1.0, 0.0
+        local c = colBuf[i]
+        c[1], c[2], c[3], c[4] = 0.0, 0.0, 0.0, 0.0
+    end
+
+    local sizeBuf = self._screenSizeBuf
+    sizeBuf[1], sizeBuf[2] = sw, sh
+
+    safeSend(litShader, "ambientColor", ambBuf)
+    safeSend(litShader, "sunDir", sunDirBuf)
+    safeSend(litShader, "sunColor", sunColBuf)
+    safeSend(litShader, "sunEnergy", sunEnergy)
+    safeSend(litShader, "numLights", count)
+    safeSend(litShader, "lightPosRadius", unpack(posBuf, 1, 10))
+    safeSend(litShader, "lightColorEnergy", unpack(colBuf, 1, 10))
+    safeSend(litShader, "screenSize", sizeBuf)
+    safeSend(litShader, "time", time or 0.0)
+
+    return litShader
+end
+
+function StageRenderer:drawSpriteLit(spritePair, x, y, angle, sx, sy, ox, oy, quadObj, emissiveBoost, emissiveCol, litShader, billboardFlag)
+    if not spritePair then
+        return
+    end
+    local diff, norm
+    if type(spritePair) == "table" then
+        diff = spritePair.diff
+        norm = spritePair.norm
+    else
+        diff = spritePair
+        norm = nil
+    end
+    if not diff then
+        return
+    end
+
+    local rot = angle or 0.0
+    local scaleX = sx or 1.0
+    local scaleY = sy or scaleX
+    local origX = ox or 0.0
+    local origY = oy or 0.0
+
+    local useLit = (litShader ~= nil and litShader ~= false and self.useLitShader)
+    if useLit then
+        love.graphics.setShader(litShader)
+        if norm then
+            safeSend(litShader, "hasNormalMap", 1.0)
+            safeSend(litShader, "normalMap", norm)
+            safeSend(litShader, "normalStrength", 0.88)
+        else
+            safeSend(litShader, "hasNormalMap", 0.0)
+            safeSend(litShader, "normalStrength", 0.85)
+        end
+        safeSend(litShader, "spriteAngle", rot)
+        safeSend(litShader, "spriteBillboard", (billboardFlag == false) and 0.0 or 1.0)
+        safeSend(litShader, "surfaceBaseY", y or 0.0)
+        safeSend(litShader, "emissiveBoost", emissiveBoost or 0.0)
+        local emBuf = self._emissiveColBuf
+        if type(emissiveCol) == "table" then
+            emBuf[1] = emissiveCol[1] or 1.0
+            emBuf[2] = emissiveCol[2] or 1.0
+            emBuf[3] = emissiveCol[3] or 1.0
+        else
+            emBuf[1], emBuf[2], emBuf[3] = 1.0, 1.0, 1.0
+        end
+        safeSend(litShader, "emissiveColor", emBuf)
+        safeSend(litShader, "specStrength", 0.20)
+    end
+
+    if quadObj then
+        love.graphics.draw(diff, quadObj, x, y, rot, scaleX, scaleY, origX, origY)
+    else
+        love.graphics.draw(diff, x, y, rot, scaleX, scaleY, origX, origY)
+    end
+
+    if useLit then
+        love.graphics.setShader()
+    end
 end
 
 function StageRenderer:snapCameraToChunk(u, v)
@@ -773,7 +1295,58 @@ local function resolveSkyPalette(theme, stageKind)
     }, bId
 end
 
-function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKind)
+local function drawHorizonCaleuche(sx, sy, s, tNow, tr, tg, tb, isNightOrDramatic, assetsOpt)
+    local bob = sin(tNow * 1.55) * 3.0 * s
+    local syB = sy + bob
+
+    -- Mode A optional sprite support for distant horizon Caleuche
+    local pair = assetsOpt and assetsOpt.props and assetsOpt.props.caleuche_ship
+    if pair and pair.diff then
+        local img = pair.diff
+        local iw, ih = img:getDimensions()
+        local sc = (68.0 * s) / max(1, ih)
+        love.graphics.setColor(clamp(tr * 1.05, 0.35, 1.0), clamp(tg * 1.08, 0.45, 1.0), clamp(tb * 1.12, 0.55, 1.0), 0.92)
+        love.graphics.draw(img, sx, syB, sin(tNow * 1.1) * 0.03, sc, sc, iw * 0.5, ih * 0.85)
+        return
+    end
+
+    -- Spectral coastal ripple ring under hull
+    love.graphics.setColor(clamp(0.68 * tr + 0.16, 0, 1), clamp(0.94 * tg + 0.14, 0, 1), clamp(1.0 * tb + 0.18, 0, 1), 0.46)
+    love.graphics.ellipse("line", sx, sy + 3 * s, 38 * s, 7 * s)
+
+    -- Dark weathered wooden hull
+    love.graphics.setColor(0.24 * tr, 0.16 * tg, 0.14 * tb, 0.96)
+    love.graphics.polygon("fill", sx - 36 * s, syB - 6 * s, sx + 38 * s, syB - 8 * s, sx + 26 * s, syB + 6 * s, sx - 25 * s, syB + 6 * s)
+    love.graphics.setColor(0.38 * tr, 0.26 * tg, 0.19 * tb, 0.96)
+    love.graphics.rectangle("fill", sx - 30 * s, syB - 10 * s, 60 * s, 4.5 * s)
+
+    -- Tall masts & rigging crossbars
+    love.graphics.setColor(0.18 * tr, 0.13 * tg, 0.12 * tb, 0.96)
+    love.graphics.rectangle("fill", sx - 10 * s, syB - 58 * s, 3.0 * s, 50 * s)
+    love.graphics.rectangle("fill", sx + 12 * s, syB - 48 * s, 2.6 * s, 40 * s)
+    love.graphics.rectangle("fill", sx - 22 * s, syB - 48 * s, 26 * s, 2.0 * s)
+    love.graphics.rectangle("fill", sx + 2 * s, syB - 40 * s, 22 * s, 2.0 * s)
+
+    -- Billowing sails with ghostly Caleuche teal-pearl sheen (pops in noche/dramatico!)
+    local ghostBoost = isNightOrDramatic and 0.36 or 0.10
+    love.graphics.setColor(
+        clamp(0.82 * tr + ghostBoost * 0.55, 0, 1),
+        clamp(0.94 * tg + ghostBoost * 0.95, 0, 1),
+        clamp(0.94 * tb + ghostBoost * 0.95, 0, 1),
+        0.90
+    )
+    love.graphics.polygon("fill", sx - 22 * s, syB - 48 * s, sx + 4 * s, syB - 45 * s, sx + 6 * s, syB - 18 * s, sx - 20 * s, syB - 20 * s)
+    love.graphics.polygon("fill", sx + 3 * s, syB - 40 * s, sx + 24 * s, syB - 37 * s, sx + 24 * s, syB - 16 * s, sx + 5 * s, syB - 18 * s)
+
+    -- Luminous spectral emerald-cyan stern lantern (always glowing!)
+    local lanPulse = 0.80 + 0.20 * sin(tNow * 3.4)
+    love.graphics.setColor(0.32, 0.98, 0.88, 0.28 * lanPulse)
+    love.graphics.circle("fill", sx - 28 * s, syB - 12 * s, 12 * s)
+    love.graphics.setColor(0.54, 1.00, 0.92, 0.95)
+    love.graphics.circle("fill", sx - 28 * s, syB - 12 * s, 3.6 * s)
+end
+
+function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKind, assetsOpt)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
@@ -781,65 +1354,160 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
     local horizonY = floor(sh * hFrac)
     local pal, biomeId = resolveSkyPalette(theme, stageKind)
 
-    -- 1. 12-band crisp pixel-RPG gradient sky
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local st = preset.skyTint or { 1.0, 1.0, 1.0 }
+    local tr, tg, tb = st[1], st[2], st[3]
+    local isSunset = (preset.id == "atardecer")
+    local isNight = (preset.id == "noche")
+    local isDramatic = (preset.id == "dramatico")
+
+    local function tintRGB(r, g, b)
+        return clamp(r * tr, 0.0, 1.0), clamp(g * tg, 0.0, 1.0), clamp(b * tb, 0.0, 1.0)
+    end
+
+    -- 1. 12-band crisp pixel-RPG gradient sky modulated by active lighting preset
     local bands = 12
     local bandH = ceil(horizonY / bands) + 1
     for i = 0, bands - 1 do
         local frac = i / (bands - 1)
-        local r = lerp(pal.skyTop[1], pal.skyBot[1], frac)
-        local g = lerp(pal.skyTop[2], pal.skyBot[2], frac)
-        local b = lerp(pal.skyTop[3], pal.skyBot[3], frac)
-        love.graphics.setColor(r, g, b, 1.0)
+        local r = lerp(pal.skyTop[1], pal.skyBot[1], frac) * tr
+        local g = lerp(pal.skyTop[2], pal.skyBot[2], frac) * tg
+        local b = lerp(pal.skyTop[3], pal.skyBot[3], frac) * tb
+
+        if isNight then
+            -- Deep vibrant twilight indigo zenith -> luminous midnight sapphire horizon
+            r = lerp(r, lerp(0.05, 0.14, frac), 0.55)
+            g = lerp(g, lerp(0.08, 0.21, frac), 0.55)
+            b = lerp(b, lerp(0.20, 0.44, frac), 0.55)
+        elseif isSunset then
+            -- Golden-hour tangerine/rose glow building toward horizon
+            local lowT = frac * frac
+            r = lerp(r, 1.00, lowT * 0.42)
+            g = lerp(g, 0.50, lowT * 0.34)
+            b = lerp(b, 0.26, lowT * 0.36)
+        elseif isDramatic then
+            -- Theatrical deep velvet-violet zenith with warm stage horizon rim
+            local lowT = frac * frac
+            r = lerp(r, lerp(0.11, 0.34, lowT), 0.38)
+            g = lerp(g, lerp(0.10, 0.24, lowT), 0.38)
+            b = lerp(b, lerp(0.22, 0.38, lowT), 0.38)
+        end
+
+        love.graphics.setColor(clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1), 1.0)
         love.graphics.rectangle("fill", 0, floor(horizonY * i / bands), sw, bandH)
     end
 
-    -- 2. Warm sun disc + layered atmospheric halo
-    local sunX = sw * ((biomeId == "ciudad") and 0.74 or 0.78)
-    local sunY = horizonY * ((biomeId == "desierto") and 0.34 or 0.40)
-    local sunR = min(sw, sh) * 0.042
-    local sc = pal.sunColor
-    love.graphics.setColor(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3], 0.16)
-    love.graphics.circle("fill", sunX, sunY, sunR * 3.1)
-    love.graphics.setColor(sc[1], sc[2], sc[3], 0.28)
-    love.graphics.circle("fill", sunX, sunY, sunR * 1.9)
-    love.graphics.setColor(sc[1], sc[2], sc[3], 0.96)
-    love.graphics.circle("fill", sunX, sunY, sunR)
-    love.graphics.setColor(1.0, 0.99, 0.92, 0.85)
-    love.graphics.circle("fill", sunX - sunR * 0.15, sunY - sunR * 0.15, sunR * 0.58)
+    -- 1B. Crisp twinkling pixel stars in noche preset
+    if preset.showStars then
+        for i = 1, 38 do
+            local sx = floor(hash2d(i * 1.73, 19.1) * (sw - 16) + 8)
+            local sy = floor(hash2d(i * 3.11, 47.7) * (horizonY * 0.76) + 10)
+            local speed = 1.8 + (i % 5) * 0.65
+            local twinkle = 0.42 + 0.58 * (0.5 + 0.5 * sin(tNow * speed + i * 2.3))
+            local sz = (i % 6 == 0) and 3 or 2
+            if i % 5 == 0 then
+                love.graphics.setColor(0.76, 0.92, 1.00, twinkle)
+            elseif i % 7 == 0 then
+                love.graphics.setColor(1.00, 0.93, 0.74, twinkle)
+            else
+                love.graphics.setColor(0.95, 0.97, 1.00, twinkle)
+            end
+            love.graphics.rectangle("fill", sx, sy, sz, sz)
+            if sz == 3 and twinkle > 0.78 then
+                love.graphics.setColor(0.86, 0.94, 1.00, twinkle * 0.45)
+                love.graphics.rectangle("fill", sx - 2, sy + 1, 7, 1)
+                love.graphics.rectangle("fill", sx + 1, sy - 2, 1, 7)
+            end
+        end
+    end
 
-    -- 3. Drifting multi-block pixel clouds
+    -- 2. Celestial disc: pale-silver full moon in noche, or golden sun disc in other presets
+    local sunX = sw * ((biomeId == "ciudad") and 0.74 or 0.78)
+    local sunY = horizonY * (isSunset and 0.56 or ((biomeId == "desierto") and 0.34 or 0.40))
+    local sunR = min(sw, sh) * (preset.isMoon and 0.038 or 0.042)
+    local hr, hg, hb = tintRGB(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3])
+
+    if preset.isMoon then
+        -- Luminous pale-silver full moon + cool twilight halo + subtle pixel craters
+        love.graphics.setColor(0.46, 0.66, 1.00, 0.14)
+        love.graphics.circle("fill", sunX, sunY, sunR * 3.4)
+        love.graphics.setColor(0.70, 0.84, 1.00, 0.24)
+        love.graphics.circle("fill", sunX, sunY, sunR * 2.0)
+        love.graphics.setColor(0.92, 0.95, 1.00, 0.98)
+        love.graphics.circle("fill", sunX, sunY, sunR)
+        love.graphics.setColor(0.76, 0.82, 0.92, 0.52)
+        love.graphics.circle("fill", sunX + sunR * 0.24, sunY - sunR * 0.16, sunR * 0.22)
+        love.graphics.circle("fill", sunX - sunR * 0.26, sunY + sunR * 0.22, sunR * 0.16)
+        love.graphics.circle("fill", sunX + sunR * 0.08, sunY + sunR * 0.30, sunR * 0.12)
+        love.graphics.setColor(1.0, 1.0, 1.0, 0.72)
+        love.graphics.circle("fill", sunX - sunR * 0.20, sunY - sunR * 0.20, sunR * 0.42)
+    else
+        local pSun = preset.sunColor
+        local scR = lerp(pal.sunColor[1], pSun[1], isSunset and 0.75 or 0.35)
+        local scG = lerp(pal.sunColor[2], pSun[2], isSunset and 0.75 or 0.35)
+        local scB = lerp(pal.sunColor[3], pSun[3], isSunset and 0.75 or 0.35)
+        local sunAlpha = isDramatic and 0.72 or 1.0
+
+        love.graphics.setColor(hr, hg, hb, 0.18 * sunAlpha)
+        love.graphics.circle("fill", sunX, sunY, sunR * 3.1)
+        love.graphics.setColor(scR, scG, scB, 0.30 * sunAlpha)
+        love.graphics.circle("fill", sunX, sunY, sunR * 1.9)
+        love.graphics.setColor(scR, scG, scB, 0.96 * sunAlpha)
+        love.graphics.circle("fill", sunX, sunY, sunR)
+        love.graphics.setColor(1.0, 0.98, 0.90, 0.82 * sunAlpha)
+        love.graphics.circle("fill", sunX - sunR * 0.15, sunY - sunR * 0.15, sunR * 0.56)
+    end
+
+    -- 3. Drifting multi-block pixel clouds tinted by active preset
     local cloudAlpha = (biomeId == "desierto") and 0.45 or 0.72
+    if isNight then
+        cloudAlpha = cloudAlpha * 0.36
+    elseif isDramatic then
+        cloudAlpha = cloudAlpha * 0.56
+    end
+    local clR, clG, clB = tintRGB(0.98, 0.98, 1.0)
+    if isSunset then
+        clR, clG, clB = 1.00, 0.84, 0.66
+    end
     for i = 1, 6 do
         local speed = 6.0 + (i % 3) * 4.5
         local cx = ((i * 238.0 + tNow * speed) % (sw + 220)) - 110
         local cy = horizonY * (0.14 + (i % 4) * 0.14)
         local cw = 64 + (i % 3) * 28
         local ch = 12 + (i % 2) * 6
-        love.graphics.setColor(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3], cloudAlpha * 0.48)
+        love.graphics.setColor(hr, hg, hb, cloudAlpha * 0.48)
         love.graphics.rectangle("fill", floor(cx - 8), floor(cy + ch * 0.45), cw + 16, ch * 0.65, 4, 4)
-        love.graphics.setColor(0.98, 0.98, 1.0, cloudAlpha)
+        love.graphics.setColor(clR, clG, clB, cloudAlpha)
         love.graphics.rectangle("fill", floor(cx), floor(cy), cw, ch, 4, 4)
         love.graphics.rectangle("fill", floor(cx + cw * 0.18), floor(cy - ch * 0.65), cw * 0.52, ch * 0.85, 4, 4)
     end
 
     -- 4. Horizon atmospheric glow band
-    love.graphics.setColor(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3], 0.34)
+    local glowR, glowG, glowB = hr, hg, hb
+    if isSunset then
+        glowR, glowG, glowB = 1.00, 0.62, 0.30
+    elseif isNight then
+        glowR, glowG, glowB = 0.24, 0.36, 0.64
+    elseif isDramatic then
+        glowR, glowG, glowB = 0.76, 0.58, 0.44
+    end
+    love.graphics.setColor(glowR, glowG, glowB, isNight and 0.28 or 0.36)
     love.graphics.rectangle("fill", 0, horizonY - 38, sw, 42)
-    love.graphics.setColor(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3], 0.20)
+    love.graphics.setColor(glowR, glowG, glowB, isNight and 0.14 or 0.20)
     love.graphics.rectangle("fill", 0, horizonY - 72, sw, 36)
 
     -- 5. Far & Near Parallax Silhouette Layers tailored to each Chilean biome
     if biomeId == "bosque" then
         -- Far layer: Andean cordillera peaks with subtle snow caps
-        local farCol = { 0.24, 0.40, 0.48 }
+        local fR, fG, fB = tintRGB(0.24, 0.40, 0.48)
+        local sR, sG, sB = tintRGB(0.90, 0.95, 0.98)
         for i = 0, 7 do
             local px = i * (sw / 6.5) - 40
             local pw = sw / 4.2
             local ph = 72 + ((i * 37) % 54)
-            love.graphics.setColor(farCol[1], farCol[2], farCol[3], 0.88)
+            love.graphics.setColor(fR, fG, fB, 0.90)
             love.graphics.polygon("fill", px, horizonY + 4, px + pw * 0.5, horizonY - ph, px + pw, horizonY + 4)
-            -- Snow peak highlight
-            love.graphics.setColor(0.90, 0.95, 0.98, 0.55)
+            love.graphics.setColor(sR, sG, sB, isNight and 0.36 or 0.56)
             love.graphics.polygon(
                 "fill",
                 px + pw * 0.5, horizonY - ph,
@@ -848,13 +1516,13 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
             )
         end
         -- Near layer: Valdivian forest canopy & araucaria silhouettes
-        love.graphics.setColor(0.11, 0.26, 0.18, 0.96)
+        local nR, nG, nB = tintRGB(0.11, 0.26, 0.18)
+        love.graphics.setColor(nR, nG, nB, 0.97)
         love.graphics.rectangle("fill", 0, horizonY - 18, sw, 22)
         for i = 0, 26 do
             local tx = i * (sw / 25)
             local th = 26 + ((i * 29) % 30)
             if i % 4 == 0 then
-                -- Distinctive Araucaria umbrella silhouette
                 love.graphics.rectangle("fill", tx - 2, horizonY - th - 14, 4, th + 16)
                 love.graphics.ellipse("fill", tx, horizonY - th - 14, 18, 6)
                 love.graphics.ellipse("fill", tx, horizonY - th - 5, 13, 4)
@@ -865,9 +1533,11 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
 
     elseif biomeId == "desierto" then
         -- Far layer: Iconic Licancabur volcano cone + sweeping Atacama red mesas
-        love.graphics.setColor(0.56, 0.34, 0.36, 0.84)
+        local vR, vG, vB = tintRGB(0.56, 0.34, 0.36)
+        love.graphics.setColor(vR, vG, vB, 0.86)
         love.graphics.polygon("fill", sw * 0.08, horizonY + 4, sw * 0.28, horizonY - 112, sw * 0.48, horizonY + 4)
-        love.graphics.setColor(0.68, 0.40, 0.34, 0.86)
+        local mR, mG, mB = tintRGB(0.68, 0.40, 0.34)
+        love.graphics.setColor(mR, mG, mB, 0.88)
         for i = 0, 4 do
             local mx = i * (sw * 0.26) - 30
             local mw = sw * 0.24
@@ -880,8 +1550,9 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
                 mx + mw, horizonY + 4
             )
         end
-        -- Near layer: Warm terracotta canyon ridge + tiny distant cactus silhouettes
-        love.graphics.setColor(0.48, 0.24, 0.16, 0.95)
+        -- Near layer: Warm terracotta canyon ridge
+        local rR, rG, rB = tintRGB(0.48, 0.24, 0.16)
+        love.graphics.setColor(rR, rG, rB, 0.96)
         for i = 0, 7 do
             local rx = i * (sw / 6.5) - 20
             local rw = sw / 5.0
@@ -898,34 +1569,58 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
 
     elseif biomeId == "costa" then
         -- Far layer: Coastal headlands + layered Valparaiso hills
-        love.graphics.setColor(0.24, 0.46, 0.64, 0.86)
+        local hR, hG, hB = tintRGB(0.24, 0.46, 0.64)
+        love.graphics.setColor(hR, hG, hB, 0.88)
         for i = 0, 5 do
             local hx = i * (sw * 0.22) - 40
             local hw = sw * 0.28
             local hh = 42 + ((i * 31) % 38)
             love.graphics.ellipse("fill", hx + hw * 0.5, horizonY + 12, hw * 0.62, hh)
         end
-        -- Near layer: Colorful Valparaiso hillside houses + distant harbor cranes + sea glint
+        -- Near layer: Colorful Valparaiso hillside houses + twinkling harbor lights at night
         for i = 0, 22 do
             local bx = i * (sw / 22)
             local bh = 14 + ((i * 17) % 24)
             local bw = 18 + (i % 3) * 8
             local hc = VALPARAISO_HOUSE_COLS[(i % #VALPARAISO_HOUSE_COLS) + 1]
-            love.graphics.setColor(hc[1] * 0.72, hc[2] * 0.72, hc[3] * 0.78, 0.90)
+            local cR, cG, cB = tintRGB(hc[1] * 0.72, hc[2] * 0.72, hc[3] * 0.78)
+            love.graphics.setColor(cR, cG, cB, 0.92)
             love.graphics.rectangle("fill", bx, horizonY - bh - 4, bw, bh + 6)
+            if isNight or isDramatic or isSunset then
+                love.graphics.setColor(1.0, 0.86, 0.46, isNight and 0.78 or 0.48)
+                love.graphics.rectangle("fill", bx + 4, horizonY - bh + 2, 3, 3)
+                if bw > 22 then
+                    love.graphics.rectangle("fill", bx + 12, horizonY - bh + 5, 3, 3)
+                end
+            end
         end
         -- Shimmering distant Pacific sea band right along horizon
-        love.graphics.setColor(0.14, 0.44, 0.64, 0.96)
+        local wR, wG, wB = tintRGB(0.14, 0.44, 0.64)
+        love.graphics.setColor(wR, wG, wB, 0.97)
         love.graphics.rectangle("fill", 0, horizonY - 8, sw, 12)
-        love.graphics.setColor(0.95, 0.98, 1.0, 0.45)
+        if isNight then
+            love.graphics.setColor(0.68, 0.86, 1.0, 0.44)
+        elseif isSunset then
+            love.graphics.setColor(1.0, 0.82, 0.48, 0.54)
+        else
+            love.graphics.setColor(0.95, 0.98, 1.0, 0.45)
+        end
         for i = 0, 9 do
             local gx = (i * 145 + tNow * 14) % sw
             love.graphics.rectangle("fill", gx, horizonY - 4, 28, 2)
         end
 
+        -- Iconic Caleuche ship floating gracefully on the coastal bay horizon in muelle stage!
+        if stageKind == "muelle" then
+            local shipX = sw * 0.40 + sin(tNow * 0.28) * 20.0
+            local shipY = horizonY - 10
+            drawHorizonCaleuche(shipX, shipY, 0.78, tNow, tr, tg, tb, isNight or isDramatic, assetsOpt)
+        end
+
     else
         -- Ciudad: Majestic Andes peaks behind Santiago skyline + glowing office windows
-        love.graphics.setColor(0.26, 0.30, 0.48, 0.80)
+        local mR, mG, mB = tintRGB(0.26, 0.30, 0.48)
+        love.graphics.setColor(mR, mG, mB, 0.84)
         for i = 0, 6 do
             local mx = i * (sw / 5.5) - 50
             local mw = sw / 3.6
@@ -933,15 +1628,17 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
             love.graphics.polygon("fill", mx, horizonY + 4, mx + mw * 0.5, horizonY - mh, mx + mw, horizonY + 4)
         end
         -- Near skyline towers (including Costanera-style central spire)
+        local t1R, t1G, t1B = tintRGB(0.16, 0.20, 0.34)
+        local t2R, t2G, t2B = tintRGB(0.14, 0.17, 0.30)
+        local winAlpha = isNight and 0.86 or ((isDramatic or isSunset) and 0.72 or 0.55)
         for i = 0, 19 do
             local tx = i * (sw / 19)
             local tw = 34 + (i % 3) * 14
             local th = 36 + ((i * 43) % 72)
             if i == 11 then
-                -- Iconic tapered spire tower
                 th = 128
                 tw = 42
-                love.graphics.setColor(0.16, 0.20, 0.34, 0.98)
+                love.graphics.setColor(t1R, t1G, t1B, 0.98)
                 love.graphics.polygon(
                     "fill",
                     tx, horizonY + 4,
@@ -950,11 +1647,11 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
                     tx + tw, horizonY + 4
                 )
             else
-                love.graphics.setColor(0.14, 0.17, 0.30, 0.96)
+                love.graphics.setColor(t2R, t2G, t2B, 0.96)
                 love.graphics.rectangle("fill", tx, horizonY - th, tw, th + 4)
             end
-            -- Warm golden lit office windows
-            love.graphics.setColor(0.98, 0.86, 0.46, 0.55)
+            -- Warm golden lit office windows (pop vividly at night!)
+            love.graphics.setColor(0.99, 0.86, 0.48, winAlpha)
             for wy = horizonY - th + 8, horizonY - 10, 10 do
                 for wx = tx + 6, tx + tw - 10, 9 do
                     if ((floor(wx) + floor(wy) + i) % 3) ~= 0 then
@@ -965,12 +1662,13 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
         end
     end
 
-    -- Soft warm seam haze across horizon line
-    love.graphics.setColor(pal.horizonGlow[1], pal.horizonGlow[2], pal.horizonGlow[3], 0.18)
+    -- Soft seam haze across horizon line
+    love.graphics.setColor(glowR, glowG, glowB, 0.18)
     love.graphics.rectangle("fill", 0, horizonY - 6, sw, 14)
 
-    -- Solid lower ground backdrop below horizon so zero black voids can ever appear
-    love.graphics.setColor(pal.groundB[1], pal.groundB[2], pal.groundB[3], 1.0)
+    -- Solid lower ground backdrop below horizon tinted by preset so zero black voids appear
+    local gbR, gbG, gbB = tintRGB(pal.groundB[1], pal.groundB[2], pal.groundB[3])
+    love.graphics.setColor(gbR, gbG, gbB, 1.0)
     love.graphics.rectangle("fill", 0, horizonY, sw, sh - horizonY)
 end
 
@@ -985,7 +1683,7 @@ function StageRenderer:_ensureTileMesh()
     return self._tileMesh
 end
 
-function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, g, b, a)
+function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, g, b, a, normImg, litShader)
     local h = StageRenderer.STEP * 0.5
     local padX = 0.95
     local padY = 0.72
@@ -993,6 +1691,17 @@ function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, 
     local rx, ry = cx + halfW + padX, cy
     local bx, by = cx, cy + halfH + padY
     local lx, ly = cx - halfW - padX, cy
+
+    if litShader then
+        if img and normImg then
+            safeSend(litShader, "hasNormalMap", 1.0)
+            safeSend(litShader, "normalMap", normImg)
+            safeSend(litShader, "normalStrength", 0.92)
+        else
+            safeSend(litShader, "hasNormalMap", 0.0)
+        end
+        safeSend(litShader, "surfaceBaseY", cy)
+    end
 
     if img then
         local mesh = self:_ensureTileMesh()
@@ -1405,11 +2114,23 @@ function StageRenderer:drawOverworldFloor(ctx)
     local tiles = assets and assets.tiles or nil
     local z = self.camZoom or 0.72
     local step = StageRenderer.STEP
+    local litShader = (ctx.litShader ~= nil and ctx.litShader ~= false and self.useLitShader) and ctx.litShader or nil
 
     -- 1. Seamless biome backdrop fill (guarantees zero black voids anywhere)
     local camBiome = StageRenderer.getBiomeAt(self.camU)
     local camVis = StageRenderer.BIOME_VISUALS[camBiome] or StageRenderer.BIOME_VISUALS.bosque
-    love.graphics.setColor(camVis.backdrop[1], camVis.backdrop[2], camVis.backdrop[3], 1.0)
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local st = preset.skyTint or { 1.0, 1.0, 1.0 }
+    if litShader then
+        love.graphics.setColor(
+            clamp(camVis.backdrop[1] * st[1], 0.02, 1.0),
+            clamp(camVis.backdrop[2] * st[2], 0.02, 1.0),
+            clamp(camVis.backdrop[3] * st[3], 0.04, 1.0),
+            1.0
+        )
+    else
+        love.graphics.setColor(camVis.backdrop[1], camVis.backdrop[2], camVis.backdrop[3], 1.0)
+    end
     love.graphics.rectangle("fill", 0, 0, sw, sh)
 
     -- 2. Compute exact visible integer grid bounds covering the full screen
@@ -1454,6 +2175,15 @@ function StageRenderer:drawOverworldFloor(ctx)
     local camU = self.camU
     local camV = self.camV
 
+    if litShader then
+        love.graphics.setShader(litShader)
+        safeSend(litShader, "spriteBillboard", 0.0)
+        safeSend(litShader, "spriteAngle", 0.0)
+        safeSend(litShader, "emissiveBoost", 0.0)
+        safeSend(litShader, "specStrength", 0.14)
+        safeSend(litShader, "hasNormalMap", 0.0)
+    end
+
     for r = 0, rows - 2 do
         local iu = iuMax - r
         local u = iu * step
@@ -1483,15 +2213,35 @@ function StageRenderer:drawOverworldFloor(ctx)
 
                 -- Draw 3D cliff skirts / pier pilings first
                 if terrain ~= "water" and terrain ~= "river" then
+                    if litShader then
+                        safeSend(litShader, "hasNormalMap", 0.0)
+                        safeSend(litShader, "surfaceBaseY", cy)
+                    end
                     self:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terrain, vis, time, z)
                 end
 
                 -- Draw top diamond surface
                 if terrain == "water" or terrain == "river" then
+                    if litShader then
+                        safeSend(litShader, "hasNormalMap", 0.0)
+                        safeSend(litShader, "specStrength", 0.30)
+                        safeSend(litShader, "surfaceBaseY", cy)
+                    end
                     self:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z)
+                    if litShader then
+                        safeSend(litShader, "specStrength", 0.14)
+                    end
                 elseif terrain == "bridge" or terrain == "pier" then
+                    if litShader then
+                        safeSend(litShader, "hasNormalMap", 0.0)
+                        safeSend(litShader, "surfaceBaseY", cy)
+                    end
                     self:_drawWoodenDeckTile(cx, cy, halfW, halfH, terrain, z)
                 elseif terrain == "carpet" then
+                    if litShader then
+                        safeSend(litShader, "hasNormalMap", 0.0)
+                        safeSend(litShader, "surfaceBaseY", cy)
+                    end
                     self:_drawCarpetTile(cx, cy, halfW, halfH, u, v, z)
                 else
                     local tileKey
@@ -1525,11 +2275,16 @@ function StageRenderer:drawOverworldFloor(ctx)
 
                     -- Subtle elevation brightening so raised terraces read with crisp 3D contrast
                     local elevShade = clamp(0.95 + elev * 0.045, 0.88, 1.08)
-                    local img = tiles and tiles[tileKey] and tiles[tileKey].diff or nil
-                    self:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, tr * elevShade, tg * elevShade, tb * elevShade, 1.0)
+                    local tilePair = tiles and tiles[tileKey] or nil
+                    local img = tilePair and tilePair.diff or nil
+                    local norm = tilePair and tilePair.norm or nil
+                    self:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, tr * elevShade, tg * elevShade, tb * elevShade, 1.0, norm, litShader)
 
                     -- Subtle glossy mud puddle sheen in marsh cells
                     if terrain == "marsh" and ((iu * 7 + iv * 13) % 3 == 0) then
+                        if litShader then
+                            safeSend(litShader, "hasNormalMap", 0.0)
+                        end
                         local bub = 0.5 + 0.5 * sin(time * 2.1 + u + v)
                         love.graphics.setColor(0.22, 0.34, 0.24, 0.52)
                         love.graphics.ellipse("fill", cx, cy, halfW * 0.42, halfH * 0.36)
@@ -1539,6 +2294,10 @@ function StageRenderer:drawOverworldFloor(ctx)
                 end
             end
         end
+    end
+
+    if litShader then
+        love.graphics.setShader()
     end
 
     -- 4. Golden diagonal wayfinder chevrons along the winding main path (guiding NE travel)
@@ -1573,9 +2332,13 @@ function StageRenderer:drawOverworldFloor(ctx)
 
     -- 6. Subtle top atmospheric horizon mist tint (gives depth & frames top HUD bar cleanly)
     local hc = camVis.hazeCol
-    love.graphics.setColor(hc[1], hc[2], hc[3], 0.14)
+    local mr, mg, mb = hc[1], hc[2], hc[3]
+    if litShader then
+        mr, mg, mb = clamp(mr * st[1], 0, 1), clamp(mg * st[2], 0, 1), clamp(mb * st[3], 0, 1)
+    end
+    love.graphics.setColor(mr, mg, mb, 0.14)
     love.graphics.rectangle("fill", 0, 0, sw, 46)
-    love.graphics.setColor(hc[1], hc[2], hc[3], 0.06)
+    love.graphics.setColor(mr, mg, mb, 0.06)
     love.graphics.rectangle("fill", 0, 46, sw, 30)
 end
 
@@ -1761,75 +2524,113 @@ end
 -- 8. Stylized Prop & Entity Renderers (Modo A Sprites + Modo B Geometric Art)
 --------------------------------------------------------------------------------
 
-local function drawStylizedProp(prop, sx, sy, z, time, assets)
-    -- Mode A drop-in: if a real prop sprite exists in assets.props[kind].diff, draw it cleanly!
-    local propsMap = assets and assets.props
-    local pair = propsMap and propsMap[prop.kind]
-    if pair and pair.diff then
+local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, litShader, alphaOpt)
+    local aMul = alphaOpt or 1.0
+    local propsMap = (assetsOrProps and assetsOrProps.props) or assetsOrProps
+    local lightRadial = assetsOrProps and assetsOrProps.lightRadial or nil
+    local useLit = (litShader ~= nil and litShader ~= false and stage and stage.useLitShader)
+
+    -- Mode A drop-in: if a real prop sprite exists in propsMap[kind].diff, draw it lit!
+    local pair = (type(propsMap) == "table") and propsMap[prop.kind] or nil
+    if type(pair) == "table" and pair.diff then
         local img = pair.diff
         local iw, ih = img:getDimensions()
         local targetH = 86.0 * (prop.scale or 1.0) * z
         local sc = targetH / max(1, ih)
-        love.graphics.setColor(0.04, 0.04, 0.08, 0.30)
+        love.graphics.setColor(0.04, 0.04, 0.08, 0.30 * aMul)
         love.graphics.ellipse("fill", sx, sy, 22 * (prop.scale or 1.0) * z, 9 * (prop.scale or 1.0) * z)
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(img, sx, sy, 0, sc, sc, iw * 0.5, ih * 0.92)
+        love.graphics.setColor(1, 1, 1, aMul)
+        local emBoost = 0.0
+        local emCol = nil
+        if prop.kind == "lantern_post" then
+            emBoost, emCol = 0.14, { 1.0, 0.78, 0.36 }
+        elseif prop.kind == "mountain_crystal" or prop.kind == "pincoya_shrine" then
+            emBoost, emCol = 0.22, { 0.38, 0.92, 1.0 }
+        elseif prop.kind == "orb_shrine" or prop.kind == "quena_monolith" then
+            emBoost, emCol = 0.18, { 1.0, 0.84, 0.38 }
+        end
+        if stage then
+            stage:drawSpriteLit(pair, sx, sy, 0, sc, sc, iw * 0.5, ih * 0.92, nil, emBoost, emCol, useLit and litShader or nil, true)
+        else
+            love.graphics.draw(img, sx, sy, 0, sc, sc, iw * 0.5, ih * 0.92)
+        end
         return
     end
 
     -- Mode B high-craft stylized Chilean geometric landmarks
     local k = prop.kind
     local s = (prop.scale or 1.0) * z
-    local sway = sin(time * 1.8 + prop.u * 0.7) * 1.8 * s
+    local seed = prop.u or (prop.xFrac and prop.xFrac * 25.0) or 1.0
+    local sway = sin(time * 1.8 + seed * 0.7) * 1.8 * s
 
-    -- Ground contact shadow (except flat lily pads and ship on water)
+    -- Ground contact shadow (always unlit; omitted for flat lily pads and ship on water)
     if k ~= "lily_pad" and k ~= "caleuche_ship" then
-        love.graphics.setColor(0.04, 0.05, 0.09, 0.28)
+        love.graphics.setColor(0.04, 0.05, 0.09, 0.28 * aMul)
         love.graphics.ellipse("fill", sx, sy + 1 * s, 20 * s, 8 * s)
     end
 
+    local function beginBodyLit()
+        if useLit then
+            love.graphics.setShader(litShader)
+            safeSend(litShader, "hasNormalMap", 0.0)
+            safeSend(litShader, "spriteAngle", 0.0)
+            safeSend(litShader, "spriteBillboard", 1.0)
+            safeSend(litShader, "surfaceBaseY", sy)
+            safeSend(litShader, "emissiveBoost", 0.0)
+            safeSend(litShader, "specStrength", 0.16)
+        end
+    end
+
+    local function endBodyLit()
+        if useLit then
+            love.graphics.setShader()
+        end
+    end
+
+    beginBodyLit()
+
     if k == "araucaria_tree" then
         -- Iconic Chilean Araucaria: tall straight bark trunk + radiating tiered umbrella canopy
-        love.graphics.setColor(0.34, 0.22, 0.14, 1.0)
+        love.graphics.setColor(0.34, 0.22, 0.14, aMul)
         love.graphics.rectangle("fill", sx - 5.5 * s, sy - 76 * s, 11 * s, 77 * s)
-        love.graphics.setColor(0.48, 0.34, 0.21, 1.0)
+        love.graphics.setColor(0.48, 0.34, 0.21, aMul)
         love.graphics.rectangle("fill", sx - 4.0 * s, sy - 76 * s, 3.5 * s, 76 * s)
         for i = 1, #ARAUCARIA_TIERS do
             local tr = ARAUCARIA_TIERS[i]
-            love.graphics.setColor(tr.col[1], tr.col[2], tr.col[3], 1.0)
+            love.graphics.setColor(tr.col[1], tr.col[2], tr.col[3], aMul)
             love.graphics.ellipse("fill", sx + sway * 0.5, sy + tr.y * s, tr.rx * s, tr.ry * s)
-            love.graphics.setColor(tr.col[1] + 0.10, tr.col[2] + 0.14, tr.col[3] + 0.08, 0.78)
+            love.graphics.setColor(tr.col[1] + 0.10, tr.col[2] + 0.14, tr.col[3] + 0.08, 0.78 * aMul)
             love.graphics.ellipse("fill", sx - 5 * s + sway * 0.5, sy + (tr.y - 2) * s, tr.rx * 0.65 * s, tr.ry * 0.54 * s)
         end
 
     elseif k == "ancient_tree" then
         -- Lush Valdivian coigue tree
-        love.graphics.setColor(0.36, 0.23, 0.14, 1.0)
+        love.graphics.setColor(0.36, 0.23, 0.14, aMul)
         love.graphics.rectangle("fill", sx - 7.5 * s, sy - 44 * s, 15 * s, 45 * s)
-        love.graphics.setColor(0.14, 0.36, 0.19, 1.0)
+        love.graphics.setColor(0.14, 0.36, 0.19, aMul)
         love.graphics.circle("fill", sx - 15 * s + sway * 0.4, sy - 48 * s, 21 * s)
         love.graphics.circle("fill", sx + 15 * s + sway * 0.4, sy - 46 * s, 20 * s)
-        love.graphics.setColor(0.20, 0.48, 0.24, 1.0)
+        love.graphics.setColor(0.20, 0.48, 0.24, aMul)
         love.graphics.circle("fill", sx + sway * 0.5, sy - 62 * s, 25 * s)
-        love.graphics.setColor(0.34, 0.66, 0.32, 0.86)
+        love.graphics.setColor(0.34, 0.66, 0.32, 0.86 * aMul)
         love.graphics.circle("fill", sx - 7 * s + sway * 0.5, sy - 68 * s, 14 * s)
 
     elseif k == "valdivian_fern" or k == "valdivian_shrub" then
-        love.graphics.setColor(0.16, 0.42, 0.20, 1.0)
+        love.graphics.setColor(0.16, 0.42, 0.20, aMul)
         love.graphics.ellipse("fill", sx - 9 * s, sy - 7 * s, 12 * s, 6 * s)
         love.graphics.ellipse("fill", sx + 9 * s, sy - 7 * s, 12 * s, 6 * s)
-        love.graphics.setColor(0.26, 0.58, 0.26, 1.0)
+        love.graphics.setColor(0.26, 0.58, 0.26, aMul)
         love.graphics.ellipse("fill", sx, sy - 11 * s, 13 * s, 8 * s)
-        love.graphics.setColor(0.42, 0.74, 0.34, 0.85)
+        love.graphics.setColor(0.42, 0.74, 0.34, 0.85 * aMul)
         love.graphics.ellipse("fill", sx - 3 * s, sy - 14 * s, 7 * s, 4 * s)
 
     elseif k == "copihue" then
         -- Green shrub studded with bright Chilean crimson copihue bell-flowers
-        love.graphics.setColor(0.15, 0.40, 0.20, 1.0)
+        love.graphics.setColor(0.15, 0.40, 0.20, aMul)
         love.graphics.ellipse("fill", sx, sy - 10 * s, 15 * s, 9 * s)
-        love.graphics.setColor(0.24, 0.54, 0.26, 1.0)
+        love.graphics.setColor(0.24, 0.54, 0.26, aMul)
         love.graphics.ellipse("fill", sx - 3 * s, sy - 14 * s, 10 * s, 6 * s)
-        love.graphics.setColor(0.92, 0.16, 0.26, 1.0)
+        love.graphics.setColor(0.92, 0.16, 0.26, aMul)
         love.graphics.ellipse("fill", sx - 8 * s, sy - 12 * s, 3.2 * s, 5.2 * s)
         love.graphics.ellipse("fill", sx + 5 * s, sy - 15 * s, 3.2 * s, 5.2 * s)
         love.graphics.ellipse("fill", sx + 1 * s, sy - 8 * s, 3.0 * s, 4.6 * s)
@@ -1842,104 +2643,109 @@ local function drawStylizedProp(prop, sx, sy, z, time, assets)
         local baseB = isDesert and 0.24 or (isCity and 0.54 or 0.48)
         local hRock = (k == "rock_monolith") and 40 * s or 20 * s
         local wRock = (k == "rock_monolith") and 16 * s or 19 * s
-        love.graphics.setColor(baseR * 0.72, baseG * 0.72, baseB * 0.76, 1.0)
+        love.graphics.setColor(baseR * 0.72, baseG * 0.72, baseB * 0.76, aMul)
         love.graphics.polygon("fill", sx - wRock, sy, sx - wRock * 0.6, sy - hRock, sx + wRock * 0.55, sy - hRock * 0.88, sx + wRock, sy)
-        love.graphics.setColor(baseR, baseG, baseB, 1.0)
+        love.graphics.setColor(baseR, baseG, baseB, aMul)
         love.graphics.polygon("fill", sx - wRock, sy, sx - wRock * 0.6, sy - hRock, sx + 2 * s, sy - hRock * 0.75, sx, sy + 2 * s)
         if not isDesert and not isCity then
-            love.graphics.setColor(0.28, 0.56, 0.26, 0.90)
+            love.graphics.setColor(0.28, 0.56, 0.26, 0.90 * aMul)
             love.graphics.ellipse("fill", sx - 2 * s, sy - hRock * 0.82, wRock * 0.55, 4.5 * s)
         end
 
     elseif k == "desert_cactus" then
         -- Multi-armed Atacama cardon cactus
-        love.graphics.setColor(0.18, 0.46, 0.27, 1.0)
+        love.graphics.setColor(0.18, 0.46, 0.27, aMul)
         love.graphics.rectangle("fill", sx - 7.5 * s, sy - 66 * s, 15 * s, 67 * s, 6 * s, 6 * s)
-        -- Left & right arms
         love.graphics.rectangle("fill", sx - 25 * s, sy - 45 * s, 19 * s, 9.5 * s, 4 * s, 4 * s)
         love.graphics.rectangle("fill", sx - 25 * s, sy - 60 * s, 11 * s, 22 * s, 5 * s, 5 * s)
         love.graphics.rectangle("fill", sx + 5 * s, sy - 38 * s, 19 * s, 9.5 * s, 4 * s, 4 * s)
         love.graphics.rectangle("fill", sx + 13 * s, sy - 54 * s, 11 * s, 24 * s, 5 * s, 5 * s)
-        -- Sunlit vertical rib highlight + golden desert bloom
-        love.graphics.setColor(0.36, 0.68, 0.40, 0.88)
+        love.graphics.setColor(0.36, 0.68, 0.40, 0.88 * aMul)
         love.graphics.rectangle("fill", sx - 3.5 * s, sy - 62 * s, 3.8 * s, 58 * s)
-        love.graphics.setColor(0.98, 0.74, 0.24, 1.0)
+        love.graphics.setColor(0.98, 0.74, 0.24, aMul)
         love.graphics.circle("fill", sx, sy - 68 * s, 4.5 * s)
 
     elseif k == "mountain_crystal" then
-        -- Glowing faceted Atacama crystal cluster
-        local glow = 0.75 + 0.25 * sin(time * 3.0 + prop.u)
-        love.graphics.setColor(0.32, 0.86, 0.96, 0.22 * glow)
+        -- Glowing faceted Atacama crystal cluster (self-luminous facets pop at night!)
+        endBodyLit()
+        local glow = 0.75 + 0.25 * sin(time * 3.0 + seed)
+        love.graphics.setColor(0.32, 0.86, 0.96, 0.24 * glow * aMul)
         love.graphics.circle("fill", sx, sy - 24 * s, 28 * s)
-        love.graphics.setColor(0.22, 0.68, 0.86, 0.95)
+        love.graphics.setColor(0.22, 0.68, 0.86, 0.95 * aMul)
         love.graphics.polygon("fill", sx - 16 * s, sy, sx - 12 * s, sy - 30 * s, sx - 2 * s, sy)
-        love.graphics.setColor(0.56, 0.34, 0.86, 0.95)
+        love.graphics.setColor(0.56, 0.34, 0.86, 0.95 * aMul)
         love.graphics.polygon("fill", sx + 2 * s, sy, sx + 14 * s, sy - 34 * s, sx + 18 * s, sy)
-        love.graphics.setColor(0.42, 0.92, 0.98, 0.98)
+        love.graphics.setColor(0.42, 0.92, 0.98, 0.98 * aMul)
         love.graphics.polygon("fill", sx - 9 * s, sy + 1 * s, sx, sy - 48 * s, sx + 10 * s, sy + 1 * s)
-        love.graphics.setColor(0.86, 0.99, 1.0, 0.85)
+        love.graphics.setColor(0.86, 0.99, 1.0, 0.88 * aMul)
         love.graphics.polygon("fill", sx - 5 * s, sy - 4 * s, sx, sy - 46 * s, sx + 2 * s, sy - 4 * s)
 
     elseif k == "apacheta_sundial" or k == "moai_relic" then
         -- Stacked Andean stone cairn / volcanic relic
-        love.graphics.setColor(0.56, 0.36, 0.26, 1.0)
+        love.graphics.setColor(0.56, 0.36, 0.26, aMul)
         love.graphics.ellipse("fill", sx, sy - 6 * s, 16 * s, 7 * s)
-        love.graphics.setColor(0.64, 0.43, 0.31, 1.0)
+        love.graphics.setColor(0.64, 0.43, 0.31, aMul)
         love.graphics.ellipse("fill", sx, sy - 17 * s, 12 * s, 6 * s)
-        love.graphics.setColor(0.72, 0.50, 0.36, 1.0)
+        love.graphics.setColor(0.72, 0.50, 0.36, aMul)
         love.graphics.ellipse("fill", sx, sy - 27 * s, 8 * s, 5 * s)
-        love.graphics.setColor(0.98, 0.82, 0.30, 1.0)
+        love.graphics.setColor(0.98, 0.82, 0.30, aMul)
         love.graphics.circle("fill", sx, sy - 38 * s, 6.5 * s)
 
     elseif k == "rewe_totem" then
         -- Carved wooden Mapuche ceremonial stepped totem
-        love.graphics.setColor(0.46, 0.28, 0.16, 1.0)
+        love.graphics.setColor(0.46, 0.28, 0.16, aMul)
         love.graphics.rectangle("fill", sx - 6 * s, sy - 58 * s, 12 * s, 59 * s)
-        love.graphics.setColor(0.62, 0.40, 0.23, 1.0)
+        love.graphics.setColor(0.62, 0.40, 0.23, aMul)
         for st = 1, 4 do
             love.graphics.rectangle("fill", sx - 8 * s, sy - st * 11 * s, 16 * s, 4 * s)
         end
-        love.graphics.setColor(0.88, 0.68, 0.30, 1.0)
+        love.graphics.setColor(0.88, 0.68, 0.30, aMul)
         love.graphics.polygon("fill", sx, sy - 68 * s, sx - 9 * s, sy - 56 * s, sx + 9 * s, sy - 56 * s)
 
     elseif k == "orb_shrine" or k == "stone_pedestal" or k == "pincoya_shrine" or k == "quena_monolith" then
         -- Stepped stone pedestal with floating glowing magic orb
-        local bob = sin(time * 2.8 + prop.u) * 4.0 * s
-        love.graphics.setColor(0.48, 0.51, 0.58, 1.0)
+        local bob = sin(time * 2.8 + seed) * 4.0 * s
+        love.graphics.setColor(0.48, 0.51, 0.58, aMul)
         love.graphics.rectangle("fill", sx - 16 * s, sy - 10 * s, 32 * s, 11 * s, 2, 2)
-        love.graphics.setColor(0.62, 0.66, 0.74, 1.0)
+        love.graphics.setColor(0.62, 0.66, 0.74, aMul)
         love.graphics.rectangle("fill", sx - 10 * s, sy - 30 * s, 20 * s, 22 * s)
-        love.graphics.setColor(0.78, 0.82, 0.90, 1.0)
+        love.graphics.setColor(0.78, 0.82, 0.90, aMul)
         love.graphics.rectangle("fill", sx - 13 * s, sy - 34 * s, 26 * s, 5 * s)
+        -- Self-luminous floating orb stays crisp & bright in noche/dramatico
+        endBodyLit()
         local orbCol = (k == "pincoya_shrine") and { 0.30, 0.92, 0.94 } or { 0.98, 0.82, 0.34 }
-        love.graphics.setColor(orbCol[1], orbCol[2], orbCol[3], 0.28)
+        love.graphics.setColor(orbCol[1], orbCol[2], orbCol[3], 0.30 * aMul)
         love.graphics.circle("fill", sx, sy - 46 * s + bob, 16 * s)
-        love.graphics.setColor(orbCol[1], orbCol[2], orbCol[3], 0.98)
+        love.graphics.setColor(orbCol[1], orbCol[2], orbCol[3], 0.98 * aMul)
         love.graphics.circle("fill", sx, sy - 46 * s + bob, 7.5 * s)
-        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.setColor(1, 1, 1, 0.90 * aMul)
         love.graphics.circle("fill", sx - 2.2 * s, sy - 48.2 * s + bob, 2.4 * s)
 
     elseif k == "lantern_post" then
-        -- Warm fantasy / urban streetlamp with soft radial amber glow
-        love.graphics.setColor(0.20, 0.22, 0.28, 1.0)
+        -- Warm fantasy / urban streetlamp with glowing amber globe
+        love.graphics.setColor(0.20, 0.22, 0.28, aMul)
         love.graphics.rectangle("fill", sx - 5 * s, sy - 5 * s, 10 * s, 6 * s)
         love.graphics.rectangle("fill", sx - 2.2 * s, sy - 54 * s, 4.4 * s, 51 * s)
         love.graphics.rectangle("fill", sx - 2 * s, sy - 54 * s, 14 * s, 3 * s)
-        -- Warm lantern globe
+        -- Self-luminous warm amber globe & halo
+        endBodyLit()
         local lx, ly = sx + 10 * s, sy - 48 * s
-        local pulse = 0.86 + 0.14 * sin(time * 4.0 + prop.u)
-        if assets and assets.lightRadial then
-            local lw, lh = assets.lightRadial:getDimensions()
+        local pulse = 0.86 + 0.14 * sin(time * 4.0 + seed)
+        if lightRadial then
+            local lw, lh = lightRadial:getDimensions()
             local haloSc = (54 * s) / max(1, lw)
-            love.graphics.setColor(1.0, 0.78, 0.32, 0.34 * pulse)
-            love.graphics.draw(assets.lightRadial, lx, ly, 0, haloSc, haloSc, lw * 0.5, lh * 0.5)
+            love.graphics.setColor(1.0, 0.78, 0.32, 0.34 * pulse * aMul)
+            love.graphics.draw(lightRadial, lx, ly, 0, haloSc, haloSc, lw * 0.5, lh * 0.5)
         else
-            love.graphics.setColor(1.0, 0.78, 0.32, 0.24 * pulse)
+            love.graphics.setColor(1.0, 0.78, 0.32, 0.24 * pulse * aMul)
             love.graphics.circle("fill", lx, ly, 22 * s)
         end
-        love.graphics.setColor(1.0, 0.90, 0.46, 0.98)
+        love.graphics.setColor(1.0, 0.92, 0.50, 0.98 * aMul)
         love.graphics.rectangle("fill", lx - 4 * s, ly - 5 * s, 8 * s, 10 * s, 2, 2)
-        love.graphics.setColor(0.20, 0.22, 0.28, 1.0)
+        love.graphics.setColor(1.0, 0.98, 0.82, 0.92 * aMul)
+        love.graphics.rectangle("fill", lx - 2 * s, ly - 3 * s, 4 * s, 5 * s, 1, 1)
+        beginBodyLit()
+        love.graphics.setColor(0.20, 0.22, 0.28, aMul)
         love.graphics.polygon("fill", lx - 6 * s, ly - 5 * s, lx + 6 * s, ly - 5 * s, lx, ly - 10 * s)
 
     elseif k == "biome_arch" then
@@ -1954,23 +2760,23 @@ local function drawStylizedProp(prop, sx, sy, z, time, assets)
             pR, pG, pB = 0.42, 0.48, 0.58
             bR, bG, bB = 0.28, 0.82, 0.94
         end
-        love.graphics.setColor(pR * 0.72, pG * 0.72, pB * 0.76, 1.0)
+        love.graphics.setColor(pR * 0.72, pG * 0.72, pB * 0.76, aMul)
         love.graphics.rectangle("fill", sx - 13 * s, sy - 10 * s, 26 * s, 11 * s)
-        love.graphics.setColor(pR, pG, pB, 1.0)
+        love.graphics.setColor(pR, pG, pB, aMul)
         love.graphics.rectangle("fill", sx - 9 * s, sy - 66 * s, 18 * s, 58 * s)
-        love.graphics.setColor(pR * 1.18, pG * 1.18, pB * 1.18, 0.95)
+        love.graphics.setColor(pR * 1.18, pG * 1.18, pB * 1.18, 0.95 * aMul)
         love.graphics.rectangle("fill", sx - 12 * s, sy - 70 * s, 24 * s, 7 * s)
-        -- Glowing frontier crystal/brazier atop pillar
-        love.graphics.setColor(bR, bG, bB, 0.30)
+        -- Self-luminous frontier crystal/brazier atop pillar
+        endBodyLit()
+        love.graphics.setColor(bR, bG, bB, 0.32 * aMul)
         love.graphics.circle("fill", sx, sy - 78 * s, 16 * s)
-        love.graphics.setColor(bR, bG, bB, 1.0)
+        love.graphics.setColor(bR, bG, bB, aMul)
         love.graphics.polygon("fill", sx, sy - 88 * s, sx - 7 * s, sy - 76 * s, sx, sy - 70 * s, sx + 7 * s, sy - 76 * s)
 
     elseif k == "coast_lighthouse" then
         -- Iconic tall red-and-white striped Valparaiso lighthouse with sweeping beacon
-        love.graphics.setColor(0.38, 0.40, 0.46, 1.0)
+        love.graphics.setColor(0.38, 0.40, 0.46, aMul)
         love.graphics.ellipse("fill", sx, sy, 26 * s, 11 * s)
-        -- 5 alternating red/white horizontal bands tapering upward
         local towerH = 104 * s
         local segs = 5
         for i = 0, segs - 1 do
@@ -1979,83 +2785,91 @@ local function drawStylizedProp(prop, sx, sy, z, time, assets)
             local wBot = lerp(16 * s, 9 * s, i / segs)
             local wTop = lerp(16 * s, 9 * s, (i + 1) / segs)
             if i % 2 == 0 then
-                love.graphics.setColor(0.95, 0.95, 0.97, 1.0)
+                love.graphics.setColor(0.95, 0.95, 0.97, aMul)
             else
-                love.graphics.setColor(0.84, 0.22, 0.22, 1.0)
+                love.graphics.setColor(0.84, 0.22, 0.22, aMul)
             end
             love.graphics.polygon("fill", sx - wBot, yBot, sx + wBot, yBot, sx + wTop, yTop, sx - wTop, yTop)
         end
-        -- Lantern gallery + glowing golden beacon + dome roof
         local topY = sy - towerH
-        love.graphics.setColor(0.20, 0.24, 0.32, 1.0)
+        love.graphics.setColor(0.20, 0.24, 0.32, aMul)
         love.graphics.rectangle("fill", sx - 12 * s, topY - 3 * s, 24 * s, 4 * s)
+        -- Glowing beacon glass & sweeping volumetric beam (always bright!)
+        endBodyLit()
         local beamAngle = sin(time * 1.4) * 0.55
-        love.graphics.setColor(1.0, 0.92, 0.52, 0.20)
+        love.graphics.setColor(1.0, 0.92, 0.52, 0.24 * aMul)
         love.graphics.polygon(
             "fill",
             sx, topY - 10 * s,
             sx + cos(beamAngle - 0.16) * 95 * s, topY - 10 * s + sin(beamAngle - 0.16) * 42 * s,
             sx + cos(beamAngle + 0.16) * 95 * s, topY - 10 * s + sin(beamAngle + 0.16) * 42 * s
         )
-        love.graphics.setColor(1.0, 0.95, 0.58, 0.98)
+        love.graphics.setColor(1.0, 0.95, 0.58, 0.98 * aMul)
         love.graphics.rectangle("fill", sx - 7 * s, topY - 16 * s, 14 * s, 13 * s)
-        love.graphics.setColor(0.82, 0.20, 0.20, 1.0)
+        beginBodyLit()
+        love.graphics.setColor(0.82, 0.20, 0.20, aMul)
         love.graphics.polygon("fill", sx - 10 * s, topY - 16 * s, sx + 10 * s, topY - 16 * s, sx, topY - 28 * s)
 
     elseif k == "caleuche_ship" then
         -- Iconic Chilean Caleuche ghostly wooden tall ship rocking gently in the bay
-        local bob = sin(time * 1.6 + prop.u) * 4.5 * s
+        local bob = sin(time * 1.6 + seed) * 4.5 * s
         local syB = sy + bob
-        -- Water ripple ring under hull
-        love.graphics.setColor(0.76, 0.96, 1.0, 0.42)
+        love.graphics.setColor(0.76, 0.96, 1.0, 0.42 * aMul)
         love.graphics.ellipse("line", sx, sy + 5 * s, 46 * s, 14 * s)
-        -- Curved wooden hull
-        love.graphics.setColor(0.32, 0.20, 0.14, 1.0)
+        love.graphics.setColor(0.32, 0.20, 0.14, aMul)
         love.graphics.polygon("fill", sx - 40 * s, syB - 8 * s, sx + 42 * s, syB - 10 * s, sx + 28 * s, syB + 8 * s, sx - 28 * s, syB + 8 * s)
-        love.graphics.setColor(0.46, 0.30, 0.19, 1.0)
+        love.graphics.setColor(0.46, 0.30, 0.19, aMul)
         love.graphics.rectangle("fill", sx - 34 * s, syB - 12 * s, 68 * s, 5 * s)
-        -- Masts
-        love.graphics.setColor(0.24, 0.16, 0.11, 1.0)
+        love.graphics.setColor(0.24, 0.16, 0.11, aMul)
         love.graphics.rectangle("fill", sx - 12 * s, syB - 70 * s, 3.5 * s, 60 * s)
         love.graphics.rectangle("fill", sx + 14 * s, syB - 58 * s, 3.2 * s, 48 * s)
-        -- Billowing cream-teal sails (subtle spectral sheen)
-        love.graphics.setColor(0.84, 0.96, 0.94, 0.90)
+        love.graphics.setColor(0.84, 0.96, 0.94, 0.90 * aMul)
         love.graphics.polygon("fill", sx - 26 * s, syB - 60 * s, sx + 4 * s, syB - 56 * s, sx + 6 * s, syB - 22 * s, sx - 24 * s, syB - 24 * s)
         love.graphics.polygon("fill", sx + 4 * s, syB - 50 * s, sx + 28 * s, syB - 46 * s, sx + 28 * s, syB - 20 * s, sx + 6 * s, syB - 22 * s)
-        -- Lantern glow on stern
-        love.graphics.setColor(0.45, 0.98, 0.86, 0.85)
+        endBodyLit()
+        love.graphics.setColor(0.45, 0.98, 0.86, 0.92 * aMul)
         love.graphics.circle("fill", sx - 32 * s, syB - 15 * s, 4.0 * s)
 
     elseif k == "office_column" then
         -- Grand neoclassical-office marble/granite column
-        love.graphics.setColor(0.58, 0.62, 0.72, 1.0)
+        love.graphics.setColor(0.58, 0.62, 0.72, aMul)
         love.graphics.rectangle("fill", sx - 12 * s, sy - 8 * s, 24 * s, 9 * s)
-        love.graphics.setColor(0.76, 0.80, 0.88, 1.0)
+        love.graphics.setColor(0.76, 0.80, 0.88, aMul)
         love.graphics.rectangle("fill", sx - 8 * s, sy - 66 * s, 16 * s, 59 * s)
-        love.graphics.setColor(0.90, 0.92, 0.98, 0.85)
+        love.graphics.setColor(0.90, 0.92, 0.98, 0.85 * aMul)
         love.graphics.rectangle("fill", sx - 6 * s, sy - 65 * s, 4 * s, 57 * s)
-        love.graphics.setColor(0.94, 0.78, 0.30, 1.0)
+        love.graphics.setColor(0.94, 0.78, 0.30, aMul)
         love.graphics.rectangle("fill", sx - 11 * s, sy - 71 * s, 22 * s, 6 * s)
 
     elseif k == "stanchion" then
-        -- Brass velvet-queue post flanking the crimson office carpet
-        love.graphics.setColor(0.78, 0.62, 0.22, 1.0)
+        -- Brass velvet-queue post / harbor bollard
+        love.graphics.setColor(0.78, 0.62, 0.22, aMul)
         love.graphics.ellipse("fill", sx, sy, 6.5 * s, 3.0 * s)
         love.graphics.rectangle("fill", sx - 1.8 * s, sy - 22 * s, 3.6 * s, 22 * s)
-        love.graphics.setColor(0.98, 0.86, 0.36, 1.0)
+        love.graphics.setColor(0.98, 0.86, 0.36, aMul)
         love.graphics.circle("fill", sx, sy - 23 * s, 3.4 * s)
 
     elseif k == "lily_pad" then
-        love.graphics.setColor(0.22, 0.56, 0.28, 0.92)
+        love.graphics.setColor(0.22, 0.56, 0.28, 0.92 * aMul)
         love.graphics.ellipse("fill", sx, sy, 12 * s, 6 * s)
-        love.graphics.setColor(0.96, 0.68, 0.78, 0.95)
+        love.graphics.setColor(0.96, 0.68, 0.78, 0.95 * aMul)
         love.graphics.circle("fill", sx + 2 * s, sy - 1 * s, 3.0 * s)
+
+    elseif k == "mossy_log" or k == "log_dam" then
+        love.graphics.setColor(0.42, 0.27, 0.16, aMul)
+        love.graphics.rectangle("fill", sx - 20 * s, sy - 11 * s, 40 * s, 11 * s, 4 * s, 4 * s)
+        love.graphics.setColor(0.56, 0.39, 0.24, aMul)
+        love.graphics.ellipse("fill", sx - 19 * s, sy - 5.5 * s, 4 * s, 5.5 * s)
+        love.graphics.setColor(0.26, 0.56, 0.26, 0.92 * aMul)
+        love.graphics.ellipse("fill", sx + 2 * s, sy - 11 * s, 13 * s, 4 * s)
 
     else
         -- Clean fallback milestone marker
-        love.graphics.setColor(0.52, 0.56, 0.64, 1.0)
+        love.graphics.setColor(0.52, 0.56, 0.64, aMul)
         love.graphics.rectangle("fill", sx - 8 * s, sy - 24 * s, 16 * s, 25 * s, 3, 3)
     end
+
+    endBodyLit()
 end
 
 -- Crisp JRPG white/red "!" alert box rendered strictly with geometric primitives (R2 compliant)
@@ -2090,7 +2904,7 @@ local function drawAlertCallout(x, y, timer)
     love.graphics.circle("fill", x, by + 30.5 * bounce, 3.8 * bounce)
 end
 
-local function drawRivalEntity(enc, idx, sx, sy, sw, sh, z, time, assets, defeated, isAlerted, alertTimer, font)
+local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets, defeated, isAlerted, alertTimer, font, litShader)
     local encPair = assets and assets.encounters and assets.encounters[enc.id]
     local targetH = (enc.scale or 2.55) * 38.0 * (z / 0.72)
     local bob = defeated and 0.0 or sin(time * 3.0 + idx * 1.1) * 2.5 * z
@@ -2119,7 +2933,9 @@ local function drawRivalEntity(enc, idx, sx, sy, sw, sh, z, time, assets, defeat
         end
         local sc = targetH / max(1, fh)
         love.graphics.setColor(1, 1, 1, alpha)
-        if quad then
+        if stage then
+            stage:drawSpriteLit(encPair, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92, quad, 0.0, nil, litShader, true)
+        elseif quad then
             love.graphics.draw(img, quad, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92)
         else
             love.graphics.draw(img, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92)
@@ -2131,7 +2947,7 @@ local function drawRivalEntity(enc, idx, sx, sy, sw, sh, z, time, assets, defeat
         love.graphics.ellipse("fill", sx, sy - targetH * 0.45 + bob, 22 * z, targetH * 0.45)
     end
 
-    -- Clean name pill above rival head (ZERO Unicode tofu; strictly below top HUD y>=52 and inside viewport)
+    -- Clean name pill above rival head (unshaded crisp UI; ZERO Unicode tofu; y>=52)
     local f = font or makeFallbackFont()
     local onScreenForTag = (sx >= 24 and sx <= sw - 24 and sy >= 76 and sy <= sh - 16)
     if f and enc.name and onScreenForTag then
@@ -2167,7 +2983,7 @@ local function drawRivalEntity(enc, idx, sx, sy, sw, sh, z, time, assets, defeat
     end
 end
 
-local function drawPuduWithHat(sx, sy, facingRow, animCol, targetH, bobY, assets)
+local function drawPuduWithHat(stage, sx, sy, facingRow, animCol, targetH, bobY, assets, litShader, hatOffsetY, hatTilt)
     local row = clamp(floor(facingRow or 3), 0, 7)
     local col = clamp(floor(animCol or 1), 1, 6)
     local dy = bobY or 0.0
@@ -2183,7 +2999,11 @@ local function drawPuduWithHat(sx, sy, facingRow, animCol, targetH, bobY, assets
         local _, _, qw, qh = quad:getViewport()
         local sc = targetH / max(1, qh)
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(puduPair.diff, quad, sx, sy + dy, 0, sc, sc, qw * 0.5, qh * 0.88)
+        if stage then
+            stage:drawSpriteLit(puduPair, sx, sy + dy, 0, sc, sc, qw * 0.5, qh * 0.88, quad, 0.0, nil, litShader, true)
+        else
+            love.graphics.draw(puduPair.diff, quad, sx, sy + dy, 0, sc, sc, qw * 0.5, qh * 0.88)
+        end
     else
         love.graphics.setColor(0.58, 0.35, 0.20, 1.0)
         love.graphics.circle("fill", sx, sy - targetH * 0.4 + dy, targetH * 0.28)
@@ -2197,9 +3017,14 @@ local function drawPuduWithHat(sx, sy, facingRow, animCol, targetH, bobY, assets
         local off = StageRenderer.HAT_HEAD_OFFSETS[row] or StageRenderer.HAT_HEAD_OFFSETS[3]
         local hatSc = (targetH * 0.58) / max(1, hh)
         local hatX = sx + off.x * unit
-        local hatY = sy + off.y * unit + dy * 1.12
+        local hatY = sy + off.y * unit + dy * 1.12 + (hatOffsetY or 0.0)
+        local hRot = hatTilt or 0.0
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(hatPair.diff, hatX, hatY, 0, hatSc, hatSc, hw * 0.50, hh * 0.78)
+        if stage then
+            stage:drawSpriteLit(hatPair, hatX, hatY, hRot, hatSc, hatSc, hw * 0.50, hh * 0.78, nil, 0.0, nil, litShader, true)
+        else
+            love.graphics.draw(hatPair.diff, hatX, hatY, hRot, hatSc, hatSc, hw * 0.50, hh * 0.78)
+        end
     end
 end
 
@@ -2219,6 +3044,7 @@ function StageRenderer:drawOverworld(ctx)
     local encList = ctx.encounters or _encounterAnchors
     local defeatedMap = ctx.defeatedMap or {}
     local z = self.camZoom or 0.72
+    local litShader = (ctx.litShader ~= nil and ctx.litShader ~= false and self.useLitShader) and ctx.litShader or nil
 
     if not self._decorBuilt then
         self:buildOverworldDecor(encList)
@@ -2310,22 +3136,26 @@ function StageRenderer:drawOverworld(ctx)
     for i = 1, count do
         local item = list[i]
         if item.kind == "prop" then
-            drawStylizedProp(item.data, item.sx, item.sy, z, time, assets)
+            drawStylizedProp(self, item.data, item.sx, item.sy, z, time, assets, litShader, 1.0)
         elseif item.kind == "rival" then
             local enc = item.data
             local idx = item.idx
             local isDef = (defeatedMap[enc.id] == true) or (defeatedMap[idx] == true)
             local isAlerted = (ctx.alertEncounterIdx == idx)
-            drawRivalEntity(enc, idx, item.sx, item.sy, sw, sh, z, time, assets, isDef, isAlerted, ctx.alertTimer, smallFont)
+            drawRivalEntity(self, enc, idx, item.sx, item.sy, sw, sh, z, time, assets, isDef, isAlerted, ctx.alertTimer, smallFont, litShader)
         else
             drawPuduWithHat(
+                self,
                 item.sx,
                 item.sy,
                 ctx.puduFacingRow or 3,
                 ctx.puduAnimCol or 1,
                 puduTargetH,
                 ctx.puduBobY or 0.0,
-                assets
+                assets,
+                litShader,
+                ctx.puduHatOffsetY,
+                ctx.puduHatTilt
             )
         end
     end
@@ -2561,7 +3391,778 @@ function StageRenderer:drawBattleTransition(progress, w, h)
 end
 
 --------------------------------------------------------------------------------
--- 11. Clean Fase 01 Battle Placeholder Stage (Replaced by HD-2D Arena in Fase 02)
+-- 11. Dedicated Side-View HD-2D Battle Arena (8 Stages + 12-Band Floor + Props)
+--------------------------------------------------------------------------------
+
+local ARENA_PROP_Z = 1.85
+local ARENA_FG_Z = 1.75
+
+local BATTLE_FLOOR_TINTS = {
+    plaza   = { 0.96, 1.00, 0.92 },
+    bosque  = { 0.80, 0.95, 0.80 },
+    mirador = { 1.00, 0.90, 0.78 },
+    vereda  = { 0.98, 0.92, 0.80 },
+    muelle  = { 0.86, 0.90, 0.94 },
+    pantano = { 0.56, 0.68, 0.48 },
+    esquina = { 0.74, 0.76, 0.84 },
+    oficina = { 0.84, 0.86, 0.96 },
+}
+
+local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw, sh, tNow, activeLit)
+    if activeLit then
+        love.graphics.setShader(activeLit)
+        safeSend(activeLit, "hasNormalMap", 0.0)
+        safeSend(activeLit, "spriteAngle", 0.0)
+        safeSend(activeLit, "spriteBillboard", 0.0)
+        safeSend(activeLit, "emissiveBoost", 0.0)
+        safeSend(activeLit, "specStrength", 0.14)
+        safeSend(activeLit, "surfaceBaseY", sh * 0.65)
+    end
+
+    if stageKind == "oficina" then
+        -- Perspective marble slab seams flanking the royal carpet
+        love.graphics.setColor(0.24, 0.26, 0.36, 0.36)
+        love.graphics.setLineWidth(1.5)
+        for i = 1, 5 do
+            local fy = horizonY + floorH * ((i / 6) ^ 1.32)
+            love.graphics.line(0, fy, sw, fy)
+        end
+        love.graphics.setLineWidth(1)
+
+        -- Grand royal crimson velvet carpet trapezoid converging toward horizon
+        local topL, topR = sw * 0.25, sw * 0.75
+        local botL, botR = sw * 0.10, sw * 0.90
+        local topY = horizonY + 8
+        love.graphics.setColor(0.68, 0.11, 0.16, 0.96)
+        love.graphics.polygon("fill", topL, topY, topR, topY, botR, sh, botL, sh)
+
+        -- Inner velvet sheen strip
+        love.graphics.setColor(0.82, 0.18, 0.22, 0.56)
+        love.graphics.polygon("fill", sw * 0.31, topY + 2, sw * 0.69, topY + 2, sw * 0.81, sh, sw * 0.19, sh)
+
+        -- Ornate double golden border trim
+        love.graphics.setColor(0.96, 0.80, 0.28, 0.94)
+        love.graphics.setLineWidth(3.5)
+        love.graphics.line(topL + 8, topY, botL + 16, sh)
+        love.graphics.line(topR - 8, topY, botR - 16, sh)
+        love.graphics.setLineWidth(1.6)
+        love.graphics.line(topL + 18, topY, botL + 34, sh)
+        love.graphics.line(topR - 18, topY, botR - 34, sh)
+        love.graphics.line(topL + 8, topY + 2, topR - 8, topY + 2)
+
+        -- Ceremonial golden bureau seal inlaid in center of carpet
+        love.graphics.setColor(0.95, 0.78, 0.26, 0.30)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.65, sw * 0.13, sh * 0.045)
+        love.graphics.setColor(0.98, 0.84, 0.34, 0.70)
+        love.graphics.setLineWidth(2.0)
+        love.graphics.ellipse("line", sw * 0.50, sh * 0.65, sw * 0.125, sh * 0.043)
+        love.graphics.setLineWidth(1)
+
+    elseif stageKind == "esquina" then
+        -- Perspective urban asphalt avenue
+        local roadTopY = horizonY + 14
+        love.graphics.setColor(0.24, 0.26, 0.32, 0.94)
+        love.graphics.rectangle("fill", 0, roadTopY, sw, sh - roadTopY)
+
+        -- Far & near sidewalk curb bands with crisp yellow warning curb paint
+        love.graphics.setColor(0.46, 0.48, 0.54, 0.95)
+        love.graphics.rectangle("fill", 0, horizonY, sw, 14)
+        love.graphics.setColor(0.94, 0.76, 0.20, 0.92)
+        love.graphics.rectangle("fill", 0, roadTopY, sw, 6)
+        love.graphics.setColor(0.94, 0.76, 0.20, 0.80)
+        love.graphics.rectangle("fill", 0, sh - 22, sw, 8)
+
+        -- Crisp perspective white zebra crosswalk stripes framing the duel lane
+        love.graphics.setColor(0.92, 0.94, 0.98, 0.82)
+        local stripeCount = 7
+        for i = 0, stripeCount - 1 do
+            local frac = (i + 0.5) / stripeCount
+            local yTop = lerp(sh * 0.52, sh * 0.79, frac - 0.045)
+            local yBot = lerp(sh * 0.52, sh * 0.79, frac + 0.045)
+            local pT = (yTop - horizonY) / max(1, floorH)
+            local pB = (yBot - horizonY) / max(1, floorH)
+            local halfTop = lerp(sw * 0.14, sw * 0.24, pT)
+            local halfBot = lerp(sw * 0.14, sw * 0.24, pB)
+            love.graphics.polygon(
+                "fill",
+                sw * 0.50 - halfTop, yTop,
+                sw * 0.50 + halfTop, yTop,
+                sw * 0.50 + halfBot, yBot,
+                sw * 0.50 - halfBot, yBot
+            )
+        end
+
+    elseif stageKind == "muelle" then
+        -- Perspective weathered wooden pier decking planks overlooking the Valparaiso bay
+        local deckTopY = horizonY + 14
+        local deckH = sh - deckTopY
+        local plankCount = 11
+        for i = 0, plankCount - 1 do
+            local t0 = i / plankCount
+            local t1 = (i + 1) / plankCount
+            local y0 = deckTopY + floor(deckH * (t0 ^ 1.30))
+            local y1 = deckTopY + floor(deckH * (t1 ^ 1.30)) + 1
+            local shade = (i % 2 == 0) and 1.0 or 0.91
+            local depth = lerp(0.84, 1.05, t0)
+            if activeLit then
+                safeSend(activeLit, "surfaceBaseY", (y0 + y1) * 0.5)
+            end
+            love.graphics.setColor(0.58 * shade * depth, 0.42 * shade * depth, 0.26 * shade * depth, 0.96)
+            love.graphics.rectangle("fill", 0, y0, sw, max(2, y1 - y0))
+            -- Plank seam + subtle iron nail dots
+            love.graphics.setColor(0.24, 0.15, 0.08, 0.72)
+            love.graphics.rectangle("fill", 0, y0, sw, 2)
+            love.graphics.setColor(0.20, 0.14, 0.10, 0.48)
+            local nailStep = floor(lerp(96, 172, t0))
+            for nx = floor(nailStep * 0.5), sw - 20, nailStep do
+                love.graphics.rectangle("fill", nx, y0 + 5, 3, 2)
+            end
+        end
+
+        -- Sturdy wooden pier guardrail posts & sagging nautical rope right along horizon
+        if activeLit then
+            safeSend(activeLit, "spriteBillboard", 1.0)
+            safeSend(activeLit, "surfaceBaseY", deckTopY)
+        end
+        local postTopY = deckTopY - 26
+        -- Top wooden handrail beam
+        love.graphics.setColor(0.46, 0.30, 0.17, 1.0)
+        love.graphics.rectangle("fill", 0, postTopY + 3, sw, 5)
+        love.graphics.setColor(0.68, 0.50, 0.31, 0.85)
+        love.graphics.rectangle("fill", 0, postTopY + 2, sw, 2)
+
+        -- Vertical timber posts + sagging rope spans
+        local railPosts = 9
+        local prevPx = nil
+        for i = 0, railPosts do
+            local px = floor(lerp(sw * 0.04, sw * 0.96, i / railPosts))
+            if prevPx then
+                love.graphics.setColor(0.76, 0.64, 0.44, 0.88)
+                love.graphics.setLineWidth(2.4)
+                local midX = (prevPx + px) * 0.5
+                love.graphics.line(prevPx, postTopY + 14, midX, postTopY + 20, px, postTopY + 14)
+                love.graphics.setLineWidth(1)
+            end
+            love.graphics.setColor(0.36, 0.22, 0.12, 1.0)
+            love.graphics.rectangle("fill", px - 5, postTopY, 10, 29)
+            love.graphics.setColor(0.56, 0.38, 0.22, 0.92)
+            love.graphics.rectangle("fill", px - 4, postTopY, 4, 28)
+            love.graphics.setColor(0.84, 0.70, 0.42, 1.0)
+            love.graphics.rectangle("fill", px - 6, postTopY - 2, 12, 4)
+            prevPx = px
+        end
+        if activeLit then
+            safeSend(activeLit, "spriteBillboard", 0.0)
+        end
+
+    elseif stageKind == "plaza" then
+        -- Decorative sunlit Valdivian cobblestone plaza courtyard oval
+        love.graphics.setColor(0.74, 0.70, 0.61, 0.62)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.65, sw * 0.36, sh * 0.135)
+        love.graphics.setColor(0.86, 0.82, 0.72, 0.58)
+        love.graphics.setLineWidth(4)
+        love.graphics.ellipse("line", sw * 0.50, sh * 0.65, sw * 0.355, sh * 0.132)
+        love.graphics.setColor(0.62, 0.58, 0.50, 0.46)
+        love.graphics.setLineWidth(2)
+        love.graphics.ellipse("line", sw * 0.50, sh * 0.65, sw * 0.24, sh * 0.088)
+        love.graphics.setLineWidth(1)
+
+    elseif stageKind == "bosque" then
+        -- Emerald Valdivian forest clearing with dappled sunlit moss ring
+        love.graphics.setColor(0.28, 0.54, 0.26, 0.42)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.65, sw * 0.36, sh * 0.13)
+        love.graphics.setColor(0.54, 0.74, 0.34, 0.26)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.64, sw * 0.24, sh * 0.08)
+
+    elseif stageKind == "mirador" then
+        -- Low stone lookout parapet along horizon + warm Atacama ochre terrace oval
+        love.graphics.setColor(0.64, 0.42, 0.28, 0.86)
+        love.graphics.rectangle("fill", 0, horizonY, sw, 10)
+        love.graphics.setColor(0.88, 0.68, 0.44, 0.78)
+        love.graphics.rectangle("fill", 0, horizonY, sw, 3)
+        love.graphics.setColor(0.92, 0.74, 0.46, 0.32)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.65, sw * 0.35, sh * 0.125)
+        love.graphics.setColor(0.98, 0.84, 0.52, 0.44)
+        love.graphics.setLineWidth(2.2)
+        love.graphics.ellipse("line", sw * 0.50, sh * 0.65, sw * 0.34, sh * 0.12)
+        love.graphics.setLineWidth(1)
+
+    elseif stageKind == "vereda" then
+        -- Sun-baked Atacama cobblestone sidewalk lane with sandstone curb
+        love.graphics.setColor(0.78, 0.68, 0.54, 0.54)
+        love.graphics.rectangle("fill", 0, sh * 0.53, sw, sh * 0.24)
+        love.graphics.setColor(0.92, 0.82, 0.64, 0.68)
+        love.graphics.rectangle("fill", 0, sh * 0.53, sw, 5)
+        love.graphics.setColor(0.56, 0.42, 0.28, 0.62)
+        love.graphics.rectangle("fill", 0, sh * 0.77, sw, 6)
+
+    elseif stageKind == "pantano" then
+        -- Bubbling coastal marsh edge + flat stepping-stone causeway across the duel plane
+        local bub = 0.5 + 0.5 * sin(tNow * 2.2)
+        love.graphics.setColor(0.18, 0.30, 0.22, 0.58)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.66, sw * 0.40, sh * 0.145)
+        -- Dry stepping stones across center duel corridor
+        love.graphics.setColor(0.52, 0.54, 0.48, 0.78)
+        for i = 0, 5 do
+            local sx = lerp(sw * 0.22, sw * 0.78, i / 5)
+            local sy = sh * 0.65 + sin(i * 1.4) * 6
+            love.graphics.ellipse("fill", sx, sy, 46, 15)
+        end
+        love.graphics.setColor(0.52, 0.76, 0.38, 0.38 * bub)
+        love.graphics.ellipse("line", sw * 0.17, sh * 0.58, 16 + bub * 6, 6 + bub * 2)
+        love.graphics.ellipse("line", sw * 0.83, sh * 0.59, 14 + bub * 5, 5 + bub * 2)
+    else
+        love.graphics.setColor(pal.accentColor[1], pal.accentColor[2], pal.accentColor[3], 0.18)
+        love.graphics.ellipse("fill", sw * 0.50, sh * 0.65, sw * 0.34, sh * 0.125)
+    end
+
+    if activeLit then
+        love.graphics.setShader()
+    end
+end
+
+function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAssets, beatPulse, w, h, time, litShader)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = time or 0.0
+    local pulse = clamp(beatPulse or 0.0, 0.0, 1.5)
+
+    local stageKind = "plaza"
+    if type(encounter) == "table" and type(encounter.stage) == "string" then
+        stageKind = encounter.stage
+    elseif type(encounter) == "string" and encounter ~= "" then
+        stageKind = encounter
+    end
+
+    local theme = nil
+    if type(stageThemes) == "table" then
+        if type(stageThemes[stageKind]) == "table" then
+            theme = stageThemes[stageKind]
+        elseif stageThemes.skyTop or stageThemes.groundA then
+            theme = stageThemes
+        end
+    end
+
+    local tiles = nil
+    local propSprites = nil
+    if type(propSpritesOrAssets) == "table" then
+        if propSpritesOrAssets.tiles or propSpritesOrAssets.props then
+            tiles = propSpritesOrAssets.tiles
+            propSprites = propSpritesOrAssets.props
+        else
+            propSprites = propSpritesOrAssets
+        end
+    end
+
+    local pal = resolveSkyPalette(theme, stageKind)
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local st = preset.skyTint or { 1.0, 1.0, 1.0 }
+    local activeLit = (litShader ~= false) and (litShader or (self.useLitShader and self.shaders and self.shaders.lit)) or nil
+    if not self.useLitShader then
+        activeLit = nil
+    end
+
+    -- LAYER 1: Sky & Biome Parallax Horizon (horizonFrac = 0.44)
+    local horizonFrac = 0.44
+    local horizonY = floor(sh * horizonFrac)
+    local floorH = sh - horizonY
+    self:drawSkyAndHorizon(theme, sw, sh, tNow, horizonFrac, stageKind, propSpritesOrAssets)
+
+    -- LAYER 2: 12-Band Foreshortened Perspective Pixel-Art Floor (normal-mapped when tile.norm exists!)
+    local tileSpec = StageRenderer.THEME_TILES[stageKind] or StageRenderer.THEME_TILES.plaza
+    local tilePair = tiles and tiles[tileSpec.floor] or nil
+    local floorImg = tilePair and tilePair.diff or nil
+    local floorNorm = tilePair and tilePair.norm or nil
+    local fTint = BATTLE_FLOOR_TINTS[stageKind] or BATTLE_FLOOR_TINTS.plaza
+    local bands = 12
+
+    if floorImg then
+        local mesh = self:_ensureFloorBandMesh()
+        mesh:setTexture(floorImg)
+        if activeLit then
+            love.graphics.setShader(activeLit)
+            safeSend(activeLit, "spriteBillboard", 0.0)
+            safeSend(activeLit, "spriteAngle", 0.0)
+            safeSend(activeLit, "emissiveBoost", 0.0)
+            safeSend(activeLit, "specStrength", 0.14)
+            if floorNorm then
+                safeSend(activeLit, "hasNormalMap", 1.0)
+                safeSend(activeLit, "normalMap", floorNorm)
+                safeSend(activeLit, "normalStrength", 0.95)
+            else
+                safeSend(activeLit, "hasNormalMap", 0.0)
+            end
+        end
+
+        for i = 0, bands - 1 do
+            local t0 = i / bands
+            local t1 = (i + 1) / bands
+            local tMid = (t0 + t1) * 0.5
+            local y0 = horizonY + floor(floorH * (t0 ^ 1.32))
+            local y1 = horizonY + floor(floorH * (t1 ^ 1.32)) + 1
+            local pScale = lerp(0.46, 1.42, tMid)
+            local uSpan = (sw / 128.0) / pScale
+            local uL = 0.5 - uSpan * 0.5
+            local uR = 0.5 + uSpan * 0.5
+            local v0 = t0 * 4.2
+            local v1 = t1 * 4.2
+
+            if activeLit then
+                safeSend(activeLit, "surfaceBaseY", (y0 + y1) * 0.5)
+            end
+
+            local depthShade = lerp(0.84, 1.04, tMid)
+            local cr = fTint[1] * depthShade
+            local cg = fTint[2] * depthShade
+            local cb = fTint[3] * depthShade
+            if not activeLit then
+                cr = clamp(cr * st[1], 0, 1)
+                cg = clamp(cg * st[2], 0, 1)
+                cb = clamp(cb * st[3], 0, 1)
+            end
+            love.graphics.setColor(cr, cg, cb, 1.0)
+            mesh:setVertex(1, 0,  y0, uL, v0, 1, 1, 1, 1)
+            mesh:setVertex(2, sw, y0, uR, v0, 1, 1, 1, 1)
+            mesh:setVertex(3, sw, y1, uR, v1, 1, 1, 1, 1)
+            mesh:setVertex(4, 0,  y1, uL, v1, 1, 1, 1, 1)
+            love.graphics.draw(mesh)
+        end
+
+        if activeLit then
+            love.graphics.setShader()
+        end
+    else
+        -- Defensive fallback if tiles table was omitted
+        for i = 0, bands - 1 do
+            local t0 = i / bands
+            local t1 = (i + 1) / bands
+            local y0 = horizonY + floor(floorH * (t0 ^ 1.32))
+            local y1 = horizonY + floor(floorH * (t1 ^ 1.32)) + 1
+            local r = lerp(pal.groundB[1], pal.groundA[1], t0) * st[1]
+            local g = lerp(pal.groundB[2], pal.groundA[2], t0) * st[2]
+            local b = lerp(pal.groundB[3], pal.groundA[3], t0) * st[3]
+            love.graphics.setColor(clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1), 1.0)
+            love.graphics.rectangle("fill", 0, y0, sw, max(2, y1 - y0))
+        end
+    end
+
+    -- Gentle atmospheric perspective horizon haze blending distant floor bands into the horizon
+    local hazeR = clamp(pal.horizonGlow[1] * st[1], 0.0, 1.0)
+    local hazeG = clamp(pal.horizonGlow[2] * st[2], 0.0, 1.0)
+    local hazeB = clamp(pal.horizonGlow[3] * st[3], 0.0, 1.0)
+    if preset.id == "atardecer" then
+        hazeR, hazeG, hazeB = 1.00, 0.62, 0.34
+    elseif preset.id == "noche" then
+        hazeR, hazeG, hazeB = 0.22, 0.32, 0.58
+    end
+    for i = 0, 5 do
+        local t0 = i / bands
+        local t1 = (i + 1) / bands
+        local tMid = (t0 + t1) * 0.5
+        local y0 = horizonY + floor(floorH * (t0 ^ 1.32))
+        local y1 = horizonY + floor(floorH * (t1 ^ 1.32)) + 1
+        local hazeA = ((1.0 - tMid) ^ 2.2) * 0.34
+        love.graphics.setColor(hazeR, hazeG, hazeB, hazeA)
+        love.graphics.rectangle("fill", 0, y0, sw, max(2, y1 - y0))
+    end
+
+    -- LAYER 3: Stage-Specific Center Arena Detail
+    drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw, sh, tNow, activeLit)
+
+    -- LAYER 4: Curated Background & Flank Props (sorted by yFrac, keeping center 100% clear)
+    local decorList = StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza
+    for i = 1, #decorList do
+        local prop = decorList[i]
+        if prop.layer ~= "fg" then
+            local px = prop.xFrac * sw
+            local py = prop.yFrac * sh
+            drawStylizedProp(self, prop, px, py, ARENA_PROP_Z, tNow, propSpritesOrAssets or propSprites, activeLit, 1.0)
+        end
+    end
+
+    -- LAYER 5: Breathing Stance Rings at Canonical Battle Anchors (0.28w, 0.65h) & (0.72w, 0.65h)
+    local anchors = StageRenderer.getBattleAnchors(sw, sh)
+    local ringPulse = pulse
+    if beatPulse == nil then
+        ringPulse = 0.5 + 0.5 * sin(tNow * 4.2)
+    end
+
+    -- Pudu cyan-gold stance ring
+    love.graphics.setColor(0.20, 0.84, 0.98, 0.20 + 0.14 * ringPulse)
+    love.graphics.ellipse("fill", anchors.puduX, anchors.puduY + 8, 66 + ringPulse * 8, 21 + ringPulse * 2.8)
+    love.graphics.setLineWidth(2.4)
+    love.graphics.setColor(0.36, 0.94, 1.00, 0.78 + 0.18 * ringPulse)
+    love.graphics.ellipse("line", anchors.puduX, anchors.puduY + 8, 62 + ringPulse * 7, 19.5 + ringPulse * 2.4)
+    love.graphics.setLineWidth(1.6)
+    love.graphics.setColor(1.00, 0.88, 0.38, 0.72 + 0.22 * ringPulse)
+    love.graphics.ellipse("line", anchors.puduX, anchors.puduY + 8, 46 + ringPulse * 5, 14 + ringPulse * 1.8)
+
+    -- Rival crimson-gold stance ring
+    love.graphics.setColor(0.98, 0.30, 0.26, 0.20 + 0.14 * ringPulse)
+    love.graphics.ellipse("fill", anchors.enemyX, anchors.enemyY + 8, 72 + ringPulse * 8, 23 + ringPulse * 2.8)
+    love.graphics.setLineWidth(2.4)
+    love.graphics.setColor(1.00, 0.38, 0.30, 0.78 + 0.18 * ringPulse)
+    love.graphics.ellipse("line", anchors.enemyX, anchors.enemyY + 8, 68 + ringPulse * 7, 21.5 + ringPulse * 2.4)
+    love.graphics.setLineWidth(1.6)
+    love.graphics.setColor(1.00, 0.82, 0.34, 0.74 + 0.20 * ringPulse)
+    love.graphics.ellipse("line", anchors.enemyX, anchors.enemyY + 8, 50 + ringPulse * 5, 15.5 + ringPulse * 1.8)
+    love.graphics.setLineWidth(1)
+
+    love.graphics.setColor(1, 1, 1, 1)
+    return anchors
+end
+
+function StageRenderer:drawBattleArenaForeground(encounter, propSpritesOrAssets, w, h, timeOrShader, litShaderOpt)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = 0.0
+    local litShader = litShaderOpt
+    if type(timeOrShader) == "number" then
+        tNow = timeOrShader
+    elseif timeOrShader ~= nil and litShader == nil then
+        litShader = timeOrShader
+    end
+
+    local stageKind = "plaza"
+    if type(encounter) == "table" and type(encounter.stage) == "string" then
+        stageKind = encounter.stage
+    elseif type(encounter) == "string" and encounter ~= "" then
+        stageKind = encounter
+    end
+
+    local activeLit = (litShader ~= false) and (litShader or (self.useLitShader and self.shaders and self.shaders.lit)) or nil
+    if not self.useLitShader then
+        activeLit = nil
+    end
+
+    local decorList = StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza
+    for i = 1, #decorList do
+        local prop = decorList[i]
+        if prop.layer == "fg" then
+            local px = prop.xFrac * sw
+            local py = prop.yFrac * sh
+            drawStylizedProp(self, prop, px, py, ARENA_FG_Z, tNow, propSpritesOrAssets, activeLit, 0.92)
+        end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+--------------------------------------------------------------------------------
+-- 12. Dynamic Point Lights, Atmospheric Halos/Sunbeams & Post-Processing
+--------------------------------------------------------------------------------
+
+function StageRenderer:_resetLightCollection()
+    self._lightsCount = 0
+end
+
+function StageRenderer:_pushLight(x, y, radius, r, g, b, energy, haloScale, height)
+    if self._lightsCount >= 10 then
+        return
+    end
+    self._lightsCount = self._lightsCount + 1
+    local entry = self._lightsPool[self._lightsCount]
+    entry.x = x
+    entry.y = y
+    entry.radius = radius
+    entry.height = height or 68.0
+    entry.r = r
+    entry.g = g
+    entry.b = b
+    entry.energy = energy
+    entry.haloScale = haloScale or 0.78
+    self._lightsList[self._lightsCount] = entry
+end
+
+function StageRenderer:_finalizeLightCollection()
+    local list = self._lightsList
+    for i = self._lightsCount + 1, 10 do
+        list[i] = nil
+    end
+    return list
+end
+
+function StageRenderer:collectBattleLights(encounter, w, h, time)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = time or 0.0
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local boost = preset.lanternBoost or 0.6
+
+    local stageKind = "plaza"
+    if type(encounter) == "table" and type(encounter.stage) == "string" then
+        stageKind = encounter.stage
+    elseif type(encounter) == "string" and encounter ~= "" then
+        stageKind = encounter
+    end
+
+    self:_resetLightCollection()
+
+    -- Priority 1: Character key/fill pools in noche & dramatico (litShader illumination ONLY; haloScale = 0 so no foggy orb covers character faces!)
+    if self.lightingPreset == "noche" then
+        self:_pushLight(sw * 0.28, sh * 0.58, 285, 1.00, 0.86, 0.64, 0.46, 0.0, 108)
+        self:_pushLight(sw * 0.72, sh * 0.58, 295, 0.96, 0.84, 0.70, 0.46, 0.0, 108)
+    elseif self.lightingPreset == "dramatico" then
+        self:_pushLight(sw * 0.28, sh * 0.56, 280, 1.00, 0.90, 0.66, 0.48, 0.0, 136)
+        self:_pushLight(sw * 0.72, sh * 0.56, 290, 1.00, 0.86, 0.66, 0.48, 0.0, 136)
+    end
+
+    -- Priority 2: Emissive props in the active stage arena (exact match to ARENA_PROP_Z anchor!)
+    local decorList = StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza
+    for i = 1, #decorList do
+        local prop = decorList[i]
+        if prop.layer ~= "fg" then
+            local px = prop.xFrac * sw
+            local py = prop.yFrac * sh
+            local s = (prop.scale or 1.0) * ARENA_PROP_Z
+            local k = prop.kind
+
+            if k == "lantern_post" then
+                local flicker = 0.90 + 0.10 * sin(tNow * 4.2 + i * 1.9)
+                self:_pushLight(
+                    px + 10 * s, py - 48 * s,
+                    195 * (prop.scale or 1.0),
+                    1.00, 0.74, 0.30,
+                    0.92 * boost * flicker,
+                    0.82 * (prop.scale or 1.0),
+                    72
+                )
+            elseif k == "mountain_crystal" then
+                local pulse = 0.88 + 0.12 * sin(tNow * 3.1 + i * 1.7)
+                self:_pushLight(
+                    px, py - 24 * s,
+                    170 * (prop.scale or 1.0),
+                    0.34, 0.88, 1.00,
+                    0.78 * max(0.55, boost) * pulse,
+                    0.72 * (prop.scale or 1.0),
+                    56
+                )
+            elseif k == "orb_shrine" or k == "quena_monolith" or k == "stone_pedestal" then
+                local pulse = 0.90 + 0.10 * sin(tNow * 2.8 + i * 1.4)
+                self:_pushLight(
+                    px, py - 46 * s,
+                    180 * (prop.scale or 1.0),
+                    1.00, 0.82, 0.36,
+                    0.80 * max(0.45, boost) * pulse,
+                    0.74 * (prop.scale or 1.0),
+                    68
+                )
+            elseif k == "pincoya_shrine" then
+                local pulse = 0.88 + 0.12 * sin(tNow * 2.9 + i * 1.3)
+                self:_pushLight(
+                    px, py - 46 * s,
+                    175 * (prop.scale or 1.0),
+                    0.30, 0.94, 0.92,
+                    0.80 * max(0.50, boost) * pulse,
+                    0.74 * (prop.scale or 1.0),
+                    68
+                )
+            elseif k == "coast_lighthouse" then
+                local pulse = 0.92 + 0.08 * sin(tNow * 1.8)
+                self:_pushLight(
+                    px, py - 114 * s,
+                    245 * (prop.scale or 1.0),
+                    1.00, 0.92, 0.56,
+                    1.05 * max(0.55, boost) * pulse,
+                    0.94 * (prop.scale or 1.0),
+                    120
+                )
+            elseif k == "biome_arch" then
+                local st = prop.extra or "stone"
+                local lr, lg, lb = 0.34, 0.82, 0.46
+                if st == "sandstone" then
+                    lr, lg, lb = 0.98, 0.72, 0.28
+                elseif st == "harbor" then
+                    lr, lg, lb = 0.30, 0.84, 0.96
+                end
+                self:_pushLight(
+                    px, py - 78 * s,
+                    155 * (prop.scale or 1.0),
+                    lr, lg, lb,
+                    0.68 * max(0.45, boost),
+                    0.66 * (prop.scale or 1.0),
+                    82
+                )
+            end
+        end
+    end
+
+    -- Priority 3: Coastal Caleuche spectral stern lantern on horizon in muelle stage
+    if stageKind == "muelle" then
+        local shipX = sw * 0.40 + sin(tNow * 0.28) * 20.0
+        local shipY = floor(sh * 0.44) - 18
+        self:_pushLight(shipX - 22, shipY, 135, 0.40, 0.96, 0.88, 0.52 * max(0.45, boost), 0.52, 48)
+    end
+
+    return self:_finalizeLightCollection()
+end
+
+function StageRenderer:collectZoneLights(w, h, time)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = time or 0.0
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local boost = preset.lanternBoost or 0.6
+    local z = self.camZoom or 0.72
+    local camU = self.camU
+    local camV = self.camV
+
+    self:_resetLightCollection()
+
+    -- Gentle readability lantern around Pudu/camera center in noche or dramatico overworld (litShader only)
+    if self.lightingPreset == "noche" then
+        self:_pushLight(sw * 0.50, sh * 0.52, 290, 1.00, 0.86, 0.64, 0.48, 0.0, 96)
+    elseif self.lightingPreset == "dramatico" then
+        self:_pushLight(sw * 0.50, sh * 0.50, 310, 1.00, 0.90, 0.68, 0.52, 0.0, 114)
+    end
+
+    local decor = self.overworldDecor or {}
+    for i = 1, #decor do
+        if self._lightsCount >= 10 then
+            break
+        end
+        local prop = decor[i]
+        local k = prop.kind
+        if (k == "lantern_post" or k == "mountain_crystal" or k == "orb_shrine"
+            or k == "pincoya_shrine" or k == "quena_monolith" or k == "coast_lighthouse"
+            or k == "biome_arch" or k == "caleuche_ship")
+            and abs(prop.u - camU) <= 17.0 and abs(prop.v - camV) <= 17.0 then
+
+            local elev = StageRenderer.getElevation(prop.u, prop.v)
+            local sx, sy = self:isoToScreen(prop.u, prop.v, elev, sw, sh)
+            if sx >= -140 and sx <= sw + 140 and sy >= -140 and sy <= sh + 140 then
+                local s = (prop.scale or 1.0) * z
+                if k == "lantern_post" then
+                    local flicker = 0.90 + 0.10 * sin(tNow * 4.0 + prop.u)
+                    self:_pushLight(sx + 10 * s, sy - 48 * s, 165 * z, 1.00, 0.76, 0.32, 0.88 * boost * flicker, 0.76, 62)
+                elseif k == "mountain_crystal" then
+                    local pulse = 0.86 + 0.14 * sin(tNow * 3.0 + prop.u)
+                    self:_pushLight(sx, sy - 24 * s, 150 * z, 0.34, 0.88, 1.00, 0.76 * max(0.50, boost) * pulse, 0.70, 48)
+                elseif k == "pincoya_shrine" then
+                    self:_pushLight(sx, sy - 46 * s, 165 * z, 0.30, 0.94, 0.92, 0.78 * max(0.50, boost), 0.72, 60)
+                elseif k == "orb_shrine" or k == "quena_monolith" then
+                    self:_pushLight(sx, sy - 46 * s, 170 * z, 1.00, 0.82, 0.36, 0.80 * max(0.45, boost), 0.72, 60)
+                elseif k == "coast_lighthouse" then
+                    self:_pushLight(sx, sy - 114 * s, 235 * z, 1.00, 0.92, 0.56, 1.00 * max(0.55, boost), 0.92, 110)
+                elseif k == "caleuche_ship" then
+                    self:_pushLight(sx - 32 * s, sy - 15 * s, 145 * z, 0.42, 0.98, 0.88, 0.65 * max(0.45, boost), 0.65, 52)
+                elseif k == "biome_arch" then
+                    local st = prop.extra or "stone"
+                    local lr, lg, lb = 0.34, 0.80, 0.44
+                    if st == "sandstone" then
+                        lr, lg, lb = 0.98, 0.72, 0.28
+                    elseif st == "harbor" then
+                        lr, lg, lb = 0.30, 0.84, 0.96
+                    end
+                    self:_pushLight(sx, sy - 78 * s, 155 * z, lr, lg, lb, 0.70 * max(0.45, boost), 0.66, 72)
+                end
+            end
+        end
+    end
+
+    return self:_finalizeLightCollection()
+end
+
+function StageRenderer:drawAtmosphericLighting(lightRadialImg, lights, w, h, time)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = time or 0.0
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+
+    -- 1. Soft additive radial halos for lanterns, crystals & shrines (calibrated to avoid white blowout!)
+    if type(lights) == "table" and #lights > 0 then
+        love.graphics.setShader()
+        love.graphics.setBlendMode("add")
+        local haloGain = clamp(0.16 + (preset.lanternBoost or 0.5) * 0.20, 0.12, 0.44)
+        local lw, lh = 1, 1
+        if lightRadialImg then
+            lw, lh = lightRadialImg:getDimensions()
+        end
+
+        for i = 1, #lights do
+            local L = lights[i]
+            local scaleF = (type(L) == "table" and L.haloScale ~= nil) and L.haloScale or 0.75
+            if type(L) == "table" and (L.energy or 0.0) > 0.01 and scaleF > 0.01 then
+                local alpha = clamp((L.energy or 0.8) * haloGain * 0.62, 0.04, 0.38)
+                local rad = (L.radius or 160.0) * 0.76 * scaleF
+                local lr = L.r or (L.color and L.color[1]) or 1.0
+                local lg = L.g or (L.color and L.color[2]) or 0.80
+                local lb = L.b or (L.color and L.color[3]) or 0.40
+
+                if lightRadialImg then
+                    local sc = (rad * 2.0) / max(1, lw)
+                    love.graphics.setColor(lr, lg, lb, alpha)
+                    love.graphics.draw(lightRadialImg, L.x, L.y, 0, sc, sc, lw * 0.5, lh * 0.5)
+                else
+                    love.graphics.setColor(lr, lg, lb, alpha * 0.46)
+                    love.graphics.circle("fill", L.x, L.y, rad * 0.72)
+                    love.graphics.setColor(lr, lg, lb, alpha * 0.32)
+                    love.graphics.circle("fill", L.x, L.y, rad * 0.38)
+                end
+            end
+        end
+    end
+
+    -- 2. Diagonal volumetric sunbeams via shaders.sunbeam (strictly OFF in noche where beamStrength == 0)
+    local beamStrength = preset.beamStrength or 0.0
+    local beamShader = self.shaders and self.shaders.sunbeam
+    if beamShader and beamStrength > 0.001 then
+        local white = self:_getUnitWhite()
+        local sizeBuf = self._screenSizeBuf
+        sizeBuf[1], sizeBuf[2] = sw, sh
+
+        love.graphics.setBlendMode("add")
+        love.graphics.setShader(beamShader)
+        safeSend(beamShader, "time", tNow)
+        safeSend(beamShader, "beamAngle", -0.44)
+        safeSend(beamShader, "beamColor", preset.beamColor or { 1.0, 0.94, 0.78 })
+        safeSend(beamShader, "beamStrength", beamStrength)
+        safeSend(beamShader, "screenSize", sizeBuf)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(white, 0, 0, 0, sw * 0.5, sh * 0.5)
+        love.graphics.setShader()
+    end
+
+    love.graphics.setShader()
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function StageRenderer:drawPostProcessed(worldCanvas, w, h)
+    if not worldCanvas then
+        return
+    end
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local cw, ch = worldCanvas:getDimensions()
+    local sx = sw / max(1, cw)
+    local sy = sh / max(1, ch)
+
+    local postShader = self.shaders and self.shaders.post
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(1, 1, 1, 1)
+
+    if postShader then
+        local texelBuf = self._texelSizeBuf
+        texelBuf[1] = 1.0 / max(1, cw)
+        texelBuf[2] = 1.0 / max(1, ch)
+
+        love.graphics.setShader(postShader)
+        safeSend(postShader, "dofEnabled", preset.dofEnabled or 0.0)
+        safeSend(postShader, "focusY", 0.62)
+        safeSend(postShader, "texelSize", texelBuf)
+        safeSend(postShader, "bloomStrength", self.disableBloom and 0.0 or (preset.bloomStrength or 0.16))
+        safeSend(postShader, "vignetteStrength", preset.vignette or 0.18)
+        love.graphics.draw(worldCanvas, 0, 0, 0, sx, sy)
+        love.graphics.setShader()
+    else
+        love.graphics.draw(worldCanvas, 0, 0, 0, sx, sy)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 13. Preserved Fase 01 Battle Placeholder Stage (Backward Compatibility Alias)
 --------------------------------------------------------------------------------
 
 function StageRenderer:drawBattlePlaceholderStage(ctx)
@@ -2638,7 +4239,7 @@ function StageRenderer:drawBattlePlaceholderStage(ctx)
     if ctx.drawActors ~= false and assets then
         local animCol = (floor(time * 6.0) % 6) + 1
         local puduBob = sin(time * 5.2) * 3.5
-        drawPuduWithHat(anchors.puduX, anchors.puduY, 2, animCol, 124.0, puduBob, assets)
+        drawPuduWithHat(self, anchors.puduX, anchors.puduY, 2, animCol, 124.0, puduBob, assets)
 
         if enc then
             local encPair = assets.encounters and assets.encounters[enc.id]
