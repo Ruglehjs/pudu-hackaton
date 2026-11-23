@@ -1,0 +1,26 @@
+# OS & Editors
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Secrets & Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local Engine Binaries & Build Outputs
+tools/love.app
+tools/love-win64/
+dist/
+*.love
+
+# Runtime Caches & Logs
+cache/
+*.log
+victory_album.json
+stage_overrides.json
