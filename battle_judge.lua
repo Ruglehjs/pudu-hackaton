@@ -227,6 +227,8 @@ function Judge.ensureResultCoherence(raw, prompt, encounter)
     -- Invalid local input never spends a turn, even if a remote service approves.
     if type(raw) ~= "table" or type(raw.approved) ~= "boolean" or not r.approved then return r end
     local expectedCombo = comboFor(normalize(prompt), encounter or {})
+    local knownState, knownCritical = r.adds_stage_state, r.is_critical
+    local criticalDamage, criticalReaction, criticalSfx = r.damage_to_enemy, r.enemy_reaction, r.reaction_sfx
     for key, base in pairs(r) do
         local value = raw[key]
         if type(value) == type(base) then
@@ -254,6 +256,7 @@ function Judge.ensureResultCoherence(raw, prompt, encounter)
     r.status_tag = r.status_tag:gsub(charPattern, uppercase):upper()
     r.combo_triggered, r.combo_name = "none", ""
     r.reject_reason = ""
+    if knownState ~= "none" then r.adds_stage_state = knownState end
     local known = exactSprite(normalize(prompt))
     r.existing_sprite, r.sprite_mode = known, known == "none" and "generate_live" or "existing"
     local _, wordCount = r.sprite_prompt:gsub("%S+", "")
@@ -276,6 +279,11 @@ function Judge.ensureResultCoherence(raw, prompt, encounter)
     end
     if expectedCombo then
         applyCombo(r, expectedCombo)
+    elseif knownCritical then
+        r.outcome_type, r.is_critical = "super_funny_ko", true
+        r.damage_to_enemy = math.max(criticalDamage, r.damage_to_enemy)
+        r.enemy_reaction, r.reaction_sfx = criticalReaction, criticalSfx
+        r.comedy_score = math.max(9, r.comedy_score)
     elseif r.outcome_type == "super_funny_ko" then
         r.is_critical, r.damage_to_enemy = true, bounded(r.damage_to_enemy, 85, 100)
     elseif r.outcome_type == "heal_pudu" then

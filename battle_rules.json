@@ -2,12 +2,12 @@
   "sprites": {
     "rain_cloud": ["nube de lluvia", "nube", "lluvia", "nube lluviosa", "nubecita", "nubecita de lluvia"],
     "banana_peel": ["cascara de platano", "cascara de banana", "platano", "banana"],
-    "cucumber": ["pepino", "pepinito", "pepino gigante"],
+    "cucumber": ["pepino", "pepinito", "pepino verde", "pepino gigante"],
     "melted_icecream": ["helado derretido", "cono derretido", "heladito derretido"],
     "lightning_bolt": ["rayo", "rayo electrico", "relampago"],
     "hair_dryer": ["secador", "secadora de pelo", "secador de pelo", "secador de cabello"],
     "giant_fan": ["ventilador", "ventilador gigante", "ventilador industrial"],
-    "paint_bucket": ["pintura", "balde de pintura", "cubo de pintura", "tarro de pintura"],
+    "paint_bucket": ["pintura", "balde de pintura", "balde de pintura verde", "cubo de pintura", "tarro de pintura"],
     "empanada": ["empanada", "empanadita", "empanada de pino"],
     "cardboard_box": ["caja", "caja de carton", "cajita de carton"],
     "robot_vacuum": ["robot aspiradora", "aspiradora robot", "aspiradora", "roomba"],
@@ -69,8 +69,8 @@
     {"words":["tostadora","tostador"],"speech":"¡Al pan le dije vuelta y vuelta, no órbita completa!","narrator":"Despega la marraqueta y vuelve untada por ambos lados."}
   ],
   "heal":["pocion","curar","curame","saname","cura","curita","botiquin","sanar","venda","medicina","sopaipilla para el pudu","sopa para el pudu"],
-  "reject_exact":["","hola","hola hola","holi","buenas","buenos dias","buenas tardes","saludos","hello","hi","asdf","asdfgh","qwerty","ganar","gana","ganar la batalla","gano","victoria","hack","trampa","gg"],
-  "reject_phrases":["modo dios","ganar automaticamente","ganar al instante","ganar instantaneamente","victoria instantanea","ignora las instrucciones","ignora tus instrucciones","puntos infinitos","vida infinita","hackear el juego","hago trampa"],
+  "reject_exact":["","hola","hola hola","holi","buenas","buenos dias","buenas tardes","saludos","hello","hi","ayuda","asdf","asdfgh","asdfghjkl","qwerty","ganar","gana","ganar la batalla","gano","victoria","hack","trampa","gg"],
+  "reject_phrases":["modo dios","ganar automaticamente","ganar al instante","ganar instantaneamente","victoria instantanea","ignora las instrucciones","ignora tus instrucciones","ignore all instructions","borrar el juego","puntos infinitos","vida infinita","hackear el juego","hago trampa"],
   "prefixes":["invoca","invoco","invocar","conjura","conjuro","llama","lanza","lanzo","crea","creo","trae","saca","arroja","tira","un","una","unos","unas","el","la","los","las","al"],
   "enums":{
     "delivery_style":["throw_arc","overhead_weather","drop_from_sky","charge_across","pop_underneath","buff_pudu"],

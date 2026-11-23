@@ -1,0 +1,16 @@
+PUDU FANTASY - DEMO WINDOWS X64
+
+Extrae todo el ZIP y abre PuduFantasy.exe. Mantén las DLL junto al juego.
+Para jugar offline no necesitas Python ni Internet.
+
+WASD o flechas para caminar. Enter para lanzar el prompt en combate.
+Flechas o WASD para cargar el ritual. F7 cambia la iluminación.
+F8 silencia el audio. F5 recarga el arte.
+
+Para usar la IA opcional instala Python 3.10 o superior, ejecuta
+python -m pip install -r requirements.txt y copia .env.example a .env.
+Configura GEMINI_API_KEY o las credenciales ADC de Vertex AI y abre
+Jugar_con_IA.bat. El juego usa Lua si el puente local no responde.
+
+Coloca arte de reemplazo en assets/custom y pulsa F5 dentro del juego.
+Las capturas manuales hechas con F12 se guardan en screenshots.

@@ -184,7 +184,7 @@ def _bounded(value, lo, hi):
 
 
 def sanitize_battle_result(raw, prompt, encounter):
-    """El servidor conserva autoridad sobre admisión, estado previo y mínimos de combo."""
+    """El servidor conserva las reglas de admisión, debilidades, estados y combos."""
     enc = _encounter(encounter)
     base = _judge_local(prompt, enc)
     if not isinstance(raw, dict) or not base["approved"]:
@@ -228,6 +228,10 @@ def sanitize_battle_result(raw, prompt, encounter):
         else:
             for key in ("outcome_type", "damage_to_enemy", "comedy_score", "anticipation_line", "enemy_reaction"):
                 r[key] = base[key]
+    if r["combo_triggered"] == "none" and base["is_critical"]:
+        for key in ("outcome_type", "enemy_reaction", "reaction_sfx"):
+            r[key] = base[key]
+        r["damage_to_enemy"] = max(base["damage_to_enemy"], r["damage_to_enemy"])
     sprite = "lightning_bolt" if r["combo_triggered"] == "combo_electro" else base["existing_sprite"]
     r.update(sprite_mode="existing" if sprite != "none" else "generate_live", existing_sprite=sprite)
     if "facing right" not in r["sprite_prompt"].lower() or not 10 <= len(r["sprite_prompt"].split()) <= 16:

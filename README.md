@@ -7,6 +7,7 @@ RPG de combate por turnos ambientado en cuatro biomas chilenos. Escribe una invo
 Abre **Jugar_Windows.bat**. El lanzador busca LÖVE 11.5 en `tools/love-win64/` o en el PATH. La copia local de la demo incluye el motor.
 
 Si tienes el ZIP portátil, extrae la carpeta completa y ejecuta **PuduFantasy.exe**.
+Para abrir esa misma build con el puente opcional, usa **Jugar_con_IA.bat**.
 
 - Camina con WASD o las flechas. Acércate al siguiente rival o pulsa Tab cuando aparezca el botón de combate.
 - En la arena, escribe una idea y pulsa Enter. Puedes pegar con Ctrl+V y corregir con Retroceso.
@@ -45,6 +46,8 @@ python tests/smoke_game.py
 python tools/build_windows_exe.py
 ```
 
-El empaquetador usa el motor en `tools/love-win64/` y produce el ejecutable portable en `dist/PuduFantasy-Windows/` y su ZIP. Mantén las DLL junto al ejecutable.
+El empaquetador usa el motor en `tools/love-win64/` y verifica el `.love`, el ejecutable fusionado, las DLL de 64 bits y el ZIP. Mantén las DLL junto al ejecutable.
 
 La prueba de integración abre una partida, desconecta el puente entre turnos y verifica que el combo termina en Lua. Si tienes LuaJIT, puedes ejecutar también `luajit tests/test_offline_lua.lua`.
+
+Para repetir la Fase 7, instala `requirements.txt` y ejecuta `python tools/qa_demo.py`. Añade `--live` para probar tres prompts con Gemini. Las capturas y el manifiesto se escriben en `screenshots/qa_final/`. Consulta [los resultados y el guion de la demo](docs/phases/RESULTADOS_FASE_07.md).
