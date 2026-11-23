@@ -1,6 +1,12 @@
 # Inicia el puente si existe Python y lo cierra al salir del juego.
 $ErrorActionPreference = 'Stop'
+$portable = Join-Path $PSScriptRoot 'PuduFantasy.exe'
 $engine = Join-Path $PSScriptRoot 'tools/love-win64/love.exe'
+$gameArgs = @($PSScriptRoot)
+if (Test-Path -LiteralPath $portable) {
+    $engine = $portable
+    $gameArgs = @()
+}
 if (-not (Test-Path -LiteralPath $engine)) {
     $installed = Get-Command love.exe -ErrorAction SilentlyContinue
     if ($installed) { $engine = $installed.Source }
@@ -47,7 +53,7 @@ try {
             } catch { Write-Host 'El combate usará el juez local de Lua.' }
         }
     }
-    & $engine $PSScriptRoot @args | Out-Host
+    & $engine @gameArgs @args | Out-Host
     $gameExit = $LASTEXITCODE
 } finally {
     if ($bridgeProcess -and -not $bridgeProcess.HasExited) {

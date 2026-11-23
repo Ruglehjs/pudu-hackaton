@@ -35,6 +35,13 @@ end
 local function judge(text, encounter)
     return check(Judge.standaloneLuaEvaluate(text, encounter or {}))
 end
+
+local rain = check(Judge.ensureResultCoherence({
+    approved = true, outcome_type = "effective", is_critical = false,
+    damage_to_enemy = 42, enemy_reaction = "wet", adds_stage_state = "none",
+}, "nube de lluvia", { id = "nino_helado" }))
+assert(rain.is_critical and rain.damage_to_enemy >= 88)
+assert(rain.enemy_reaction == "crying" and rain.adds_stage_state == "mojado")
 assert(Encounters.count() == 9)
 for _, enc in ipairs(Encounters.SELECTABLE) do
     local r = judge(rules.rivals[enc.id].weak[1], enc)
