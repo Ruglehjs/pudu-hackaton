@@ -94,7 +94,7 @@ playBatch(ritual)
 assert(#ritual.sequence == 10 and ritual.sequence[9].bonus and ritual.sequence[10].bonus)
 playBatch(ritual)
 assert(ritual.cursor == 11 and not ritual.readyToUnleash)
-near(ritual:getMultiplier(), 1.64)
+near(ritual:getMultiplier(), 1 + 8 * 0.08 + 2 * 0.04)
 for i = 3, #ritual.sequence do
     local direction = ritual.sequence[i].direction
     assert(direction ~= ritual.sequence[i - 1].direction or direction ~= ritual.sequence[i - 2].direction)
@@ -235,6 +235,9 @@ hud:drawVictoryOrDefeat(state, 1280, 720)
 for _, hit in ipairs(hud.hits) do
     if hit.action == "retry" then love.mousepressed(hit.x + hit.w / 2, hit.y + hit.h / 2, 1) end
 end
+assert(game.battlePhase == "versus" and not hud.promptOpen)
+advance(1.25)
+assert(game.battlePhase == "battle_enter" and not hud.promptOpen)
 advance(1)
 assert(game.battlePhase == "player_turn" and game.battle.turn == 1 and game.battle.hp == 100)
 
@@ -265,4 +268,22 @@ game.cli.mock = true
 cast("calcetín", "laughing")
 assert(game.battle.nonCritMissCount == 1 and game.battle.enemyHp == 90 and game.battle.hp < 100)
 
-print("OK: ritual, sprites tardíos, timeout, carriles, UTF-8, anti-tofu y semi-pista de fase 04.")
+-- Osu! mouse targets (hit circle + slider) & extra arrow waves while waiting for live sprite
+local osuRitual = SpellRitual.new()
+osuRitual:start("ornitorrinco dj")
+osuRitual:setAiReady({ ritual_theme_color = "#44DDAA" }, true)
+osuRitual:update(0.40, nil, 346, 658, 134, audio)
+assert(#osuRitual.osuTargets >= 1, "debe aparecer un objetivo Osu durante el ritual")
+local firstTarget = osuRitual.osuTargets[1]
+assert(osuRitual:onMousePressed(firstTarget.x, firstTarget.y, 1, audio))
+assert(osuRitual.osuHits == 1 and osuRitual:getMultiplier() > 1.0)
+osuRitual:onMouseMoved(500, 420)
+assert(#osuRitual.cursorTrail == 1)
+-- Finish all 10 arrows while sprite is still pending -> extra wave of 6 arrows spawns after pause
+for _ = 1, 4 do playBatch(osuRitual) end
+assert(osuRitual.cursor == 11 and not osuRitual.readyToUnleash)
+osuRitual:update(0.65, nil, 346, 658, 134, audio)
+assert(osuRitual.waveCount == 2 and #osuRitual.sequence == 6 and osuRitual.cursor == 1)
+osuRitual:draw(1280, 720, 346, 658, fonts)
+
+print("OK: ritual, Osu!, oleadas extra, sprites tardíos, timeout, carriles, UTF-8, anti-tofu y semi-pista de fase 04.")

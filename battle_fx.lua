@@ -83,10 +83,15 @@ function BattleFX:clear()
     self.age, self.shakeAge, self.shakeDuration, self.shakeMagnitude = 0, 0, 0, 0
     self.hitStopTimer, self.flashTimer = 0, 0
     self.anchors = nil
+    self.rivalCard = nil
 end
 
 function BattleFX:setTypography(fonts)
     self.fonts = fonts
+end
+
+function BattleFX:setRivalCard(card)
+    self.rivalCard = card
 end
 
 function BattleFX:clearTurn()
@@ -487,9 +492,14 @@ end
 
 local function bannerMaxWidth(self)
     local face = shakeSafe(self, faceBounds(self))
+    local right = self.w
     if face.y < 140 and face.y + face.h > 80 then
-        return math.max(126, 2 * (face.x - self.w * 0.5 - 6))
+        right = face.x - 6
     end
+    if self.rivalCard and self.rivalCard.x > self.w * 0.5 then
+        right = math.min(right, self.rivalCard.x - 8)
+    end
+    return math.max(126, 2 * (right - self.w * 0.5))
 end
 
 local function bannerBounds(self, fonts)
@@ -731,17 +741,19 @@ function BattleFX:drawReactionOverlay(state, enemyX, enemyY, time)
 end
 
 local BUBBLE_THEME = {
-    normal = { {0.94, 0.96, 1}, {0.27, 0.39, 0.61}, 0 },
-    shout  = { {1, 0.91, 0.52}, {0.86, 0.27, 0.26}, 2 },
-    cry    = { {0.78, 0.91, 1}, {0.25, 0.54, 0.80}, 0 },
-    laugh  = { {1, 0.90, 0.72}, {0.74, 0.34, 0.28}, 3 },
-    think  = { {0.91, 0.89, 1}, {0.48, 0.39, 0.65}, 0 },
+    normal = { {0.96, 0.85, 0.64}, {0.54, 0.35, 0.21}, 0 },
+    shout  = { {1.00, 0.86, 0.56}, {0.68, 0.30, 0.19}, 2 },
+    cry    = { {0.87, 0.90, 0.81}, {0.34, 0.52, 0.46}, 0 },
+    laugh  = { {1.00, 0.90, 0.70}, {0.68, 0.43, 0.24}, 3 },
+    think  = { {0.94, 0.84, 0.72}, {0.54, 0.39, 0.37}, 0 },
 }
 
 local function sceneReservations(self, fonts)
     local face, banner = faceBounds(self), bannerBounds(self, fonts)
     local reserved = propReservations(self, face, banner)
     reserved[#reserved + 1] = shakeSafe(self, face)
+    local card = self.rivalCard
+    if card then reserved[#reserved + 1] = box(card.x - 4, card.y - 4, card.w + 8, card.h + 8) end
     if banner then reserved[#reserved + 1] = banner end
     local a = self.anchors
     if a then
@@ -812,7 +824,7 @@ local function drawBubble(item, font)
     if style == "shout" then x = x + math.sin(age * 57) * theme[3] end
     if style == "laugh" then y = y - math.abs(math.sin(age * 9)) * theme[3] end
     local tip = clamp(item.tip, x + 21, x + w - 21)
-    lg.setColor(0.03, 0.05, 0.11, alpha * 0.66)
+    lg.setColor(0.14, 0.08, 0.04, alpha * 0.66)
     lg.rectangle("fill", x + 2, y + 4, w, h, 9, 9)
     lg.setColor(edge[1], edge[2], edge[3], alpha)
     if style == "shout" then
@@ -839,7 +851,7 @@ local function drawBubble(item, font)
             drawDrop(x + w - 6 - i * 10, y + h + 3 + (age * (4 + i) % 1) * 9, 4)
         end
     end
-    lg.setColor(0.08, 0.10, 0.19, alpha)
+    lg.setColor(0.24, 0.14, 0.08, alpha)
     lg.setFont(font)
     for i, line in ipairs(item.lines) do
         lg.print(line, math.floor(x + (w - font:getWidth(line)) * 0.5), math.floor(y + 7 + (i - 1) * font:getHeight()))

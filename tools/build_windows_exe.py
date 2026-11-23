@@ -9,10 +9,10 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 LUA_FILES = (
     "conf.lua", "main.lua", "json.lua", "encounters.lua", "stage_renderer.lua",
-    "desert_arrival.lua",
+    "desert_arrival.lua", "chile_coastline.lua",
     "asset_loader.lua", "audio.lua", "battle_judge.lua", "battle_worker.lua",
     "sprite_worker.lua", "worker_http.lua", "beat_sync.lua", "shaders.lua",
-    "spell_ritual.lua", "battle_hud.lua",
+    "spell_ritual.lua", "battle_hud.lua", "battle_ui_skin.lua",
     "battle_fx.lua", "battle_fx_spectacles.lua",
 )
 DLL_FILES = ("SDL2.dll", "love.dll", "lua51.dll", "OpenAL32.dll",
