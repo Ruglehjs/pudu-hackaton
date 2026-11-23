@@ -28,7 +28,13 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent
 IMAGING_AVAILABLE = Image is not None
+LIVE_PROMPT_LIMIT = 12
 PURPLE_WORDS = {"berenjena", "pulpo", "uva", "uvas", "violeta", "morado", "morada", "purpura", "purple"}
+
+
+def live_prompt(value):
+    text = value.strip() if isinstance(value, str) else ""
+    return text if 2 <= len(text) <= LIVE_PROMPT_LIMIT else ""
 
 
 def _words(text):
@@ -124,9 +130,12 @@ def _prepare_sprite(raw, keep_purple, dim):
     image.thumbnail((384, 384), Image.Resampling.NEAREST)
     pixels = np.array(image)
     _clean_corner_bg_floodfill(pixels, keep_purple)
+    corners = pixels[[0, 0, -1, -1], [0, -1, 0, -1], 3]
+    if np.count_nonzero(corners) > 1:
+        raise ValueError("No se pudo aislar la silueta del sprite.")
     clean = Image.fromarray(pixels)
     box = clean.getchannel("A").getbbox()
-    if box is None:
+    if box is None or np.count_nonzero(pixels[:, :, 3]) < 16:
         raise ValueError("El sprite llegó vacío.")
     cropped = clean.crop(box)
     scale = (dim - 2) / max(cropped.size)
@@ -251,34 +260,41 @@ class SpritePipeline:
         except OSError:
             pass  # Read-only installs retain the RAM cache.
 
-    def _generate(self, source, description, purple, dim):
-        ref = _reference(self.hero_path)
+    def _generate(self, source, description, purple, dim, live):
+        ref = None if live else _reference(self.hero_path)
+        subject = json.dumps(description, ensure_ascii=False)
         attempts = (
             (
-                "Draw a single 16-bit HD-2D RPG pixel-art sprite facing right, fully visible "
-                "in side view with a strong silhouette. Use only the art style of the reference. "
-                "Solid pure magenta #FF00FF background, no ground shadows, text, border or scenery. "
-                f"Subject: {description}"
+                "Draw one pixel-art RPG sprite of the exact subject below (it may be in Spanish). "
+                "Keep every specified feature. Show it facing right in full side view, with a bold outline, "
+                "visible square pixels, limited 16-bit palette, no antialiasing. "
+                "Leave a pure magenta #FF00FF margin on all sides. No shadow, scenery, text or border. "
+                f"Subject: {subject}"
             ),
             (
-                "Simple, centered 16-bit RPG pixel-art icon of ONE single object facing right, "
-                "bold dark outline, vivid colors, solid flat magenta #FF00FF background, "
-                f"zero text, zero frame, zero scenery. Object: {description}"
+                "Create a simple 16-bit game sprite, a single clearly recognizable silhouette "
+                "matching the subject and its colors. Center it on a solid pure #FF00FF background. "
+                f"No scenery, lettering or ground shadow. Draw exactly this subject: {subject}"
             ),
         )
+        if ref:
+            attempts = (attempts[0] + " Use the image only as a style reference.", attempts[1])
         max_tries = 2 if self.validate_sprite is not None else 1
         last_error = None
         for attempt_idx in range(max_tries):
-            raw = self.generate_image(attempts[attempt_idx], ref)
-            if not isinstance(raw, bytes) or not 0 < len(raw) <= 16 * 1024 * 1024:
-                last_error = ValueError("El proveedor devolvió una imagen inválida.")
+            try:
+                raw = self.generate_image(attempts[attempt_idx], ref if attempt_idx == 0 else None)
+                if not isinstance(raw, bytes) or not 0 < len(raw) <= 16 * 1024 * 1024:
+                    raise ValueError("El proveedor devolvió una imagen inválida.")
+                pair = _prepare_sprite(raw, purple, dim)
+            except (ValueError, OSError) as err:
+                last_error = err
                 continue
-            pair = _prepare_sprite(raw, purple, dim)
             if self.validate_sprite is not None:
                 try:
                     ok, reason = self.validate_sprite(pair.diffuse, description)
                 except Exception:
-                    ok, reason = True, ""
+                    ok, reason = False, "No se pudo verificar el sprite."
                 if not ok:
                     last_error = ValueError(reason or "Asset rechazado por Decisions API.")
                     continue
@@ -286,7 +302,7 @@ class SpritePipeline:
             return raw
         raise last_error or ValueError("Asset rechazado por control de calidad.")
 
-    def _job(self, source, description, purple, dim):
+    def _job(self, source, description, purple, dim, live=False):
         with self.lock:
             if source in self.jobs:
                 future = self.jobs[source]
@@ -299,21 +315,27 @@ class SpritePipeline:
                 if oldest_done is None:
                     return None
                 del self.jobs[oldest_done]
-            future = self.executor.submit(self._generate, source, description, purple, dim)
+            future = self.executor.submit(self._generate, source, description, purple, dim, live)
             self.jobs[source] = future
             return future
 
-    def maybe_start_speculative_sprite(self, prompt, keep_purple=False):
-        if not self.available or not isinstance(prompt, str) or match_exact_existing_sprite(prompt):
+    def maybe_start_speculative_sprite(self, prompt, keep_purple=False, live=False):
+        if not self.available or not isinstance(prompt, str):
             return None
-        source = " ".join(_words(prompt[:512]))
-        if not source:
-            return None
-        purple = keep_purple is True or bool(PURPLE_WORDS.intersection(source.split()))
-        self.bind_speculative_alias(prompt, prompt)
+        if live:
+            prompt = live_prompt(prompt)
+            if not prompt:
+                return None
+            source = f"live:{prompt}"
+        else:
+            source = " ".join(_words(prompt[:512]))
+            if not source or match_exact_existing_sprite(prompt):
+                return None
+            self.bind_speculative_alias(prompt, prompt)
+        purple = keep_purple is True or bool(PURPLE_WORDS.intersection(_words(prompt)))
         if self._lookup(self._variant(source, purple, 80)):
             return None
-        return self._job(source, prompt[:512], purple, 80)
+        return self._job(source, prompt[:512], purple, 80, live)
 
     def bind_speculative_alias(self, prompt, summon_name):
         if not isinstance(prompt, str) or not isinstance(summon_name, str):
@@ -330,13 +352,20 @@ class SpritePipeline:
 
     @staticmethod
     def _response(pair, cached, start):
-        return {"ok": True, "cached": cached, "width": pair.width, "height": pair.height,
+        return {"ok": True, "sprite_mode": "generate_live", "cached": cached, "width": pair.width, "height": pair.height,
                 "latency_ms": round((time.monotonic() - start) * 1000),
                 "diff_b64": base64.b64encode(pair.diffuse).decode("ascii"),
                 "norm_b64": base64.b64encode(pair.normal).decode("ascii")}
 
     def get_sprite(self, payload, allow_generate=True):
         started = time.monotonic()
+        if payload.get("live_sprite") is True:
+            prompt = live_prompt(payload.get("original_prompt"))
+            if not prompt:
+                return {"ok": False, "error": "La invocación debe tener entre 2 y 12 caracteres."}
+            purple = bool(PURPLE_WORDS.intersection(_words(prompt)))
+            return self._get_generated(f"live:{prompt}", prompt, purple, 80, started, allow_generate, live=True)
+
         name = payload.get("name")
         if not isinstance(name, str) or not name.strip():
             return {"ok": False, "error": "Falta el nombre de la invocación."}
@@ -349,6 +378,7 @@ class SpritePipeline:
             source = self.aliases.get(label)
         if isinstance(original, str) and original.strip():
             source = " ".join(_words(original[:512]))
+            description = original.strip()[:512]
         existing = match_exact_existing_sprite(source or name)
         if existing:
             # Direct /sprite calls can consume the same contract as generated art.
@@ -366,6 +396,9 @@ class SpritePipeline:
             dim = max(76, min(80, int(payload.get("target_dim", 80))))
         except (TypeError, ValueError, OverflowError):
             dim = 80
+        return self._get_generated(source, description, purple, dim, started, allow_generate)
+
+    def _get_generated(self, source, description, purple, dim, started, allow_generate, live=False):
         key = self._variant(source, purple, dim)
         pair = self._lookup(key)
         if pair:
@@ -373,7 +406,7 @@ class SpritePipeline:
         if not allow_generate or not self.available:
             return {"ok": False, "error": "Generación en vivo desactivada."}
         try:
-            future = self._job(source, description, purple, dim)
+            future = self._job(source, description, purple, dim, live)
             if future is None:
                 return {"ok": False, "error": "Generador ocupado."}
             raw = future.result(timeout=25)

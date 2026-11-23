@@ -195,7 +195,7 @@ local messages = runWorker("battle_worker.lua", {
 }, function(route, payload, timeout)
     calls = calls + 1
     if route == "/health" then assert(timeout == 1); return nil end
-    assert(route == "/battle_prompt" and timeout == 15 and payload.prompt == "hola")
+    assert(route == "/battle_prompt" and timeout == 15 and payload.prompt == "hola" and payload.live_sprite)
     return {ok = true, result = judge("hola"), source = "mock"}
 end, {value = 1})
 assert(calls == 2 and #messages == 4 and messages[1].ok == false)
@@ -204,8 +204,8 @@ assert(messages[2].result.enemy_reaction == "crying")
 assert(messages[3].source == "mock" and not messages[3].result.approved and messages[4].source == "lua")
 local sprites = runWorker("sprite_worker.lua", {{cmd = "generate", uid = 77, name = "DJ", original_prompt = "Pato DJ"}},
     function(route, payload, timeout)
-        assert(route == "/sprite" and timeout == 28 and payload.original_prompt == "Pato DJ")
-        return {ok = true, diff_b64 = "image", norm_b64 = "normal", width = 80, height = 80}
+        assert(route == "/sprite" and timeout == 28 and payload.original_prompt == "Pato DJ" and payload.live_sprite)
+        return {ok = true, sprite_mode = "generate_live", diff_b64 = "image", norm_b64 = "normal", width = 80, height = 80}
     end, {value = 1})
 assert(sprites[1].uid == 77 and sprites[1].ok and sprites[1].norm_b64 == "normal")
 

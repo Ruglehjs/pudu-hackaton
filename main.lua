@@ -12,6 +12,7 @@ local BattleFX = require("battle_fx")
 local BattleScores = require("battle_scores")
 local SpellRitual = require("spell_ritual")
 local Judge = require("battle_judge")
+local AdventureScreen = require("adventure_screen")
 
 --------------------------------------------------------------------------------
 -- Custom Error Handler (prints traceback to stderr; exits 1 under --quit-after)
@@ -124,7 +125,9 @@ local function parseCliArgs(argList)
         if type(a) == "string" then
             local v
             v = a:match("^%-%-mode=(.+)$")
-            if v == "explore" or v == "battle" then cli.mode = v end
+            if v == "explore" or v == "battle" then
+                cli.mode, cli.modeExplicit = v, true
+            end
 
             v = a:match("^%-%-biome=(.+)$")
             if v and v ~= "" then cli.biome = v end
@@ -195,6 +198,8 @@ local VERSUS_DURATION = 1.22
 local VERSUS_IMPACT_AT = 0.36
 local BATTLE_ENTER_DURATION = 0.88
 local VICTORY_FINALE_TIME = 1.0
+local FINAL_VICTORY_HOLD = 4.0
+local PORTAL_DURATION = 2.0
 local COUNTER_ATTACK_TIME = 0.44
 local BATTLE_ENTER_SLIDE_PX = 320.0
 local ENCOUNTER_TRIGGER_DIST = 1.75
@@ -412,6 +417,15 @@ local function syncMusicForMode(fadeSeconds)
     end
 end
 
+local function createStage()
+    local stage = StageRenderer.new()
+    stage:setShaders(Game.shaders)
+    stage:setLightingPreset(Game.cli.lighting)
+    stage:setBloomEnabled(not Game.cli.disableBloom)
+    stage:buildOverworldDecor(Game.overworldEncounters)
+    return stage
+end
+
 -- Each command follows the normal turn path, including setup, counter and KO.
 local comboDemos = {
     combo_electro = { "charco", "rayo" },
@@ -484,7 +498,7 @@ local function beginBattle()
     Game.battleFX:clear()
     Game.enemyReaction = Game.cli.forceReaction or "idle"
     Game.battle = {
-        hp = 100, enemyHp = enemyHp, turn = 1, spriteRequests = {}, reaction = "idle",
+        hp = 100, enemyHp = enemyHp, turn = 1, reaction = "idle",
         nonCritMissCount = 0, pendingSemiHint = false, score = BattleScores.new(),
     }
     setSpeech(Game.battle, enc.introLine, 5.2)
@@ -492,18 +506,19 @@ end
 
 local function submitPrompt(prompt, preview, automated)
     local b = Game.battle
+    prompt = BattleHUD.limitPrompt(prompt)
     if not b or Game.battlePhase ~= "player_turn" or not BattleHUD.canSubmit(prompt) then return false end
     local enc = Encounters.getByIndex(Game.encounterIndex)
     Game.nextRequestId = Game.nextRequestId + 1
     b.uid, b.prompt, b.preview, b.autoRitual = Game.nextRequestId, prompt, preview, automated
     b.decision, b.pendingSummon, b.anticipationLine = nil, nil, nil
-    b.previewSpriteAt = nil
+    b.previewSpriteAt, b.spriteDeadline = nil, nil
     setSpeech(b, nil, 0)
     Game.battleFX:clearTurn()
     Game.hud:closePrompt(true)
     Game.battlePhase = "ritual"
     Game.enemyReaction = Game.cli.forceReaction or "idle"
-    Game.ritual:start(prompt, nil, not automated)
+    Game.ritual:start(prompt)
     if Game.audio then Game.audio:play("sfx_prompt_submit", 0.68) end
     b.nextAutoArrowAt = Game.demo and 0.12 or 0.26
     local props = {}
@@ -576,17 +591,16 @@ local function acceptDecision(message)
         b.anticipationLine = anticipation
     end
     local key = res.existing_sprite ~= "none" and res.existing_sprite or res.summon_name
-    local art = Game.assets.gags[key] or Game.assets.props[key]
+    local needsLive = message.live_sprite == true
+    local art = not needsLive and (Game.assets.gags[key] or Game.assets.props[key])
     local sprite = { diff = art and art.diff, norm = art and art.norm, isPlaceholder = art and art.isPlaceholder }
     b.pendingSummon = { key = key, sprite = sprite }
-    local needsLive = res.sprite_mode == "generate_live" and message.source ~= "lua" and not Game.cli.mock
     if b.preview == "bonus" then
         needsLive = true
         b.previewSpriteAt = Game.ritual.elapsed + 3.2
     elseif needsLive then
-        b.spriteRequests[b.uid] = sprite
-        Game.spriteIn:push({ cmd = "generate", uid = b.uid, name = res.summon_name, original_prompt = b.prompt,
-            sprite_prompt = res.sprite_prompt, keep_purple = res.keep_purple, target_dim = 80 })
+        b.spriteDeadline = Game.ritual.elapsed + 29
+        Game.spriteIn:push({ cmd = "generate", uid = b.uid, name = res.summon_name, original_prompt = b.prompt })
     end
     Game.ritual:setAiReady(res, needsLive)
 end
@@ -600,7 +614,7 @@ local function applySummonImpactEffects(enc, anchors, ex, ey)
     b.damage = b.impact.damage_to_enemy
     BattleScores.addTurn(b.score, Game.ritual, b.promptPoints)
     local reward = ("+%d pts de ritual  |  +%d pts de prompt"):format(
-        Game.ritual.arrowPoints + Game.ritual.osuPoints, b.promptPoints)
+        Game.ritual.arrowPoints, b.promptPoints)
     if b.precisionBonus > 0 then
         reward = reward .. ("  |  +%d%% de daño por precisión"):format(b.precisionBonus)
     end
@@ -632,9 +646,18 @@ local function applySummonImpactEffects(enc, anchors, ex, ey)
     end
 end
 
+local function campaignWins()
+    local wins = 0
+    for _, enc in ipairs(Encounters.LIST) do
+        if Game.defeatedMap[enc.id] then wins = wins + 1 end
+    end
+    return wins
+end
+
 local function startVictory(enc, ex, ey, w)
     local b = Game.battle
     Game.battlePhase, b.victoryAt = "victory", Game.elapsed
+    b.campaignComplete = enc.finalBoss and campaignWins() == #Encounters.LIST
     Game.hud:closePrompt(true)
     setSpeech(b, enc.defeatLine)
     Game.battleFX:startDefeatFinale(Game.enemyReaction, ex, ey, Game.audio)
@@ -676,24 +699,32 @@ end
 
 local function acceptSprite(msg)
     local b = Game.battle
-    if not b or Game.transitionState == "to_explore" then return end
-    if b.uid == msg.uid and Game.battlePhase == "ritual" then Game.ritual:setSpriteReady() end
-    local target = b.spriteRequests[msg.uid]
-    b.spriteRequests[msg.uid] = nil
-    if not target or not msg.ok then return end
-    local art = msg.existing_sprite and (Game.assets.gags[msg.existing_sprite] or Game.assets.props[msg.existing_sprite])
-    if art then
-        target.diff, target.norm, target.isPlaceholder = art.diff, art.norm, art.isPlaceholder
-        return
+    if not b or b.uid ~= msg.uid or not b.spriteDeadline or Game.battlePhase ~= "ritual"
+        or Game.transitionState == "to_explore" then return end
+    b.spriteDeadline = nil
+    local valid, diff, norm
+    if msg.ok then
+        valid, diff, norm = pcall(function()
+            return decodeSprite(msg.diff_b64), decodeSprite(msg.norm_b64)
+        end)
+        valid = valid and diff:getWidth() == 80 and diff:getHeight() == 80
+            and norm:getWidth() == 80 and norm:getHeight() == 80
     end
-    if not msg.diff_b64 then return end
-    local ok, diff = pcall(decodeSprite, msg.diff_b64)
-    if ok then
-        target.diff, target.isPlaceholder = diff, false
-        if msg.norm_b64 then
-            local valid, norm = pcall(decodeSprite, msg.norm_b64)
-            if valid then target.norm = norm end
-        end
+    if valid then
+        local target = b.pendingSummon.sprite
+        target.diff, target.norm, target.isPlaceholder, target.generated = diff, norm, false, true
+        Game.ritual:setSpriteReady()
+        print(("[SPRITE] listo prompt=%q tamaño=80x80 caché=%s ms=%d"):format(
+            b.prompt, tostring(msg.cached), msg.latency_ms))
+        io.stdout:flush()
+    else
+        io.stderr:write("[SPRITE] " .. (msg.error or "Textura inválida.") .. "\n")
+        b.decision, b.pendingSummon, b.anticipationLine = nil, nil, nil
+        Game.ritual:cancel()
+        Game.enemyReaction = Game.cli.forceReaction or b.reaction
+        enterPlayerTurn()
+        Game.hud:addText(b.prompt)
+        showToast("No se generó la invocación. Intenta de nuevo.", 3.6)
     end
 end
 
@@ -776,14 +807,6 @@ local function nextOverworldEncounter()
     return nearest
 end
 
-local function campaignWins()
-    local wins = 0
-    for _, enc in ipairs(Encounters.LIST) do
-        if Game.defeatedMap[enc.id] then wins = wins + 1 end
-    end
-    return wins
-end
-
 local function startVersus()
     Game.battlePhase = "versus"
     Game.battle.versusTime = 0
@@ -854,8 +877,20 @@ local function triggerEncounterTransition(idx)
     end
 end
 
+local function startPortal()
+    Game.battlePhase = "portal"
+    Game.battle.portalElapsed = 0
+    Game.audio:play("chime_3", 0.75)
+end
+
 local function triggerReturnToExplore()
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then
+        return
+    end
+    if Game.battle and Game.battle.campaignComplete then
+        if Game.battlePhase == "victory" and Game.elapsed - Game.battle.victoryAt >= VICTORY_FINALE_TIME then
+            startPortal()
+        end
         return
     end
     Game.ritual:cancel()
@@ -933,6 +968,58 @@ local function updateDesertArrival(dt)
     Game.puduU, Game.puduV = arrival.u, arrival.v
     Game.puduFacingRow = arrival.facingRow
     if finished then Game.desertArrival = nil end
+end
+
+local function resetCampaign()
+    Game.mode, Game.battle, Game.battlePhase = "explore", nil, "player_turn"
+    Game.encounterIndex, Game.enemyReaction, Game.autoPromptIndex = 1, "idle", 1
+    Game.battleEnterT, Game.puduAnimMode = 1.0, "battle_idle"
+    Game.defeatedMap, Game.stageStates = {}, {}
+    Game.qaExplore, Game.overworldEncounters = false, Encounters.LIST
+    Game.transitionState, Game.transitionTimer, Game.transitionSwitched = "none", 0, false
+    Game.alertEncounterIdx, Game.encounterCooldown, Game.transitionPreview = nil, 0, nil
+    Game.toastText, Game.toastTimer = nil, 0
+    Game.completoPickedAt, Game.completoBonusPending = nil, nil
+    Game.scorePage, Game.lastStepBucket, Game.wasCameraPanning = nil, nil, nil
+    Game.ritual:cancel()
+    Game.battleFX:clear()
+    Game.hud:closePrompt(true)
+    Game.hud.hits = {}
+    stopPuduMovement()
+    Game.stage = createStage()
+    Game.puduU = Encounters.getBiome("desierto").spawnU
+    Game.puduV = StageRenderer.pathCenterV(Game.puduU)
+    Game.puduFacingRow, Game.puduWalkT = 3, 1.0
+    Game.stage:snapCameraToChunk(Game.puduU, Game.puduV)
+    Game.desertArrival = DesertArrival.new(StageRenderer.DESERT_ARRIVAL, Game.puduU, Game.puduV)
+    updateDesertArrival(0)
+end
+
+local function finishCinematic()
+    Game.adventureScreen:stop()
+    if Game.screen == "intro" then
+        Game.screen = nil
+        syncMusicForMode()
+    else
+        Game.screen = "complete"
+    end
+end
+
+local function playCinematic(kind)
+    Game.audio:stopAll()
+    Game.screen = kind
+    if not Game.adventureScreen:play(kind, Game.audio:getStats().muted) then
+        finishCinematic()
+    end
+end
+
+local function activateAdventureScreen()
+    if Game.screen == "title" or Game.screen == "complete" then
+        if Game.screen == "complete" then resetCampaign() end
+        playCinematic("intro")
+    else
+        finishCinematic()
+    end
 end
 
 local function updateExplore(dt)
@@ -1071,6 +1158,15 @@ local function updateBattle(dt, realDt)
     local fx = Game.battleFX
     local w, h = love.graphics.getDimensions()
     local enc = Encounters.getByIndex(Game.encounterIndex)
+    if phase == "portal" then
+        b.portalElapsed = b.portalElapsed + dt
+        if b.portalElapsed >= PORTAL_DURATION then playCinematic("ending") end
+        return
+    end
+    if phase == "victory" and b.campaignComplete and Game.elapsed - b.victoryAt >= FINAL_VICTORY_HOLD then
+        startPortal()
+        return
+    end
     if phase == "versus" then
         local before = b.versusTime
         b.versusTime = before + dt
@@ -1093,7 +1189,7 @@ local function updateBattle(dt, realDt)
     local anchors = StageRenderer.getBattleAnchors(w, h, enc)
     local ex, ey = syncBattleFX(enc, anchors, w, h)
     if not fx:isHitStopped() then b.actorTime = (b.actorTime or 0) + dt end
-    fx:update(dt)
+    fx:update(dt, Game.audio)
     if phase == "battle_enter" then
         Game.battleEnterT = math.min(1.0, Game.battleEnterT + dt / BATTLE_ENTER_DURATION)
         if Game.battleEnterT >= 1.0 then
@@ -1104,6 +1200,10 @@ local function updateBattle(dt, realDt)
     end
     if phase == "ritual" then
         local ritual = Game.ritual
+        if b.spriteDeadline and ritual.elapsed >= b.spriteDeadline then
+            acceptSprite({ uid = b.uid, error = "Tiempo de generación agotado." })
+            return
+        end
         if b.previewSpriteAt and ritual.elapsed >= b.previewSpriteAt then
             ritual:setSpriteReady()
             b.previewSpriteAt = nil
@@ -1113,7 +1213,7 @@ local function updateBattle(dt, realDt)
             if arrow then ritual:onKeyPressed(arrow.direction, Game.audio) end
             b.nextAutoArrowAt = b.nextAutoArrowAt + (Game.demo and 0.055 or 0.17)
         end
-        ritual:update(realDt, Game.beatSync, anchors.puduX, anchors.puduY, getOrbLift(anchors, h), Game.audio)
+        ritual:update(realDt, anchors.puduX, anchors.puduY, getOrbLift(anchors, h))
         if ritual.readyToUnleash and not b.decision then
             local fallback = Judge.standaloneLuaEvaluate(b.prompt, b.request)
             acceptDecision({ uid = b.uid, result = fallback, source = "lua", latency_ms = math.floor(ritual.elapsed * 1000) })
@@ -1397,8 +1497,7 @@ local function getHudState(battleEnc)
         end
         state.hp, state.enemyHp, state.enemyMaxHp = b.hp, b.enemyHp, battleEnc.maxHp
         state.score, state.totalScore = b.score, BattleScores.total(b.score)
-        state.campaignComplete = battleEnc.finalBoss and Game.battlePhase == "victory"
-            and campaignWins() == #Encounters.LIST
+        state.campaignComplete = b.campaignComplete
         state.stageStates, state.portraits, state.mood = Game.stageStates, Game.assets.portraits, b.mood
         state.puduPortrait = Game.assets.puduVersusPortrait
         if b.victoryAt then state.victoryElapsed = Game.elapsed - b.victoryAt - VICTORY_FINALE_TIME end
@@ -1439,11 +1538,17 @@ function love.load(args)
     end
     Game.encounterIndex = Game.cli.encounter
     Game.qaExplore = Game.cli.biome ~= nil or Game.cli.encounterExplicit
+    if Game.mode == "explore" and not (Game.cli.modeExplicit or Game.qaExplore or Game.cli.transitionPreview
+        or Game.cli.battleEnterPreview or Game.cli.openDirector or Game.cli.forceReaction
+        or #Game.cli.autoPrompts > 0) then
+        Game.screen = "title"
+    end
     Game.overworldEncounters = Encounters.LIST
     if Game.mode == "explore" and not Game.cli.biome and Game.encounterIndex > #Encounters.LIST then
         Game.overworldEncounters = { Encounters.getByIndex(Game.encounterIndex) }
     end
     Game.fonts = loadFonts()
+    Game.adventureScreen = AdventureScreen.new(Game.fonts)
     Game.hud = BattleHUD.new(Game.fonts)
     Game.scoreHistory = BattleScores.load(love.filesystem)
     Game.ritual = SpellRitual.new()
@@ -1465,13 +1570,7 @@ function love.load(args)
         io.stderr:flush()
     end
 
-    Game.stage = StageRenderer.new()
-    Game.stage:setShaders(Game.shaders)
-    Game.stage:setLightingPreset(Game.cli.lighting)
-    if Game.cli.disableBloom then
-        Game.stage:setBloomEnabled(false)
-    end
-    Game.stage:buildOverworldDecor(Game.overworldEncounters)
+    Game.stage = createStage()
 
     local w, h = love.graphics.getDimensions()
     ensureWorldCanvas(w, h)
@@ -1514,7 +1613,7 @@ function love.load(args)
         local seedT = Game.cli.battleEnterPreview and 0.22 or (Game.cli.demoFinale and 0 or nil)
         enterBattleArenaImmediate(Game.encounterIndex, (Game.demo ~= nil or Game.cli.testRitual ~= nil)
             and not Game.cli.battleEnterPreview, seedT)
-    else
+    elseif not Game.screen then
         syncMusicForMode()
     end
 
@@ -1537,16 +1636,16 @@ end
 
 function love.update(dt)
     local safeDt = math.min(dt, 0.05)
-    if not Game.scorePage then Game.elapsed = Game.elapsed + safeDt end
+    if not Game.screen and not Game.scorePage then Game.elapsed = Game.elapsed + safeDt end
     Game.cliElapsed = Game.cliElapsed + dt
     pollWorkers()
     local b = Game.battle
-    if b and not Game.scorePage and Game.battlePhase == "player_turn"
+    if b and not Game.screen and not Game.scorePage and Game.battlePhase == "player_turn"
         and Game.transitionState == "none" and not Game.transitionPreview then
         if Game.ritualPreview then
             local preview = Game.ritualPreview
             Game.ritualPreview = nil
-            local prompt = preview == "bonus" and "ornitorrinco dj"
+            local prompt = preview == "bonus" and "pulpo DJ"
                 or Encounters.getByIndex(Game.encounterIndex).weaknesses[1]
             submitPrompt(prompt, preview, preview == "bonus")
         elseif Game.demo then
@@ -1586,7 +1685,9 @@ function love.update(dt)
         Game.beatSync:update(safeDt, trackState)
     end
 
-    if not Game.scorePage and Game.transitionPreview == nil then
+    if Game.screen == "intro" or Game.screen == "ending" then
+        if not Game.adventureScreen:isPlaying() then finishCinematic() end
+    elseif not Game.screen and not Game.scorePage and Game.transitionPreview == nil then
         if Game.transitionState ~= "none" then
             updateTransition(safeDt)
         elseif Game.mode == "explore" then
@@ -1608,7 +1709,7 @@ function love.update(dt)
         local phase = Game.cli.screenshotPhase
         local triggerAt = Game.cli.quitAfter and math.max(0.15, Game.cli.quitAfter - 0.35) or 0.25
         if phase then
-            local matches = Game.battlePhase == phase
+            local matches = Game.screen == phase or (not Game.screen and b and Game.battlePhase == phase)
             if phase == "combo" then
                 matches = Game.battlePhase == "impact_hold" and b.result.combo_triggered ~= "none"
             end
@@ -1649,7 +1750,7 @@ function love.update(dt)
 end
 
 local function promptAvailable()
-    return not Game.scorePage and Game.mode == "battle" and Game.battlePhase == "player_turn"
+    return not Game.screen and not Game.scorePage and Game.mode == "battle" and Game.battlePhase == "player_turn"
         and Game.transitionState == "none" and Game.transitionPreview == nil
 end
 
@@ -1708,20 +1809,20 @@ end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
+    if Game.screen then
+        if Game.adventureScreen:hitTest(Game.screen, x, y, love.graphics.getDimensions()) then
+            activateAdventureScreen()
+        end
+        return
+    end
+    if Game.battlePhase == "portal" then return end
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
     if Game.battlePhase == "versus" then return end
-    if Game.battlePhase == "ritual" and Game.ritual:onMousePressed(x, y, button, Game.audio) then return end
     routeHudAction(Game.hud:hitTest(x, y))
 end
 
-function love.mousemoved(x, y)
-    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
-    if Game.battlePhase == "ritual" then
-        Game.ritual:onMouseMoved(x, y)
-    end
-end
-
 function love.wheelmoved(_, y)
+    if Game.screen then return end
     if Game.scorePage and y ~= 0 then
         routeHudAction(y < 0 and "score_older" or "score_newer")
     elseif Game.mode == "explore" and Game.transitionState == "none" and Game.transitionPreview == nil then
@@ -1729,17 +1830,28 @@ function love.wheelmoved(_, y)
     end
 end
 
-function love.mousereleased(x, y, button)
-    if button ~= 1 then return end
-    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
-    if Game.battlePhase == "ritual" then
-        Game.ritual:onMouseReleased(x, y, button, Game.audio)
-    end
-end
-
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" and isrepeat then return end
     Game.ignorePromptSlash = false
+    if key == "f12" and not Game.scorePage then
+        local out = string.format("screenshots/manual_%d.png", os.time())
+        saveScreenshotTo(out)
+        showToast("Captura guardada: " .. out, 2.2)
+        return
+    end
+    if Game.screen then
+        if isrepeat then return end
+        if key == "return" or key == "kpenter" or key == "space" then
+            activateAdventureScreen()
+        elseif key == "escape" then
+            if Game.screen == "title" then love.event.quit(0) end
+            if Game.screen == "intro" or Game.screen == "ending" then finishCinematic() end
+        elseif key == "f8" then
+            Game.adventureScreen:setMuted(Game.audio:toggleMute())
+        end
+        return
+    end
+    if Game.battlePhase == "portal" then return end
     if Game.scorePage then
         if key == "escape" or (key == "f3" and not isrepeat) then routeHudAction("close_scores") end
         if key == "right" or key == "pagedown" then routeHudAction("score_older") end
@@ -1758,11 +1870,6 @@ function love.keypressed(key, scancode, isrepeat)
     elseif key == "f7" or (key == "l" and Game.mode == "explore") then
         local _, preset = Game.stage:cycleLightingPreset()
         showToast("Iluminación: " .. ((preset and preset.label) or "Día"), 1.8)
-        return
-    elseif key == "f12" then
-        local out = string.format("screenshots/manual_%d.png", os.time())
-        saveScreenshotTo(out)
-        showToast("Captura guardada: " .. out, 2.2)
         return
     end
 
@@ -1809,6 +1916,11 @@ end
 function love.draw()
     Game.framesDrawn = Game.framesDrawn + 1
     local w, h = love.graphics.getDimensions()
+    if Game.screen then
+        Game.adventureScreen:draw(Game.screen, w, h, love.mouse.getPosition())
+        Game.lastDrawCalls = love.graphics.getStats().drawcalls or 0
+        return
+    end
     if Game.mode == "battle" and Game.battlePhase == "versus" then
         local enc = Encounters.getByIndex(Game.encounterIndex)
         Game.hud:drawVersus(Game.assets.puduVersusPortrait or Game.assets.portraits.happy,
@@ -1822,6 +1934,7 @@ function love.draw()
     local battleEnc = nil
     local battleTheme = nil
     local battleAnchors, defeatTransform, rivalCard
+    local portalProgress
     local fx = Game.battleFX
     local puduEnterOffX, puduEnterOffY = 0.0, 0.0
     local enemyEnterOffX, enemyEnterOffY = 0.0, 0.0
@@ -1911,54 +2024,72 @@ function love.draw()
             enterOffsets
         )
 
-        local enemyVisible = not defeatTransform or (defeatTransform.alpha >= 0.15 and defeatTransform.dx <= 180)
+        local b = Game.battle
+        if Game.battlePhase == "portal" then portalProgress = b.portalElapsed / PORTAL_DURATION end
+        local enemyVisible = not portalProgress
+            and (not defeatTransform or (defeatTransform.alpha >= 0.15 and defeatTransform.dx <= 180))
         if enemyVisible and (Game.battlePhase ~= "battle_enter" or Game.battleEnterT >= 0.88) then
             local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0) + enemyEnterOffX
             rivalCard = Game.hud:layoutPortrait(battleEnc.name, ex, w, h)
         end
         fx:setRivalCard(rivalCard)
 
-        local b = Game.battle
         if not fx:isHitStopped() then
             b.puduPose = Game.beatSync:getPuduDancePose(Game.puduAnimMode, battleAnchors.puduFacingRow)
             b.enemyGroove = Game.beatSync:getEnemyGroove(Game.enemyReaction)
         end
 
-        fx:drawBackLayer()
+        if not portalProgress then fx:drawBackLayer() end
         if Game.battlePhase == "ritual" then
             Game.ritual:drawCircle(battleAnchors.puduX, math.min(battleAnchors.puduY, h - 81))
         end
 
         -- Draw upper-right Rival first (background depth), then foreground bottom-left Pudú (cropped cleanly behind bottom strip)
         love.graphics.push()
-        love.graphics.translate(fx:getShakeOffset())
-        drawEnemySprite(
-            battleEnc,
-            battleAnchors.enemyX + enemyEnterOffX,
-            battleAnchors.enemyY + enemyEnterOffY,
-            battleAnchors.enemyScaleH or 148.0,
-            battleAnchors.enemyFacingRow,
-            not defeatTransform and b.enemyGroove or nil,
-            litShader,
-            defeatTransform
-        )
-        drawPuduSprite(
-            battleAnchors.puduX + puduEnterOffX,
-            battleAnchors.puduY + puduEnterOffY,
-            getPuduRenderHeight(battleAnchors, h),
-            b.puduPose,
-            litShader
-        )
+        local puduHeight = getPuduRenderHeight(battleAnchors, h)
+        if portalProgress then
+            local portalX, portalY = w * 0.56, battleAnchors.puduY - h * 0.047
+            AdventureScreen.drawPortal(portalX, portalY, puduHeight * 1.35, portalProgress)
+            if portalProgress < 0.90 then
+                local walk = smoothstep01((portalProgress - 0.16) / 0.74)
+                local enter = smoothstep01((portalProgress - 0.72) / 0.18)
+                local x = battleAnchors.puduX + (portalX - battleAnchors.puduX) * walk
+                local y = battleAnchors.puduY + (portalY - battleAnchors.puduY) * walk
+                local pose = { row = 2, col = math.floor(portalProgress * 20) % 4 + 1 }
+                drawPuduSprite(x, y, puduHeight * (1 - 0.84 * enter), pose, litShader)
+            end
+        else
+            love.graphics.translate(fx:getShakeOffset())
+            drawEnemySprite(
+                battleEnc,
+                battleAnchors.enemyX + enemyEnterOffX,
+                battleAnchors.enemyY + enemyEnterOffY,
+                battleAnchors.enemyScaleH or 148.0,
+                battleAnchors.enemyFacingRow,
+                not defeatTransform and b.enemyGroove or nil,
+                litShader,
+                defeatTransform
+            )
+            drawPuduSprite(
+                battleAnchors.puduX + puduEnterOffX,
+                battleAnchors.puduY + puduEnterOffY,
+                puduHeight,
+                b.puduPose,
+                litShader
+            )
+        end
         love.graphics.pop()
 
         Game.stage:drawBattleArenaForeground(battleEnc, Game.assets, w, h, Game.elapsed, litShader)
-        fx:drawSummonsAndProps(litShader, function(pair, x, y, angle, sx, sy, ox, oy, shader)
-            Game.stage:drawSpriteLit(pair, x, y, angle, sx, sy, ox, oy, nil, 0, nil, shader, true)
-        end)
-        if Game.battlePhase ~= "battle_enter" and Game.battlePhase ~= "ritual" then
-            local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0)
-            local ey = battleAnchors.enemyY + (battleEnc.offsetY or 0)
-            fx:drawReactionOverlay(Game.enemyReaction, ex, ey, Game.elapsed)
+        if not portalProgress then
+            fx:drawSummonsAndProps(litShader, function(pair, x, y, angle, sx, sy, ox, oy, shader)
+                Game.stage:drawSpriteLit(pair, x, y, angle, sx, sy, ox, oy, nil, 0, nil, shader, true)
+            end)
+            if Game.battlePhase ~= "battle_enter" and Game.battlePhase ~= "ritual" then
+                local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0)
+                local ey = battleAnchors.enemyY + (battleEnc.offsetY or 0)
+                fx:drawReactionOverlay(Game.enemyReaction, ex, ey, Game.elapsed)
+            end
         end
         Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
     end
@@ -1973,6 +2104,13 @@ function love.draw()
     love.graphics.setShader()
     love.graphics.setBlendMode("alpha")
     love.graphics.setColor(1, 1, 1, 1)
+
+    if portalProgress then
+        love.graphics.setColor(0.035, 0.075, 0.06, smoothstep01((portalProgress - 0.82) / 0.18))
+        love.graphics.rectangle("fill", 0, 0, w, h)
+        Game.lastDrawCalls = love.graphics.getStats().drawcalls or 0
+        return
+    end
 
     local hudState = getHudState(battleEnc)
     hudState.pointerX, hudState.pointerY = love.mouse.getPosition()
@@ -2046,6 +2184,7 @@ function love.draw()
 end
 
 function love.quit()
+    if Game.adventureScreen then Game.adventureScreen:stop() end
     if Game.battleIn then Game.battleIn:clear(); Game.battleIn:push({cmd="quit"}) end
     if Game.spriteIn then Game.spriteIn:clear(); Game.spriteIn:push({cmd="quit"}) end
 end

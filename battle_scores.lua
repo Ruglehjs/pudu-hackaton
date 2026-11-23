@@ -7,15 +7,15 @@ local PRECISION = {
     super_funny_ko = { damageBonus = 20, pointsPerHp = 4 },
 }
 local COMBO = { damageBonus = 25, pointsPerHp = 5 }
-local FIELDS = { "arrowPoints", "osuPoints", "promptPoints", "arrowHits", "osuHits", "bestCombo" }
+local FIELDS = { "arrowPoints", "promptPoints", "arrowHits" }
 local SAVE_FILES = { "battle_scores_a.json", "battle_scores_b.json" }
 
 function Scores.new()
-    return { arrowPoints = 0, osuPoints = 0, promptPoints = 0, arrowHits = 0, osuHits = 0, bestCombo = 0 }
+    return { arrowPoints = 0, promptPoints = 0, arrowHits = 0 }
 end
 
 function Scores.total(score)
-    return score.arrowPoints + score.osuPoints + score.promptPoints
+    return score.arrowPoints + score.promptPoints + (score.osuPoints or 0)
 end
 
 function Scores.attack(result, power, enemyHp)
@@ -28,11 +28,12 @@ end
 
 function Scores.addTurn(score, ritual, promptPoints)
     score.arrowPoints = score.arrowPoints + ritual.arrowPoints
-    score.osuPoints = score.osuPoints + ritual.osuPoints
     score.promptPoints = score.promptPoints + promptPoints
     score.arrowHits = score.arrowHits + ritual.arrowHits
-    score.osuHits = score.osuHits + ritual.osuHits
-    score.bestCombo = math.max(score.bestCombo, ritual.bestOsuCombo)
+end
+
+local function validPoints(number)
+    return type(number) == "number" and number >= 0 and number <= 2147483647 and number % 1 == 0
 end
 
 local function readHistory(filesystem, path)
@@ -47,11 +48,10 @@ local function readHistory(filesystem, path)
             return {}
         end
         for _, key in ipairs(FIELDS) do
-            local number = entry[key]
-            if type(number) ~= "number" or number < 0 or number > 2147483647 or number % 1 ~= 0 then
-                return {}
-            end
+            if not validPoints(entry[key]) then return {} end
         end
+        -- Old entries include points from mouse targets in their recorded totals.
+        if entry.osuPoints ~= nil and not validPoints(entry.osuPoints) then return {} end
     end
     return history
 end

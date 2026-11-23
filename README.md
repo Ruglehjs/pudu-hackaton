@@ -37,7 +37,7 @@ Para probar un reemplazo local del arte del mapa, coloca el PNG y su mapa de nor
 
 Con Python 3.10 o superior, el lanzador puede iniciar el puente en el puerto local 18425. Para usar los modelos de Google, instala las dependencias con `python -m pip install -r requirements.txt`. Copia `.env.example` a `.env` y configura `GEMINI_API_KEY` o las credenciales ADC de Vertex AI con `GOOGLE_CLOUD_PROJECT`. El puente también puede iniciarse con `python ai_bridge.py`.
 
-Los gags conocidos usan arte local y admiten PNG de reemplazo en `assets/custom/`. La generación de sprites nuevos requiere un proveedor de imágenes habilitado. Si se desconecta el puente, el combate continúa con el juez Lua y el arte provisional.
+Escribe hasta 12 caracteres para conjurar. Con Gemini habilitado, el ritual espera un sprite pixel art generado a partir de ese texto. Las invocaciones repetidas pueden usar la imagen validada de la caché. Si la generación falla, puedes reintentar el mismo texto. En modo offline el combate usa el juez Lua y el arte local o provisional.
 
 ## Verificar y empaquetar
 

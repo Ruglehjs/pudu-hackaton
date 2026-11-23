@@ -26,15 +26,19 @@ while true do
         local prompt, encounter = message.prompt, message.encounter or {}
         local response
         if not message.mock_mode then
-            response = contact("/battle_prompt", {prompt = prompt, encounter = encounter, mock_mode = false}, 15)
+            response = contact("/battle_prompt", {prompt = prompt, encounter = encounter, live_sprite = true}, 15)
         end
         local result = response and response.ok ~= false and (response.result or response)
         local online = type(result) == "table" and type(result.approved) == "boolean"
         local resolved = online and Judge.ensureResultCoherence(result, prompt, encounter)
             or Judge.standaloneLuaEvaluate(prompt, encounter)
+        if online and response.source == "decision_api" and not result.approved then
+            resolved = result
+        end
         outbox:push({
             kind = "prompt_result", uid = uid, id = uid, ok = true,
             result = resolved, source = online and (response.source or "python") or "lua",
+            live_sprite = online and response.live_sprite == true,
             latency_ms = math.floor((http.now() - start) * 1000 + 0.5),
         })
     end

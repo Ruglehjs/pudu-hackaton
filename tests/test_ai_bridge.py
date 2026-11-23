@@ -187,6 +187,23 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("/locations/global/", first.args[1])
         self.assertEqual(second.args[:2], ("generativelanguage.googleapis.com", "/v1beta/models/gemini-2.5-flash:generateContent"))
 
+    def test_live_turn_includes_catalog_sprites_and_keeps_battle_contract(self):
+        client = Mock(provider="vertex_ai", text_model="gemini-3.5-flash-lite")
+        client.judge.return_value = "vertex_ai", {}
+        sprites = Mock(available=True)
+        bridge = ai.Bridge(client, sprites)
+        turn = bridge.battle({"prompt": "pepino", "live_sprite": True})
+        self.assertTrue(turn["live_sprite"])
+        self.assertEqual(turn["result"]["existing_sprite"], "cucumber")
+        self.check_schema(turn["result"])
+        sprites.maybe_start_speculative_sprite.assert_called_once_with("pepino", live=True)
+
+        long_turn = bridge.battle({"prompt": "ñ" * 13, "live_sprite": True})
+        self.assertFalse(long_turn["live_sprite"])
+        self.assertFalse(long_turn["result"]["approved"])
+        self.check_schema(long_turn["result"])
+        client.judge.assert_called_once()
+
     def test_text_model_replacement_after_retirement(self):
         client = ai.GoogleClient(mock=True)
         client.replacement_model = "gemini-3.5-flash-lite"

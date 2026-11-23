@@ -125,8 +125,8 @@ void sampleTerrain(Image ground, vec2 world, vec3 tint, out vec3 albedo, out vec
         return;
     }
 
-    float patch = sin(world.x * 1.7 + sin(world.y * 0.83)) * sin(world.y * 1.45 - world.x * 0.58);
-    float border = surfaceData.x + patch * 0.12;
+    float groundVariation = sin(world.x * 1.7 + sin(world.y * 0.83)) * sin(world.y * 1.45 - world.x * 0.58);
+    float border = surfaceData.x + groundVariation * 0.12;
     float road = smoothstep(0.16, 0.79, border);
     albedo = vec3(0.0);
     vec2 slope = vec2(0.0);
@@ -134,7 +134,7 @@ void sampleTerrain(Image ground, vec2 world, vec3 tint, out vec3 albedo, out vec
         vec2 uv = world * 0.29;
         vec2 breakUv = world.yx * 0.17 + vec2(0.17, -0.36);
         vec3 groundColor = mix(Texel(ground, uv).rgb, Texel(ground, breakUv).rgb, 0.33);
-        albedo = groundColor * tint * (0.99 + patch * 0.084) * (1.0 - road);
+        albedo = groundColor * tint * (0.99 + groundVariation * 0.084) * (1.0 - road);
         if (hasNormalMap > 0.5) {
             slope = (Texel(normalMap, uv).xy * 2.0 - 1.0) * (1.0 - road);
         }

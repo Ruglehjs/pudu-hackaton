@@ -130,6 +130,26 @@ class LiveSpriteTests(unittest.TestCase):
         generator.assert_called_once()
         self.assertIsNone(generator.call_args.args[1])
 
+    def test_live_turn_draws_original_text_even_for_bundled_gag(self):
+        generator = Mock(return_value=self.image)
+        validator = Mock(return_value=(True, ""))
+        pipeline = sprites.SpritePipeline(generator, self.cache, self.hero, validate_sprite=validator)
+        self.addCleanup(pipeline.close)
+        pipeline.maybe_start_speculative_sprite("pepino", live=True)
+        payload = {"live_sprite": True, "name": "Otro nombre", "original_prompt": "pepino",
+                   "sprite_prompt": "a red car"}
+        result = pipeline.get_sprite(payload)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["sprite_mode"], "generate_live")
+        prompt, reference = generator.call_args.args
+        self.assertIn('"pepino"', prompt)
+        self.assertNotIn("red car", prompt)
+        self.assertIsNone(reference)
+        self.assertEqual(validator.call_args.args[1], "pepino")
+        self.assertTrue(pipeline.get_sprite(payload)["cached"])
+        self.assertFalse(pipeline.get_sprite({**payload, "original_prompt": "ñ" * 13})["ok"])
+        generator.assert_called_once()
+
     def test_connected_fringe_does_not_erase_enclosed_highlight(self):
         pixels = sprites.np.empty((7, 7, 4), dtype="uint8")
         pixels[:] = (255, 0, 255, 255)

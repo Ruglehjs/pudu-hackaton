@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
 
-from sprite_pipeline import SpritePipeline, match_exact_existing_sprite
+from sprite_pipeline import LIVE_PROMPT_LIMIT, SpritePipeline, live_prompt, match_exact_existing_sprite
 
 
 ROOT = Path(__file__).resolve().parent
@@ -579,32 +579,33 @@ class GoogleClient:
             "is_usable_sprite": {
                 "type": "noul",
                 "instructions": (
-                    "Does this image show a clear, usable single game object or character sprite "
-                    "(not blank, not pure text, not corrupted noise, not a UI screenshot or error box)?"
+                    "Does this image show one clear pixel-art game object or character with a readable silhouette "
+                    "and no scenery, opaque background, text, or frame?"
                 ),
             },
             "matches_subject": {
                 "type": "noul",
                 "instructions": (
-                    f"Does the visible sprite reasonably represent or relate to '{description}'?"
+                    f"Does the sprite depict the exact subject '{description}' (possibly in Spanish), "
+                    "including important attributes like its color or accessories?"
                 ),
             },
         }
         try:
             _, answers = self.decide(input_blocks, questions, timeout=4)
-            usable = float(answers.get("is_usable_sprite", {}).get("noul", 1.0))
-            matches = float(answers.get("matches_subject", {}).get("noul", 1.0))
-            if usable < 0.45 or matches < 0.30:
+            usable = float(answers["is_usable_sprite"]["noul"])
+            matches = float(answers["matches_subject"]["noul"])
+            if not (0.45 <= usable <= 1.0 and 0.50 <= matches <= 1.0):
                 return False, f"Sprite rechazado por Decisions API (usable={usable:.2f}, match={matches:.2f})."
             return True, ""
         except Exception:
-            return True, ""
+            return False, "No se pudo verificar el sprite."
 
     def generate_image(self, instruction, reference_png=None):
         parts = [{"text": instruction}]
         if reference_png:
             parts.insert(0, {"inlineData": {"mimeType": "image/png", "data": base64.b64encode(reference_png).decode("ascii")}})
-        gen_cfg = {"responseModalities": ["IMAGE"], "temperature": 0.35}
+        gen_cfg = {"responseModalities": ["IMAGE"], "temperature": 0.35, "imageConfig": {"aspectRatio": "1:1"}}
         model = self.sprite_model
         if "3.1-flash-lite-image" in model or "nano-banana" in model:
             gen_cfg["thinkingConfig"] = {"thinkingLevel": "MINIMAL"}
@@ -614,14 +615,16 @@ class GoogleClient:
         except ProviderError as err:
             if not err.model_unavailable or not self.sprite_fallback_model or self.sprite_fallback_model == model:
                 raise
-            fallback_cfg = {"responseModalities": ["TEXT", "IMAGE"], "temperature": 0.35}
+            fallback_cfg = {**gen_cfg, "responseModalities": ["TEXT", "IMAGE"]}
             payload = {"contents": [{"role": "user", "parts": parts}], "generationConfig": fallback_cfg}
             _, response = self.generate_content(self.sprite_fallback_model, payload, timeout=14)
             self.sprite_model = self.sprite_fallback_model
-        for part in response["candidates"][0]["content"]["parts"]:
-            inline = part.get("inlineData") or part.get("inline_data")
-            if inline and inline.get("data"):
-                return base64.b64decode(inline["data"], validate=True)
+        for candidate in response.get("candidates") or []:
+            for part in candidate.get("content", {}).get("parts", []):
+                inline = part.get("inlineData") or part.get("inline_data") or {}
+                mime = inline.get("mimeType") or inline.get("mime_type") or ""
+                if not part.get("thought") and mime.startswith("image/") and inline.get("data"):
+                    return base64.b64decode(inline["data"], validate=True)
         raise ValueError("El modelo no entregó una imagen.")
 
     def judge(self, prompt, encounter):
@@ -672,11 +675,15 @@ class Bridge:
                 enc[key] = payload[key]
         if "enemy_hp" in payload:
             enc["hp"] = payload["enemy_hp"]
-        prompt = _clip(payload.get("prompt"), 300)
+        live = payload.get("live_sprite") is True
+        prompt = live_prompt(payload.get("prompt")) if live else _clip(payload.get("prompt"), 300)
         local = _judge_local(prompt, enc)
+        if live and not prompt:
+            local["reject_reason"] = f"Escribe entre 2 y {LIVE_PROMPT_LIMIT} caracteres."
         mock = self.mock or payload.get("mock_mode") is True or payload.get("mock") is True
         source = "mock" if mock else "local"
         result = local
+        needs_live_sprite = False
         if not mock and self.client.provider != "local" and local["approved"]:
             if local["sprite_mode"] == "generate_live" and getattr(self.client, "decisions_enabled", False) is True:
                 usable, reject_reason, _ = self.client.decide_prompt_usable(prompt, enc)
@@ -691,8 +698,11 @@ class Bridge:
                     )
                     return {"ok": True, "source": "decision_api", "model": getattr(self.client, "decision_model", "gemini-decision-1"),
                             "result": rejected, "latency_ms": round((time.monotonic() - started) * 1000, 2)}
-            speculate = local["sprite_mode"] == "generate_live"
-            if speculate:
+            needs_live_sprite = live
+            speculate = not live and local["sprite_mode"] == "generate_live"
+            if needs_live_sprite:
+                self.sprites.maybe_start_speculative_sprite(prompt, live=True)
+            elif speculate:
                 self.sprites.maybe_start_speculative_sprite(prompt, keep_purple=local["keep_purple"])
             try:
                 source, raw = self.client.judge(prompt, enc)
@@ -702,7 +712,8 @@ class Bridge:
             if speculate and result["sprite_mode"] == "generate_live":
                 self.sprites.bind_speculative_alias(prompt, result["summon_name"])
         return {"ok": True, "source": source, "model": self.client.text_model if source in ("gemini_api", "vertex_ai") else "local",
-                "result": result, "latency_ms": round((time.monotonic() - started) * 1000, 2)}
+                "result": result, "live_sprite": needs_live_sprite and result["approved"],
+                "latency_ms": round((time.monotonic() - started) * 1000, 2)}
 
     def health(self, port):
         return {"ok": True, "provider": self.client.provider, "project": self.client.project or "",

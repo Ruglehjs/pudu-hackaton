@@ -50,8 +50,6 @@ function love.update(dt)
             local arrow = ritual.sequence[ritual.cursor]
             if arrow then
                 key(arrow.direction)
-            elseif ritual:canReleaseBonus() then
-                key("return")
             end
             arrowTimer = 0
         end
