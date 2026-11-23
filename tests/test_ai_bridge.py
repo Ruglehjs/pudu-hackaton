@@ -98,6 +98,15 @@ class JudgeTests(unittest.TestCase):
                               ("ventisca", "congelado"), ("lava", "caliente")]:
             self.assertEqual(ai.fallback_battle_evaluate(prompt, "gato_guaton")["adds_stage_state"], state)
 
+    def test_cloud_cannot_downgrade_known_weakness(self):
+        result = ai.sanitize_battle_result({"outcome_type": "effective", "is_critical": False,
+                                            "damage_to_enemy": 42, "enemy_reaction": "wet",
+                                            "adds_stage_state": "none"}, "nube de lluvia", "nino_helado")
+        self.check_schema(result)
+        self.assertTrue(result["is_critical"])
+        self.assertGreaterEqual(result["damage_to_enemy"], 88)
+        self.assertEqual((result["enemy_reaction"], result["adds_stage_state"]), ("crying", "mojado"))
+
     def test_creative_prompt_healing_and_rejection(self):
         for prompt in ("silla", "ornitorrinco dj", "calculadora", "paraguas de chocolate cósmico",
                        "licuadora con corbata", "empanada ninja espacial", "📻 radio a pilas"):

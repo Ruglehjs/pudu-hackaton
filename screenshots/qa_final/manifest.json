@@ -1,0 +1,713 @@
+{
+  "assets": {
+    "requeridos": 125,
+    "presentes": 22,
+    "pares_presentes": 11,
+    "faltantes": [
+      "assets/audio/bash_impact.wav",
+      "assets/audio/battle_boss_lyria.ogg",
+      "assets/audio/battle_overworld_lyria.ogg",
+      "assets/audio/battle_plaza_lyria.ogg",
+      "assets/audio/battle_superstar_lyria.ogg",
+      "assets/audio/battle_user_main.wav",
+      "assets/audio/battle_victory_lyria.ogg",
+      "assets/audio/chime_1.wav",
+      "assets/audio/chime_2.wav",
+      "assets/audio/chime_3.wav",
+      "assets/audio/dog_bark.wav",
+      "assets/audio/heal.wav",
+      "assets/audio/hurt.wav",
+      "assets/audio/orb_gain.wav",
+      "assets/audio/parry_clash.wav",
+      "assets/audio/puma_growl.wav",
+      "assets/audio/rock_fall.wav",
+      "assets/audio/sfx_boing.wav",
+      "assets/audio/sfx_camera_flash.wav",
+      "assets/audio/sfx_cry_wah.wav",
+      "assets/audio/sfx_encounter_start.wav",
+      "assets/audio/sfx_horn.wav",
+      "assets/audio/sfx_laugh.wav",
+      "assets/audio/sfx_meow_scared.wav",
+      "assets/audio/sfx_rain_pour.wav",
+      "assets/audio/sfx_rimshot.wav",
+      "assets/audio/sfx_seagull.wav",
+      "assets/audio/sfx_spell_miss.wav",
+      "assets/audio/sfx_spell_unleash.wav",
+      "assets/audio/sfx_splat.wav",
+      "assets/audio/stomp.wav",
+      "assets/audio/water_rush.wav",
+      "assets/fonts/PTSans.ttc",
+      "assets/sprites/araucaria_tree.png",
+      "assets/sprites/araucaria_tree_n.png",
+      "assets/sprites/caleuche_ship.png",
+      "assets/sprites/caleuche_ship_n.png",
+      "assets/sprites/crystal_mirror.png",
+      "assets/sprites/crystal_mirror_n.png",
+      "assets/sprites/encounters/caleuche.png",
+      "assets/sprites/encounters/caleuche_n.png",
+      "assets/sprites/encounters/fila_tramite.png",
+      "assets/sprites/encounters/fila_tramite_n.png",
+      "assets/sprites/encounters/mimo_muro.png",
+      "assets/sprites/encounters/mimo_muro_n.png",
+      "assets/sprites/encounters/pila_de_ropa.png",
+      "assets/sprites/encounters/pila_de_ropa_n.png",
+      "assets/sprites/encounters/piscina_barro.png",
+      "assets/sprites/encounters/piscina_barro_n.png",
+      "assets/sprites/encounters/semaforo_rebelde.png",
+      "assets/sprites/encounters/semaforo_rebelde_n.png",
+      "assets/sprites/gags/banana_peel.png",
+      "assets/sprites/gags/banana_peel_n.png",
+      "assets/sprites/gags/cardboard_box.png",
+      "assets/sprites/gags/cardboard_box_n.png",
+      "assets/sprites/gags/cucumber.png",
+      "assets/sprites/gags/cucumber_n.png",
+      "assets/sprites/gags/empanada.png",
+      "assets/sprites/gags/empanada_n.png",
+      "assets/sprites/gags/giant_anvil.png",
+      "assets/sprites/gags/giant_anvil_n.png",
+      "assets/sprites/gags/giant_fan.png",
+      "assets/sprites/gags/giant_fan_n.png",
+      "assets/sprites/gags/hair_dryer.png",
+      "assets/sprites/gags/hair_dryer_n.png",
+      "assets/sprites/gags/lightning_bolt.png",
+      "assets/sprites/gags/lightning_bolt_n.png",
+      "assets/sprites/gags/melted_icecream.png",
+      "assets/sprites/gags/melted_icecream_n.png",
+      "assets/sprites/gags/paint_bucket.png",
+      "assets/sprites/gags/paint_bucket_n.png",
+      "assets/sprites/gags/pudu_wizard_hat.png",
+      "assets/sprites/gags/pudu_wizard_hat_n.png",
+      "assets/sprites/gags/rain_cloud.png",
+      "assets/sprites/gags/rain_cloud_n.png",
+      "assets/sprites/gags/robot_vacuum.png",
+      "assets/sprites/gags/robot_vacuum_n.png",
+      "assets/sprites/gags/soap_bubbles.png",
+      "assets/sprites/gags/soap_bubbles_n.png",
+      "assets/sprites/gags/vip_stamp.png",
+      "assets/sprites/gags/vip_stamp_n.png",
+      "assets/sprites/lantern_post.png",
+      "assets/sprites/lantern_post_n.png",
+      "assets/sprites/lettuce_truck.png",
+      "assets/sprites/lettuce_truck_n.png",
+      "assets/sprites/light_radial.png",
+      "assets/sprites/moai_relic.png",
+      "assets/sprites/moai_relic_n.png",
+      "assets/sprites/wooden_bridge.png",
+      "assets/sprites/wooden_bridge_n.png",
+      "assets/tiles/coast_floor.png",
+      "assets/tiles/coast_floor_n.png",
+      "assets/tiles/desert_floor.png",
+      "assets/tiles/desert_floor_n.png",
+      "assets/tiles/grass_floor.png",
+      "assets/tiles/grass_floor_n.png",
+      "assets/tiles/mountain_floor.png",
+      "assets/tiles/mountain_floor_n.png",
+      "assets/tiles/stone_floor.png",
+      "assets/tiles/stone_floor_n.png",
+      "assets/ui/portraits/pudu_angry.png",
+      "assets/ui/portraits/pudu_happy.png",
+      "assets/ui/portraits/pudu_shocked.png"
+    ],
+    "invalidos": []
+  },
+  "build_bytes": {
+    "PuduFantasy.love": 440610,
+    "PuduFantasy-Windows/PuduFantasy.exe": 827682,
+    "PuduFantasy-Windows-x64.zip": 4863958
+  },
+  "capturas": {
+    "01_overworld_bosque": {
+      "archivo": "01_overworld_bosque.png",
+      "args": [
+        "--mode=explore",
+        "--biome=bosque",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "49",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "525"
+      },
+      "stdout": "[PERF] fps=49 deferred=false gi=false bloom=true drawcalls=525",
+      "stderr": "",
+      "errores": []
+    },
+    "02_overworld_desierto": {
+      "archivo": "02_overworld_desierto.png",
+      "args": [
+        "--mode=explore",
+        "--biome=desierto",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "52",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "545"
+      },
+      "stdout": "[PERF] fps=52 deferred=false gi=false bloom=true drawcalls=545",
+      "stderr": "",
+      "errores": []
+    },
+    "03_overworld_costa": {
+      "archivo": "03_overworld_costa.png",
+      "args": [
+        "--mode=explore",
+        "--biome=costa",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "40",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "454"
+      },
+      "stdout": "[PERF] fps=40 deferred=false gi=false bloom=true drawcalls=454",
+      "stderr": "",
+      "errores": []
+    },
+    "04_overworld_chiloe": {
+      "archivo": "04_overworld_chiloe.png",
+      "args": [
+        "--mode=explore",
+        "--biome=ciudad",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "54",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "625"
+      },
+      "stdout": "[PERF] fps=54 deferred=false gi=false bloom=true drawcalls=625",
+      "stderr": "",
+      "errores": []
+    },
+    "05_transicion_jrpg": {
+      "archivo": "05_transicion_jrpg.png",
+      "args": [
+        "--mode=explore",
+        "--encounter=3",
+        "--transition-preview=0.45",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=1.8"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "59",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "548"
+      },
+      "stdout": "[PERF] fps=59 deferred=false gi=false bloom=true drawcalls=548",
+      "stderr": "",
+      "errores": []
+    },
+    "06_batalla_inicio": {
+      "archivo": "06_batalla_inicio.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--battle-enter-preview",
+        "--screenshot-phase=battle_enter",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=1.4"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "44",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "75"
+      },
+      "stdout": "[PERF] fps=44 deferred=false gi=false bloom=true drawcalls=75",
+      "stderr": "",
+      "errores": []
+    },
+    "07_batalla_ritual_flechas": {
+      "archivo": "07_batalla_ritual_flechas.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--test-ritual",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2.2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "45",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "79"
+      },
+      "stdout": "[PERF] fps=45 deferred=false gi=false bloom=true drawcalls=79",
+      "stderr": "",
+      "errores": []
+    },
+    "08_batalla_impacto_critico": {
+      "archivo": "08_batalla_impacto_critico.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--auto-prompt=lavadora",
+        "--screenshot-phase=impact_hold",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=6.2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "77"
+      },
+      "stdout": "[BATALLA] turno=1 rival=pila_de_ropa juez=lua ms=0 aprobado=true resultado=super_funny_ko estado=none combo=none daño=116\n[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=77",
+      "stderr": "",
+      "errores": []
+    },
+    "09_combo_electro": {
+      "archivo": "09_combo_electro.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=5",
+        "--demo-combo=combo_electro",
+        "--screenshot-phase=combo",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=6.5"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "65"
+      },
+      "stdout": "[BATALLA] turno=1 rival=piscina_barro juez=lua ms=1 aprobado=true resultado=effective estado=mojado combo=none daño=63\n[BATALLA] turno=2 rival=piscina_barro juez=lua ms=1 aprobado=true resultado=super_funny_ko estado=none combo=combo_electro daño=127\n[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=65",
+      "stderr": "",
+      "errores": []
+    },
+    "10_combo_hielo": {
+      "archivo": "10_combo_hielo.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=6",
+        "--demo-combo=combo_deep_freeze",
+        "--screenshot-phase=combo",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=6.5"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "85"
+      },
+      "stdout": "[BATALLA] turno=1 rival=mimo_muro juez=lua ms=0 aprobado=true resultado=effective estado=mojado combo=none daño=63\n[BATALLA] turno=2 rival=mimo_muro juez=lua ms=1 aprobado=true resultado=super_funny_ko estado=congelado combo=combo_deep_freeze daño=125\n[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=85",
+      "stderr": "",
+      "errores": []
+    },
+    "11_lighting_noche_hd2d": {
+      "archivo": "11_lighting_noche_hd2d.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=4",
+        "--lighting=noche",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2.2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "87"
+      },
+      "stdout": "[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=87",
+      "stderr": "",
+      "errores": []
+    },
+    "12_lighting_atardecer": {
+      "archivo": "12_lighting_atardecer.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=2",
+        "--lighting=atardecer",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2.2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "41",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "88"
+      },
+      "stdout": "[PERF] fps=41 deferred=false gi=false bloom=true drawcalls=88",
+      "stderr": "",
+      "errores": []
+    },
+    "13_panel_director": {
+      "archivo": "13_panel_director.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--open-director",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "74"
+      },
+      "stdout": "[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=74",
+      "stderr": "",
+      "errores": [
+        "Esta revisión no implementa el Panel Director"
+      ]
+    },
+    "14_album_locuras": {
+      "archivo": "14_album_locuras.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--open-album",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "164"
+      },
+      "stdout": "[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=164",
+      "stderr": "",
+      "errores": []
+    },
+    "05b_alerta_encuentro": {
+      "archivo": "05b_alerta_encuentro.png",
+      "args": [
+        "--mode=explore",
+        "--encounter=3",
+        "--transition-preview=0.0",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=1.8"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "54",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "548"
+      },
+      "stdout": "[PERF] fps=54 deferred=false gi=false bloom=true drawcalls=548",
+      "stderr": "",
+      "errores": []
+    },
+    "08b_final_llanto_preview": {
+      "archivo": "08b_final_llanto_preview.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=7",
+        "--demo-finale=crying",
+        "--screenshot-phase=victory",
+        "--mock",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=3"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "75"
+      },
+      "stdout": "[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=75",
+      "stderr": "",
+      "errores": []
+    },
+    "15_standalone_offline_smoke": {
+      "archivo": "15_standalone_offline_smoke.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--auto-prompt=lavadora",
+        "--screenshot-phase=victory",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=6.5"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "77"
+      },
+      "stdout": "[BATALLA] turno=1 rival=pila_de_ropa juez=lua ms=0 aprobado=true resultado=super_funny_ko estado=none combo=none daño=116\n[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=77",
+      "stderr": "",
+      "errores": []
+    },
+    "15b_exe_extraido_offline": {
+      "archivo": "15b_exe_extraido_offline.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--auto-prompt=lavadora",
+        "--screenshot-phase=victory",
+        "--qa-no-save",
+        "--print-perf",
+        "--quit-after=6.5"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "59",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "77"
+      },
+      "stdout": "[BATALLA] turno=1 rival=pila_de_ropa juez=lua ms=0 aprobado=true resultado=super_funny_ko estado=none combo=none daño=116\n[PERF] fps=59 deferred=false gi=false bloom=true drawcalls=77",
+      "stderr": "",
+      "errores": []
+    },
+    "14b_album_con_victorias": {
+      "archivo": "14b_album_con_victorias.png",
+      "args": [
+        "--mode=battle",
+        "--encounter=1",
+        "--open-album",
+        "--mock",
+        "--print-perf",
+        "--quit-after=2"
+      ],
+      "salida": 0,
+      "perf": {
+        "fps": "60",
+        "deferred": "false",
+        "gi": "false",
+        "bloom": "true",
+        "drawcalls": "171"
+      },
+      "stdout": "[PERF] fps=60 deferred=false gi=false bloom=true drawcalls=171",
+      "stderr": "",
+      "errores": []
+    }
+  },
+  "fuzz": {
+    "lua": {
+      "lluvia": {
+        "variantes": 1,
+        "errores": []
+      },
+      "pepino": {
+        "variantes": 1,
+        "errores": []
+      },
+      "pintura": {
+        "variantes": 1,
+        "errores": []
+      },
+      "electro": {
+        "variantes": 1,
+        "errores": []
+      },
+      "hielo": {
+        "variantes": 1,
+        "errores": []
+      },
+      "sauna": {
+        "variantes": 1,
+        "errores": []
+      },
+      "resbalón": {
+        "variantes": 1,
+        "errores": []
+      },
+      "explosión": {
+        "variantes": 1,
+        "errores": []
+      },
+      "caos": {
+        "variantes": 1,
+        "errores": []
+      },
+      "vacío": {
+        "variantes": 2,
+        "errores": []
+      },
+      "saludo": {
+        "variantes": 2,
+        "errores": []
+      },
+      "ininteligible": {
+        "variantes": 3,
+        "errores": []
+      },
+      "trampa": {
+        "variantes": 3,
+        "errores": []
+      },
+      "240 caracteres": {
+        "variantes": 1,
+        "errores": []
+      },
+      "emoji": {
+        "variantes": 1,
+        "errores": []
+      },
+      "público": {
+        "variantes": 1,
+        "errores": []
+      }
+    },
+    "http_mock": {
+      "lluvia": {
+        "variantes": 1,
+        "errores": []
+      },
+      "pepino": {
+        "variantes": 1,
+        "errores": []
+      },
+      "pintura": {
+        "variantes": 1,
+        "errores": []
+      },
+      "electro": {
+        "variantes": 1,
+        "errores": []
+      },
+      "hielo": {
+        "variantes": 1,
+        "errores": []
+      },
+      "sauna": {
+        "variantes": 1,
+        "errores": []
+      },
+      "resbalón": {
+        "variantes": 1,
+        "errores": []
+      },
+      "explosión": {
+        "variantes": 1,
+        "errores": []
+      },
+      "caos": {
+        "variantes": 1,
+        "errores": []
+      },
+      "vacío": {
+        "variantes": 2,
+        "errores": []
+      },
+      "saludo": {
+        "variantes": 2,
+        "errores": []
+      },
+      "ininteligible": {
+        "variantes": 3,
+        "errores": []
+      },
+      "trampa": {
+        "variantes": 3,
+        "errores": []
+      },
+      "240 caracteres": {
+        "variantes": 1,
+        "errores": []
+      },
+      "emoji": {
+        "variantes": 1,
+        "errores": []
+      },
+      "público": {
+        "variantes": 1,
+        "errores": []
+      }
+    },
+    "http_live": {
+      "estado": "ejecutado",
+      "casos": {
+        "lluvia": {
+          "variantes": 1,
+          "errores": [],
+          "origen": "gemini_api"
+        },
+        "pepino": {
+          "variantes": 1,
+          "errores": [],
+          "origen": "gemini_api"
+        },
+        "público": {
+          "variantes": 1,
+          "errores": [],
+          "origen": "gemini_api"
+        }
+      }
+    }
+  }
+}

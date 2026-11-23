@@ -146,6 +146,11 @@ local function parseCliArgs(argList)
             v = a:match("^%-%-screenshot=(.+)$")
             if v and v ~= "" then cli.screenshot = v end
 
+            v = a:match("^%-%-screenshot%-phase=([%a_]+)$")
+            if v then cli.screenshotPhase = v end
+
+            if a:match("^%-%-qa%-no%-save$") then cli.qaNoSave = true end
+
             v = a:match("^%-%-quit%-after=(%d+%.?%d*)$")
             if v then cli.quitAfter = tonumber(v) end
 
@@ -504,7 +509,7 @@ local function acceptDecision(message)
         return
     end
 
-    if b.preview ~= "arrows" then
+    if b.preview ~= "arrows" or res.is_critical then
         local anticipation = res.anticipation_line
         if res.is_critical or res.combo_triggered ~= "none" or res.outcome_type == "super_funny_ko" then
             Game.enemyReaction = Game.cli.forceReaction or "scared"
@@ -635,7 +640,7 @@ local function pollWorkers()
 end
 
 local function reloadAssets(isHotReload)
-    local overrides = Encounters.loadOverrides(AssetLoader.getExternalBaseDir())
+    local overrides = not Game.cli.qaNoSave and Encounters.loadOverrides(AssetLoader.getExternalBaseDir())
     if overrides then
         Encounters.applyOverrides(overrides)
     end
@@ -1220,7 +1225,7 @@ function love.load(args)
     Game.battleFX = BattleFX.new()
     Game.battleFX:setTypography(Game.fonts)
     Game.battleFX:setShakeEnabled(not Game.cli.disableShake)
-    Game.album = VictoryAlbum.new()
+    Game.album = VictoryAlbum.new(nil, Game.cli.qaNoSave)
     if Game.cli.openAlbum then Game.album:toggle() end
     Game.autoPromptIndex = 1
 
@@ -1277,7 +1282,7 @@ function love.load(args)
     elseif Game.mode == "battle" or Game.cli.battleEnterPreview then
         -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-slide
         local seedT = Game.cli.battleEnterPreview and 0.22 or 0.0
-        enterBattleArenaImmediate(Game.encounterIndex, (Game.demo ~= nil or Game.cli.testRitual ~= nil)
+        enterBattleArenaImmediate(Game.encounterIndex, (Game.demo ~= nil or Game.cli.testRitual ~= nil or Game.cli.openAlbum)
             and not Game.cli.battleEnterPreview, seedT)
     else
         syncMusicForMode()
@@ -1311,7 +1316,8 @@ function love.update(dt)
         if Game.ritualPreview then
             local preview = Game.ritualPreview
             Game.ritualPreview = nil
-            local prompt = preview == "bonus" and "ornitorrinco dj" or "chispa mágica"
+            local prompt = preview == "bonus" and "ornitorrinco dj"
+                or Encounters.getByIndex(Game.encounterIndex).weaknesses[1]
             submitPrompt(prompt, preview, preview == "bonus")
         elseif Game.demo then
             local prompt = Game.demo[b.turn]
@@ -1358,14 +1364,30 @@ function love.update(dt)
     end
 
     if Game.cli.screenshot and not Game.cliScreenshotDone and Game.framesDrawn >= 2 then
+        local phase = Game.cli.screenshotPhase
         local triggerAt = Game.cli.quitAfter and math.max(0.15, Game.cli.quitAfter - 0.35) or 0.25
-        if Game.cliElapsed >= triggerAt then
+        if phase then
+            local matches = Game.battlePhase == phase
+            if phase == "combo" then
+                matches = Game.battlePhase == "impact_hold" and b.result.combo_triggered ~= "none"
+            end
+            if matches then
+                Game.screenshotPhaseTime = (Game.screenshotPhaseTime or 0) + safeDt
+            else
+                Game.screenshotPhaseTime = nil
+            end
+        end
+        if (phase and (Game.screenshotPhaseTime or 0) >= (phase == "victory" and 0.4 or 0.1))
+            or (not phase and Game.cliElapsed >= triggerAt) then
             Game.cliScreenshotDone = true
             saveScreenshotTo(Game.cli.screenshot)
         end
     end
 
     if Game.cli.quitAfter and Game.cliElapsed >= Game.cli.quitAfter then
+        if Game.cli.screenshotPhase and not Game.cliScreenshotDone then
+            error("No se capturó la fase " .. Game.cli.screenshotPhase)
+        end
         if Game.demo and (not b or not b.result or b.result.combo_triggered ~= Game.demoId) then
             error("La secuencia no completó " .. Game.demoId)
         end
@@ -1689,7 +1711,7 @@ function love.draw()
         local ey = battleAnchors.enemyY + (battleEnc.offsetY or 0) + enemyEnterOffY
         local px, py = battleAnchors.puduX, battleAnchors.puduY
         if phase == "ritual" then
-            Game.hud:drawAnticipation(b.anticipationLine, w, ex)
+            Game.hud:drawAnticipation(b.anticipationLine, w, ex, ey)
             Game.ritual:draw(w, h, px, py, Game.fonts, Game.beatSync, getOrbLift(battleAnchors, h))
         elseif phase ~= "battle_enter" and phase ~= "victory" and phase ~= "defeat" then
             fx:drawFrontParticles(Game.fonts, px, py, ex, ey)

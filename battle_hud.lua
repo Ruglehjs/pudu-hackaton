@@ -245,11 +245,12 @@ function BattleHUD:drawRivalStageBar(state, ex, ey, w)
     end
 end
 
-function BattleHUD:drawAnticipation(text, w, ex)
+function BattleHUD:drawAnticipation(text, w, ex, ey)
     text = BattleHUD.displayText(text)
     if text == "" then return end
     local f = self.fonts.body
-    local maxW = math.max(110, math.min(250, w - ex - 78))
+    local minX = math.ceil(w * 0.58)
+    local maxW = math.min(250, w - minX - 16)
     local width = clamp(f:getWidth(text) + 28, 110, maxW)
     local _, lines = f:getWrap(text, width - 26)
     local limit = 2
@@ -257,8 +258,12 @@ function BattleHUD:drawAnticipation(text, w, ex)
         lines[limit] = fit(lines[limit] .. "...", f, width - 26)
     end
     local height = math.min(#lines, limit) * f:getHeight() + 16
-    local x, y = w - width - 16, 58
+    local x = clamp(ex - width / 2, minX, w - width - 16)
+    local y = math.max(58, ey - 216)
     drawFFWindow(x, y, width, height)
+    local tipX = clamp(ex, x + 16, x + width - 16)
+    g.setColor(0.025, 0.04, 0.09)
+    g.polygon("fill", tipX - 8, y + height - 1, tipX + 8, y + height - 1, tipX, y + height + 9)
     for i = 1, math.min(#lines, limit) do
         label(f, lines[i], x + 13, y + 8 + (i - 1) * f:getHeight(), width - 26, "center", GOLD)
     end

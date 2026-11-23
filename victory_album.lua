@@ -63,7 +63,10 @@ local function decodeSave(json, reader, path)
     if decoded and type(data) == "table" and type(data.entries) == "table" then return data end
 end
 
-function VictoryAlbum.new(jsonMod)
+function VictoryAlbum.new(jsonMod, inMemory)
+    if inMemory then
+        return setmetatable({ entries = {}, open = false, inMemory = true }, VictoryAlbum)
+    end
     local json = jsonMod or require("json")
     local path = AssetLoader.getExternalBaseDir() .. "/" .. FILENAME
     local data = decodeSave(json, readExternal, path)
@@ -94,6 +97,7 @@ function VictoryAlbum.new(jsonMod)
 end
 
 function VictoryAlbum:save()
+    if self.inMemory then return true end
     self.revision = math.min(MAX_INTEGER, math.max(os.time(), self.revision + 1))
     local entries = self.json.object and self.json.object(self.entries) or self.entries
     local raw = self.json.encode({ version = 1, revision = self.revision, entries = entries }) .. "\n"
@@ -397,9 +401,9 @@ function VictoryAlbum:draw(encountersList, enemySprites, fonts, w, h)
     g.setFont(fonts.body)
     g.setColor(0.79, 0.85, 0.99)
     g.print(string.format("%d / %d rivales vencidos", self:countUnlocked(encountersList), #encountersList),
-        box.x + 25, box.y + 43)
+        box.x + 25, box.y + 48)
     drawButton(ui.clear, "Limpiar", contains(ui.clear, mx, my), fonts.body)
-    drawButton(ui.close, "[X]", contains(ui.close, mx, my), fonts.body)
+    drawButton(ui.close, "X", contains(ui.close, mx, my), fonts.body)
 
     for i, card in ipairs(ui.cards) do
         local enc = encountersList[i]

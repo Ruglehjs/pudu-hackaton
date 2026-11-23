@@ -1,5 +1,7 @@
 # FASE 07 — QA Visual Automatizado, Fuzzing de Prompts, Build Portable Windows x64 y Guion de Demo
 
+La ejecución sobre la campaña actual y su guion actualizado están en [Resultados de la Fase 7](RESULTADOS_FASE_07.md).
+
 > **Fase:** 7 de 7 (Cierre, Empaquetado y Escenario)  
 > **Duración estimada:** 60 – 90 minutos (en formato hackathon; 45 min en modo turbo)  
 > **Prerrequisitos:** Fases 1 a 6 completadas e integradas (mapa diagonal `↗` con 4 biomas, 9 encuentros, combate HD-2D con pipeline Deferred/GI/Bloom, ritual de flechas convexas, puente Google AI + fallback offline en `battle_worker.lua`, Panel Director `[F2]` y Álbum de Locuras `[J]`).  
