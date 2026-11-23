@@ -1,0 +1,142 @@
+{
+  "overworld_montana": {
+    "path": "assets/audio/bgm_overworld_montana.ogg",
+    "bpm": 114.84,
+    "beats": 56,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "overworld_chiloe": {
+    "path": "assets/audio/bgm_overworld_chiloe.ogg",
+    "bpm": 107.67,
+    "beats": 52,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "overworld_costa": {
+    "path": "assets/audio/bgm_overworld_costa.ogg",
+    "bpm": 123.05,
+    "beats": 52,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "overworld_desierto": {
+    "path": "assets/audio/bgm_overworld_desierto.ogg",
+    "bpm": 117.45,
+    "beats": 56,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_fardo": {
+    "path": "assets/audio/bgm_battle_fardo.ogg",
+    "bpm": 139.67,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_tempano": {
+    "path": "assets/audio/bgm_battle_tempano.ogg",
+    "bpm": 143.55,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_brasa": {
+    "path": "assets/audio/bgm_battle_brasa.ogg",
+    "bpm": 152.0,
+    "beats": 72,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_mancha": {
+    "path": "assets/audio/bgm_battle_mancha.ogg",
+    "bpm": 136.0,
+    "beats": 64,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "victory": {
+    "path": "assets/audio/bgm_victory.ogg",
+    "bpm": 138.0,
+    "beats": 28,
+    "beatOffset": 0.0,
+    "loop": false
+  },
+  "defeat": {
+    "path": "assets/audio/bgm_defeat.ogg",
+    "bpm": 100.0,
+    "beats": 13,
+    "beatOffset": 0.0,
+    "loop": false
+  },
+  "overworld": {
+    "path": "assets/audio/bgm_overworld_desierto.ogg",
+    "bpm": 117.45,
+    "beats": 56,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "overworld_bosque": {
+    "path": "assets/audio/bgm_overworld_chiloe.ogg",
+    "bpm": 107.67,
+    "beats": 52,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "user_battle": {
+    "path": "assets/audio/bgm_battle_fardo.ogg",
+    "bpm": 139.67,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "plaza": {
+    "path": "assets/audio/bgm_battle_fardo.ogg",
+    "bpm": 139.67,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "superstar": {
+    "path": "assets/audio/bgm_battle_mancha.ogg",
+    "bpm": 136.0,
+    "beats": 64,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "boss": {
+    "path": "assets/audio/bgm_battle_brasa.ogg",
+    "bpm": 152.0,
+    "beats": 72,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_pila_ropa": {
+    "path": "assets/audio/bgm_battle_fardo.ogg",
+    "bpm": 139.67,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_gaviota": {
+    "path": "assets/audio/bgm_battle_mancha.ogg",
+    "bpm": 136.0,
+    "beats": 64,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_puma": {
+    "path": "assets/audio/bgm_battle_brasa.ogg",
+    "bpm": 152.0,
+    "beats": 72,
+    "beatOffset": 0.0,
+    "loop": true
+  },
+  "battle_caleuche": {
+    "path": "assets/audio/bgm_battle_tempano.ogg",
+    "bpm": 143.55,
+    "beats": 68,
+    "beatOffset": 0.0,
+    "loop": true
+  }
+}

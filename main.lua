@@ -385,13 +385,13 @@ local function saveScreenshotTo(path)
     return true
 end
 
-local function syncExploreBiomeMusic(forceResetBeat)
+local function syncExploreBiomeMusic(forceResetBeat, fadeSeconds)
     if not Game.audio then return end
     local biomeId = StageRenderer.getBiomeAt(Game.puduU or 0)
     local trackId = Audio.getBiomeTrackId(biomeId)
     local changed = (Game.audio.currentTrackId ~= trackId)
     if changed or forceResetBeat then
-        Game.audio:playTrack(trackId, false)
+        Game.audio:playTrack(trackId, false, fadeSeconds or 0.0)
         if Game.beatSync and (changed or forceResetBeat) then
             local ts = Game.audio.getTrackState and Game.audio:getTrackState()
             Game.beatSync:reset((ts and ts.bpm) or 116.0)
@@ -399,20 +399,21 @@ local function syncExploreBiomeMusic(forceResetBeat)
     end
 end
 
-local function syncMusicForMode()
+local function syncMusicForMode(fadeSeconds)
     if not Game.audio then return end
     if Game.mode == "battle" then
+        if Game.audio.setProximityTension then Game.audio:setProximityTension(0.0) end
         local enc = Encounters.getByIndex(Game.encounterIndex)
         local trackId = (enc and enc.track) or "user_battle"
-        if not Game.audio:playTrack(trackId, false) then
-            Game.audio:playTrack("user_battle", false)
+        if not Game.audio:playTrack(trackId, false, 0.0) then
+            Game.audio:playTrack("user_battle", false, 0.0)
         end
         if Game.beatSync then
             local ts = Game.audio.getTrackState and Game.audio:getTrackState()
             Game.beatSync:reset((ts and ts.bpm) or 138.0)
         end
     else
-        syncExploreBiomeMusic(true)
+        syncExploreBiomeMusic(true, fadeSeconds)
     end
 end
 
@@ -809,6 +810,9 @@ end
 local function startVersus()
     Game.battlePhase = "versus"
     Game.battle.versusTime = 0
+    if Game.audio then
+        Game.audio:play("sfx_versus_intro", 0.86)
+    end
 end
 
 local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
@@ -833,12 +837,13 @@ local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
     Game.enemyReaction = (Game.cli and Game.cli.forceReaction) or "idle"
 
     if Game.audio then
+        if Game.audio.setProximityTension then Game.audio:setProximityTension(0.0) end
         local enc = Encounters.getByIndex(targetIdx)
         local trackId = (enc and enc.track) or "user_battle"
-        if not Game.audio:playTrack(trackId, false) then
-            Game.audio:playTrack("user_battle", false)
+        if not Game.audio:playTrack(trackId, false, 0.0) then
+            Game.audio:playTrack("user_battle", false, 0.0)
         end
-        if not skipEnterDash then
+        if Game.battlePhase == "battle_enter" then
             Game.audio:play("sfx_battle_enter", 0.75)
         end
     end
@@ -866,7 +871,9 @@ local function triggerEncounterTransition(idx)
     Game.transitionTimer = 0.0
     Game.transitionSwitched = false
     if Game.audio then
-        Game.audio:play("sfx_encounter_start", 0.90)
+        if Game.audio.setProximityTension then Game.audio:setProximityTension(0.0) end
+        if Game.audio.fadeOutMusic then Game.audio:fadeOutMusic(0.22) end
+        Game.audio:play("sfx_encounter_start", 0.95)
     end
 end
 
@@ -891,6 +898,10 @@ local function triggerReturnToExplore()
     Game.transitionState = "to_explore"
     Game.transitionTimer = 0.0
     Game.transitionSwitched = false
+    if Game.audio then
+        if Game.audio.fadeOutMusic then Game.audio:fadeOutMusic(0.30) end
+        Game.audio:play("sfx_scene_transition", 0.62)
+    end
 end
 
 local function updateTransition(dt)
@@ -900,6 +911,7 @@ local function updateTransition(dt)
             Game.transitionState = "to_battle"
             Game.transitionTimer = 0.0
             Game.transitionSwitched = false
+            if Game.audio then Game.audio:play("sfx_scene_transition", 0.78) end
         end
     elseif Game.transitionState == "to_battle" then
         Game.transitionTimer = Game.transitionTimer + dt
@@ -929,7 +941,7 @@ local function updateTransition(dt)
             end
             Game.stage:snapCameraToChunk(Game.puduU, Game.puduV)
             Game.encounterCooldown = 0.85
-            syncMusicForMode()
+            syncMusicForMode(1.10)
         end
         if p >= 1.0 then
             Game.transitionState = "none"
@@ -1102,11 +1114,25 @@ local function updateExplore(dt)
         Game.lastStepBucket = nil
         stopPuduMovement()
     end
-    syncExploreBiomeMusic(false)
+    syncExploreBiomeMusic(false, 1.35)
+
+    -- Boss-proximity tension: gently boosts music presence & beat pace when nearing an undefeated boss
+    if Game.audio and Game.audio.setProximityTension then
+        local tension = 0.0
+        if nextEncounter then
+            local dist = math.sqrt(distanceSquaredFromPudu(nextEncounter))
+            local startDist = 14.0
+            local maxDist = ENCOUNTER_TRIGGER_DIST
+            local raw = clamp((startDist - dist) / math.max(0.5, startDist - maxDist), 0.0, 1.0)
+            tension = raw * raw * (3.0 - 2.0 * raw)
+        end
+        Game.audio:setProximityTension(tension)
+    end
 
     if not Game.completoPickedAt and distanceSquaredFromPudu(COMPLETO) <= COMPLETO.pickupRadius ^ 2 then
         Game.completoPickedAt = Game.elapsed
         Game.completoBonusPending = true
+        if Game.audio then Game.audio:play("sfx_completo_pickup", 0.88) end
     end
 
     -- Crossing the next rival's position starts combat even if the player takes a side path.
@@ -1146,11 +1172,16 @@ local function updateBattle(dt, realDt)
         b.versusTime = before + dt
         local impactTime = VERSUS_DURATION * VERSUS_IMPACT_AT
         if before < impactTime and b.versusTime >= impactTime then
-            Game.audio:play("parry_clash", 0.92)
+            if Game.audio then
+                Game.audio:play("sfx_versus_impact", 0.95)
+            end
         end
         if b.versusTime >= VERSUS_DURATION then
             Game.battlePhase, Game.battleEnterT = "battle_enter", 0
             Game.puduAnimMode = "battle_enter"
+            if Game.audio then
+                Game.audio:play("sfx_battle_enter", 0.75)
+            end
         end
         return
     end
@@ -1643,6 +1674,11 @@ function love.update(dt)
         end
     end
 
+    -- Update dynamic audio crossfades, ducking, and boss-proximity tension before BeatSync
+    if Game.audio and Game.audio.update then
+        Game.audio:update(safeDt)
+    end
+
     -- Always update BeatSync PLL against real audio clock (stays locked even when muted!)
     if Game.beatSync then
         local trackState = Game.audio and Game.audio:getTrackState() or nil
@@ -1656,7 +1692,10 @@ function love.update(dt)
             updateTransition(safeDt)
         elseif Game.mode == "explore" then
             local restored = Game.stage:updateRestorations(safeDt)
-            if restored then showToast(restored.restorationLine, 5.0) end
+            if restored then
+                showToast(restored.restorationLine, 5.0)
+                if Game.audio then Game.audio:play("sfx_biome_restored", 0.90) end
+            end
             updateExplore(safeDt)
         elseif Game.mode == "battle" then
             updateBattle(safeDt, dt)
@@ -1727,15 +1766,18 @@ end
 
 local function routeHudAction(action)
     if action == "scores" and not Game.scorePage and canOpenScores() then
+        if Game.audio then Game.audio:play("sfx_ui_click", 0.52) end
         Game.scorePage = 1
         Game.reopenPromptOnClose = Game.hud.promptOpen
         Game.hud:closePrompt(false)
     elseif Game.scorePage then
         if action == "close_scores" then
+            if Game.audio then Game.audio:play("sfx_ui_click", 0.52) end
             Game.scorePage = nil
             if Game.reopenPromptOnClose and promptAvailable() then Game.hud:openPrompt() end
             Game.reopenPromptOnClose = nil
         elseif action == "score_older" or action == "score_newer" then
+            if Game.audio then Game.audio:play("sfx_ui_click", 0.45) end
             local delta = action == "score_older" and 1 or -1
             local pages = BattleHUD.scorePageCount(#Game.scoreHistory.entries)
             Game.scorePage = clamp(Game.scorePage + delta, 1, pages)

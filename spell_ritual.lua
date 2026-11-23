@@ -158,6 +158,7 @@ function SpellRitual:onKeyPressed(key, audio)
         elseif #self.sequence < MAX_SEQUENCE_LEN then
             self:_appendArrows(2, true)
             self.overchargeBannerTimer = 3.2
+            if audio then audio:play("sfx_ritual_wave", 0.72) end
         end
     end
     return true
