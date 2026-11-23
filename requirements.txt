@@ -1,0 +1,4 @@
+# Solo para el puente opcional. El juez local usa la biblioteca estándar.
+google-auth[requests]>=2.29,<3
+Pillow>=10.3,<14
+numpy>=1.26,<3

@@ -1063,6 +1063,43 @@ local PORTRAIT_MOODS = {
   "angry",
 }
 
+-- Siluetas de los gags para el prototipo sin PNG. Cada celda ocupa 4 píxeles.
+local gagTiles = {
+  rain_cloud      = "....www/..wwwccc/.wwwwccc/wwccccccc/.ccccccc/.......... /..b..b..b/.b..b..b",
+  banana_peel     = "....t/....y/....yy/...yyyy/..yy.yyy/.yy..y.yy/ty...y..yt/.....t",
+  cucumber        = "......gg/.....glgg/....glgg/...gglg/..glgg/..ggg/.glg/.gg",
+  melted_icecream = "...ppp/..pwppp/..ppppp/...ttt/...tyt/....t/..p.ppp/.ppppppp",
+  lightning_bolt  = "....yyyy/...yyyy/...yy/..yyyyyy/....yyy/...yyy/..yy/.y",
+  hair_dryer      = "..rrrrrr/.rpprrrrtt/.rrrrrrrtt/..rrrrrr/...tt/..tt/..tt",
+  giant_fan       = "...bbb/...bcb..bb/.bbbbb.bcb/bcbbbybbb/.bbb.bbb/....tbcb/....t.bb/...ttt",
+  paint_bucket    = "...ccc/..c...c/.c.....c/.bbbbbbbb/.pprpppc/..rcccc/..rcccc/..cccc",
+  empanada        = "....y/....yy/...ytyy/..ytyyyt/.ytyyyytt/ytyyyyttt/tytytytt/..tttt",
+  cardboard_box   = "....tt/..ttyytt/ttyyttyytt/tyytttttyt/.ttytyttt/.ttyyyttt/..ttyytt/...tttt",
+  robot_vacuum    = ".......... /...ccccc/..cwbccc/.ccccccct/.ctttttt/..ttttt",
+  giant_anvil     = "........./.cccccccc/..ccctttt/...tttt/....tt/....tt/...cccc/..tttttt",
+  soap_bubbles    = "......bb/.....bwwb/......bb/..bbb/...wwbb..b/.bwwccb.bwb/.bccccb..b/..bbbb",
+  vip_stamp       = "....tt/..tttttt/..tyyytt/...tttt/....tt/...tttt/..rrrrrr/.rppppppr",
+}
+local mysteryTile = "....b/...bwb/..bwcbb/.bwccbbb/.bbccbbb/..bbbbb/...bbb/....b"
+local gagInk = {
+  w={0.97,0.98,1}, c={0.53,0.65,0.74}, b={0.26,0.68,0.93}, y={1,0.86,0.36},
+  r={0.85,0.25,0.28}, p={1,0.60,0.68}, g={0.24,0.61,0.32}, l={0.63,0.84,0.36}, t={0.58,0.36,0.23},
+}
+
+local function makeGagTile(pattern)
+  local data = love.image.newImageData(64, 64)
+  local y = 11
+  for row in pattern:gmatch("[^/]+") do
+    for x = 1, #row do
+      local ink = gagInk[row:sub(x, x)]
+      if ink then fillRect(data, 64, 64, 7+x*4, y, 4, 4, unpack(ink)) end
+    end
+    y = y + 4
+  end
+  applyOutline(data, 0, 0, 64, 64, 0.10, 0.13, 0.20)
+  return {diff=newPixelImage(data, false), isPlaceholder=true}
+end
+
 function AssetLoader.loadAll(encountersList)
   local realCount = 0
   local placeholderCount = 0
@@ -1103,6 +1140,18 @@ function AssetLoader.loadAll(encountersList)
   end
   assets.wizardHat = trackPair(wizardHat)
   assets.gags.pudu_wizard_hat = assets.wizardHat
+  assets.mysterySummon = makeGagTile(mysteryTile)
+  local rules = require("json").decode(assert(love.filesystem.read("battle_rules.json")))
+  for id in pairs(rules.sprites) do
+    local pattern = gagTiles[id]
+    local folder = pattern and "assets/sprites/gags/" or "assets/sprites/"
+    local pair = AssetLoader.loadSpritePair("assets/custom/" .. id, false)
+    if pair then pair.isCustom = true end
+    pair = pair or AssetLoader.loadSpritePair(folder .. id, false)
+    pair = pair or (pattern and makeGagTile(pattern)) or assets.mysterySummon
+    local group = pattern and assets.gags or assets.props
+    group[id] = trackPair(pair)
+  end
 
   -- 3. 5 seamlessly tileable biome floor tiles
   for i = 1, #TILE_NAMES do
