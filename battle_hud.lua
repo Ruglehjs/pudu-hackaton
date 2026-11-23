@@ -6,7 +6,7 @@ BattleHUD.VICTORY_ENTRANCE = 0.45
 
 local g
 local CHAR = "[^\128-\191][\128-\191]*"
-local PROMPT_LIMIT = 68
+local PROMPT_LIMIT = 12
 local SCORE_ROWS = 6
 local STATE_TAGS = {
     mojado = { "MOJADO", { 0.45, 0.80, 1.00 } },
@@ -108,7 +108,16 @@ end
 function BattleHUD.canSubmit(text)
     local trimmed = text:match("^%s*(.-)%s*$")
     local _, count = trimmed:gsub(CHAR, "")
-    return count >= 2
+    return count >= 2 and count <= PROMPT_LIMIT
+end
+
+function BattleHUD.limitPrompt(text)
+    text = text:gsub("[%c]+", " "):match("^%s*(.-)%s*$")
+    local count = 0
+    return (text:gsub(CHAR, function(char)
+        count = count + 1
+        return count <= PROMPT_LIMIT and char or ""
+    end))
 end
 
 function BattleHUD:addText(text)
@@ -519,7 +528,7 @@ function BattleHUD:drawBattleStrip(state, w, h)
     Skin.paper(g, fieldX, fieldY, fieldW, fieldH, self.promptOpen)
     Skin.sprig(g, fieldX + 17, fieldY + 32, -0.74, 0.64, { 0.40, 0.45, 0.22 })
     local paperInset = fieldX + 42
-    local paperEnd = fieldX + fieldW - 12
+    local paperEnd = fieldX + fieldW - 68
     local prompt = self.input == "" and "Escribe qué quieres invocar..." or BattleHUD.displayText(self.input)
     local textW = f.body:getWidth(prompt)
     local textX = math.min(paperInset, paperEnd - textW - 5)
@@ -535,6 +544,9 @@ function BattleHUD:drawBattleStrip(state, w, h)
         g.rectangle("fill", cursorX, textY, 1.5, f.body:getHeight())
     end
     g.pop()
+    local _, count = self.input:gsub(CHAR, "")
+    label(f.small, ("%d/%d"):format(count, PROMPT_LIMIT), paperEnd, fieldY + (fieldH - f.small:getHeight()) / 2,
+        56, "right", Skin.ink)
     self.hits[#self.hits + 1] = { action = "prompt", x = fieldX, y = fieldY, w = fieldW, h = fieldH }
     self:_button("conjure", "Conjurar", rightX + rightW - 141, fieldY, 128, fieldH, BattleHUD.canSubmit(self.input), true)
 end
@@ -600,8 +612,9 @@ function BattleHUD:drawVictory(state, w, h)
         oneLine(f.body, detail, textX, y + 280, textW, "center", Skin.cream)
     end
 
-    local buttonW = 148
-    self:_button("map", "Aceptar", textX + (textW - buttonW) / 2, y + 314, buttonW, 38, true, true)
+    local buttonW = state.campaignComplete and 200 or 148
+    local buttonLabel = state.campaignComplete and "Cruzar el portal" or "Aceptar"
+    self:_button("map", buttonLabel, textX + (textW - buttonW) / 2, y + 314, buttonW, 38, true, true)
 end
 
 function BattleHUD:drawDefeat(state, w, h)

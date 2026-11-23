@@ -103,6 +103,8 @@ for _, size in ipairs({ { 1280, 720 }, { 960, 540 } }) do
     local extended = ritual:_getTileLayout(size[1], size[2])
     assert(extended.x >= 12 and extended.x + extended.w < size[1] * 0.58)
 end
+ritual.elapsed = 12.1
+assert(not ritual:_canUnleashNow())
 ritual:setSpriteReady()
 ritual:update(0.01, nil, 346, 658)
 assert(ritual.readyToUnleash and not ritual:isComplete())
@@ -135,7 +137,9 @@ assert(hud.input == "á" and not BattleHUD.canSubmit(hud.input))
 hud:addText("é")
 assert(BattleHUD.canSubmit(hud.input) and not BattleHUD.canSubmit("a "))
 hud:addText(string.rep("ü", 80))
-assert(hud.input == "áé" .. string.rep("ü", 66))
+assert(hud.input == "áé" .. string.rep("ü", 10))
+assert(BattleHUD.canSubmit(hud.input) and not BattleHUD.canSubmit(hud.input .. "ñ"))
+assert(BattleHUD.limitPrompt(hud.input .. "ñ") == hud.input)
 assert(BattleHUD.displayText("Pudú \226\134\145 \240\159\148\165\226\128\166") == "Pudú  ...")
 hud:closePrompt(true)
 assert(hud.input == "" and not hud.promptOpen)
@@ -195,8 +199,9 @@ local function submit(text)
     assert(game.battlePhase == "ritual")
     return assert(game.battleIn:pop())
 end
-local function answer(request, source, result)
-    game.battleOut:push({ kind = "prompt_result", uid = request.uid, result = result, source = source or "lua" })
+local function answer(request, source, result, live)
+    game.battleOut:push({ kind = "prompt_result", uid = request.uid, result = result, source = source or "lua",
+        live_sprite = live })
     advance(0.05)
 end
 local function cast(text, expectedReaction)
@@ -253,18 +258,42 @@ game.stage = nil
 
 restart()
 game.cli.mock = false
-local online = submit("silla")
-answer(online, "gemini", Judge.standaloneLuaEvaluate("silla", online.encounter))
-assert(game.spriteIn:pop().uid == online.uid)
+local online = submit("pepino")
+answer(online, "gemini", Judge.standaloneLuaEvaluate("pepino", online.encounter), true)
+local spriteRequest = game.spriteIn:pop()
+assert(spriteRequest.uid == online.uid and spriteRequest.original_prompt == "pepino")
 for _ = 1, 4 do playBatch(ritual) end
 game.spriteOut:push({ kind = "sprite_ready", uid = online.uid - 1, ok = false })
 advance(0.05)
 assert(not ritual.readyToUnleash, "un sprite atrasado no puede liberar otro hechizo")
 game.spriteOut:push({ kind = "sprite_ready", uid = online.uid, ok = false })
 advance(0.05)
-assert(ritual:canReleaseBonus(), "un fallo de sprite permite invocar con el fallback")
-love.keypressed("return", "return", false)
-assert(ritual.readyToUnleash)
+assert(game.battlePhase == "player_turn" and not ritual.active and hud.input == "pepino")
+assert(game.battle.enemyHp == online.encounter.hp and game.battle.turn == 1)
+
+local revealFX = require("battle_fx").new()
+local releaseSounds = 0
+local revealAudio = { play = function(_, name)
+    assert(name == "sfx_spell_unleash")
+    releaseSounds = releaseSounds + 1
+end }
+local pixelArt = { generated = true, diff = { getDimensions = function() return 80, 80 end } }
+local throw = { delivery_style = "throw_arc", existing_sprite = "none", summon_name = "Tetera" }
+revealFX:launchSummon(throw, pixelArt, 346, 659, 922, 360, revealAudio)
+local revealX, revealY = revealFX.summon.x, revealFX.summon.y
+revealFX:update(0.5, revealAudio)
+assert(releaseSounds == 0 and revealFX.summon.x == revealX and revealFX.summon.y == revealY)
+assert(not revealFX:hasSummonArrived())
+local drewReveal = false
+revealFX:drawSummonsAndProps(true, function(pair, x, y, angle, sx, sy)
+    assert(pair == pixelArt and x == revealX and y == revealY and angle == 0 and sx == 3 and sy == 3)
+    drewReveal = true
+end)
+assert(drewReveal)
+revealFX:update(0.95, revealAudio)
+assert(revealFX.summon.x > revealX and revealFX.summon.x < 922 and not revealFX:hasSummonArrived())
+revealFX:update(0.57, revealAudio)
+assert(revealFX:hasSummonArrived() and releaseSounds == 1)
 
 restart()
 local lost = submit("lápiz")

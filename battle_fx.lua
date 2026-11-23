@@ -297,10 +297,14 @@ local DELIVERY_TIME = {
     overhead_weather = 0.36, drop_from_sky = 0.38, throw_arc = 0.40,
     charge_across = 0.28, pop_underneath = 0.32, buff_pudu = 0.34,
 }
+local LIVE_REVEAL_TIME, LIVE_FLIGHT_TIME = 0.90, 1.10
+local LIVE_REVEAL_SIZE, LIVE_IMPACT_SIZE = 240, 96
 
 function BattleFX:launchSummon(result, spriteObj, startX, startY, targetX, targetY, audio, key)
     local style = result.delivery_style
-    local duration = DELIVERY_TIME[style] or DELIVERY_TIME.throw_arc
+    local generated = spriteObj and spriteObj.generated
+    local revealTime = generated and LIVE_REVEAL_TIME or 0
+    local flightTime = generated and LIVE_FLIGHT_TIME or (DELIVERY_TIME[style] or DELIVERY_TIME.throw_arc)
     if style == "overhead_weather" then
         targetY = math.max(96, targetY - 178)
         startX, startY = targetX - 30, targetY - 46
@@ -316,14 +320,24 @@ function BattleFX:launchSummon(result, spriteObj, startX, startY, targetX, targe
     else
         startY, targetY = startY - 94, targetY - 61
     end
+    if generated then
+        -- Stage the reveal between the actors, clear of the portraits and HUD.
+        startX, startY = self.w * 0.49, self.h * 0.53
+        if style == "overhead_weather" and self.rivalCard then
+            local card = self.rivalCard
+            local radius = LIVE_IMPACT_SIZE * 0.5 * math.min(self.w / 1280, self.h / 720)
+            targetY = math.max(targetY, card.y + card.h + radius + 8)
+        end
+    end
     self.summon = {
         result = result, sprite = spriteObj,
         key = key or (result.existing_sprite ~= "none" and result.existing_sprite) or result.summon_name,
         style = style, x = startX, y = startY, x0 = startX, y0 = startY, x1 = targetX, y1 = targetY,
-        age = 0, duration = duration, p = 0, hold = 0.23,
+        age = 0, duration = revealTime + flightTime, p = 0, hold = 0.23,
+        revealTime = revealTime, flightTime = flightTime,
     }
-    play(audio, "sfx_spell_unleash", 0.65)
-    return duration
+    if revealTime == 0 then play(audio, "sfx_spell_unleash", 0.65) end
+    return self.summon.duration
 end
 
 function BattleFX:hasSummonArrived()
@@ -444,7 +458,7 @@ function BattleFX:setSpeechBubble(who, text, duration, style)
         style = style or "normal", age = 0 } or nil
 end
 
-function BattleFX:update(dt)
+function BattleFX:update(dt, audio)
     self.age = self.age + dt
     self.shakeAge = self.shakeAge + dt
     self.flashTimer = math.max(0, self.flashTimer - dt)
@@ -467,11 +481,18 @@ function BattleFX:update(dt)
     end
     local summon = self.summon
     if summon then
+        local previousAge = summon.age
         summon.age = summon.age + dt
-        summon.p = clamp(summon.age / summon.duration, 0, 1)
+        if previousAge < summon.revealTime and summon.age >= summon.revealTime then
+            play(audio, "sfx_spell_unleash", 0.65)
+        end
+        summon.p = clamp((summon.age - summon.revealTime) / summon.flightTime, 0, 1)
         local p = summon.p
         local travel = summon.style == "drop_from_sky" and p * p or p
-        local arc = summon.style == "throw_arc" and math.sin(p * math.pi) * 84 or 0
+        if summon.revealTime > 0 and summon.style ~= "drop_from_sky" then
+            travel = p * p * (3 - 2 * p)
+        end
+        local arc = summon.style == "throw_arc" and math.sin(travel * math.pi) * 84 or 0
         summon.x = lerp(summon.x0, summon.x1, travel)
         summon.y = lerp(summon.y0, summon.y1, travel) - arc
         if summon.age > summon.duration + summon.hold then self.summon = nil end
@@ -613,26 +634,30 @@ local function drawSprite(pair, x, y, width, height, angle, alpha, litShader, dr
     return true
 end
 
-local function drawWeather(prop, x, y, rainHeight, litShader, drawLit)
+local function drawPrecipitation(kind, age, x, y, rainHeight, alpha)
     local lg = love.graphics
+    if rainHeight <= 0 then return end
+    lg.setLineWidth(1.6)
+    for i = 1, 8 do
+        local p = (age * (kind == "snow" and 1.4 or 3.7) + i * 0.29) % 1
+        local dx = (i - 4.5) * 8
+        local dropY = y + 15 + p * rainHeight
+        lg.setColor(0.58, 0.83, 1, (1 - p) * 0.82 * alpha)
+        if kind == "snow" then
+            drawFlake(x + dx + math.sin(age * 3 + i) * 4, dropY, 2.6)
+        else
+            lg.line(x + dx, dropY, x + dx - 2, math.min(dropY + 8, y + 21 + rainHeight))
+        end
+    end
+end
+
+local function drawWeather(prop, x, y, rainHeight, litShader, drawLit)
     local alpha = clamp(prop.age * 9 + 0.22, 0, 1)
     local sprite = prop.sprite
     if not sprite or sprite.isPlaceholder or not drawSprite(sprite, x, y, 82, 42, 0, alpha, litShader, drawLit) then
         drawCloud(x, y, 1, alpha)
     end
-    if rainHeight <= 0 then return end
-    lg.setLineWidth(1.6)
-    for i = 1, 8 do
-        local p = (prop.age * (prop.kind == "snow" and 1.4 or 3.7) + i * 0.29) % 1
-        local dx = (i - 4.5) * 8
-        local dropY = y + 15 + p * rainHeight
-        lg.setColor(0.58, 0.83, 1, (1 - p) * 0.82 * alpha)
-        if prop.kind == "snow" then
-            drawFlake(x + dx + math.sin(prop.age * 3 + i) * 4, dropY, 2.6)
-        else
-            lg.line(x + dx, dropY, x + dx - 2, math.min(dropY + 8, y + 21 + rainHeight))
-        end
-    end
+    drawPrecipitation(prop.kind, prop.age, x, y, rainHeight, alpha)
 end
 
 function BattleFX:drawBackLayer()
@@ -686,7 +711,16 @@ function BattleFX:drawSummonsAndProps(litShader, drawLit)
         local alpha = 1 - clamp((s.age - s.duration) / s.hold, 0, 1)
         local size = 74 * (0.35 + 0.65 * easeOutBack(math.min(s.p * 2, 1)))
         local angle = s.style == "throw_arc" and (s.p - 0.5) * TAU or 0
-        if s.style == "overhead_weather" then
+        if s.revealTime > 0 then
+            local appear = clamp(s.age / 0.10, 0, 1)
+            local scale = math.min(self.w / 1280, self.h / 720)
+            local liveSize = lerp(LIVE_REVEAL_SIZE, LIVE_IMPACT_SIZE, s.p ^ 2) * scale * lerp(0.85, 1, appear)
+            local tilt = s.style == "throw_arc" and math.sin(s.p * math.pi) * 0.18 or 0
+            drawSprite(s.sprite, x, y, liveSize, liveSize, tilt, alpha * appear, litShader, drawLit)
+            if s.style == "overhead_weather" and s.p > 0.78 then
+                drawPrecipitation(s.result.particle_fx, s.age, x, y, 36, alpha * (s.p - 0.78) / 0.22)
+            end
+        elseif s.style == "overhead_weather" then
             local weatherX, weatherY, _, rainHeight = weatherBounds(self, x, y, 1, banner, face)
             drawWeather({ kind = s.result.particle_fx, sprite = s.sprite, age = s.age }, weatherX, weatherY,
                 rainHeight, litShader, drawLit)

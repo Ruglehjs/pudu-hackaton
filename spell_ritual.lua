@@ -138,8 +138,8 @@ function SpellRitual:_recomputePower()
 end
 
 function SpellRitual:_canUnleashNow()
-    return self.elapsed >= SAFETY_TIMEOUT
-        or (self.aiDecisionReady and (not self.needsLiveSprite or self.spriteReady))
+    if self.needsLiveSprite then return self.aiDecisionReady and self.spriteReady end
+    return self.elapsed >= SAFETY_TIMEOUT or self.aiDecisionReady
 end
 
 function SpellRitual:canReleaseBonus()

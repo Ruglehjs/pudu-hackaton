@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 LUA_FILES = (
     "conf.lua", "main.lua", "json.lua", "encounters.lua", "stage_renderer.lua",
-    "desert_arrival.lua", "chile_coastline.lua",
+    "desert_arrival.lua", "chile_coastline.lua", "adventure_screen.lua",
     "asset_loader.lua", "audio.lua", "battle_judge.lua", "battle_worker.lua",
     "sprite_worker.lua", "worker_http.lua", "beat_sync.lua", "shaders.lua",
     "spell_ritual.lua", "battle_hud.lua", "battle_ui_skin.lua", "battle_scores.lua",
@@ -25,8 +25,8 @@ SKIP_AUDIO_PREFIXES = (
     "ambient_", "battle_overworld_116", "battle_superstar_132", "battle_boss_144",
     "battle_plaza_120", "battle_victory_fanfare",
 )
-SKIP_ASSET_FOLDERS = ("assets/audio/lyria_raw/", "assets/ui/cinematics/", "assets/custom/")
-ENGINE_MODULES = {"utf8", "love.filesystem", "socket", "socket.http", "ltn12"}
+SKIP_ASSET_FOLDERS = ("assets/audio/lyria_raw/", "assets/custom/")
+ENGINE_MODULES = {"utf8", "love.filesystem", "love.video", "socket", "socket.http", "ltn12"}
 LOCAL_REQUIRE = re.compile(r"\brequire\s*\(?\s*['\"]([\w.]+)['\"]")
 
 
@@ -85,7 +85,8 @@ def build():
         for name in (*LUA_FILES, "battle_rules.json"):
             archive.write(ROOT / name, name)
         for asset, name in assets:
-            archive.write(asset, name, compress_type=ZIP_STORED if asset.suffix == ".ogg" else ZIP_DEFLATED)
+            compression = ZIP_STORED if asset.suffix in (".ogg", ".ogv") else ZIP_DEFLATED
+            archive.write(asset, name, compress_type=compression)
 
     exe = target / "PuduFantasy.exe"
     with exe.open("wb") as output:
