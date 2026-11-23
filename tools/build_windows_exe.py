@@ -7,10 +7,11 @@ from zipfile import ZipFile, ZIP_DEFLATED
 ROOT = Path(__file__).resolve().parents[1]
 LUA_FILES = (
     "conf.lua", "main.lua", "json.lua", "encounters.lua", "stage_renderer.lua",
+    "desert_arrival.lua",
     "asset_loader.lua", "audio.lua", "battle_judge.lua", "battle_worker.lua",
     "sprite_worker.lua", "worker_http.lua", "beat_sync.lua", "shaders.lua",
     "spell_ritual.lua", "battle_hud.lua",
-    "battle_fx.lua", "battle_fx_spectacles.lua", "victory_album.lua",
+    "battle_fx.lua", "battle_fx_spectacles.lua",
 )
 DLL_FILES = ("SDL2.dll", "love.dll", "lua51.dll", "OpenAL32.dll",
              "mpg123.dll", "msvcp120.dll", "msvcr120.dll")

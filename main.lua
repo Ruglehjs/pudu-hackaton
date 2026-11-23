@@ -4,11 +4,11 @@ local AssetLoader = require("asset_loader")
 local Audio = require("audio")
 local Encounters = require("encounters")
 local StageRenderer = require("stage_renderer")
+local DesertArrival = require("desert_arrival")
 local Shaders = require("shaders")
 local BeatSync = require("beat_sync")
 local BattleHUD = require("battle_hud")
 local BattleFX = require("battle_fx")
-local VictoryAlbum = require("victory_album")
 local SpellRitual = require("spell_ritual")
 local Judge = require("battle_judge")
 
@@ -110,7 +110,6 @@ local function parseCliArgs(argList)
         transitionPreview = nil,
         battleEnterPreview = false,
         openDirector = false,
-        openAlbum = false,
         disableGi = false,
         disableBloom = false,
         disableShake = false,
@@ -170,7 +169,6 @@ local function parseCliArgs(argList)
 
             if a:match("^%-%-battle%-enter%-preview$") then cli.battleEnterPreview = true end
             if a:match("^%-%-open%-director$") then cli.openDirector = true end
-            if a:match("^%-%-open%-album$") then cli.openAlbum = true end
             if a:match("^%-%-disable%-gi$") then cli.disableGi = true end
             if a:match("^%-%-disable%-bloom$") then cli.disableBloom = true end
             if a:match("^%-%-disable%-shake$") then cli.disableShake = true end
@@ -192,6 +190,7 @@ local BATTLE_ENTER_SLIDE_PX = 320.0
 local ENCOUNTER_TRIGGER_DIST = 1.75
 local ENCOUNTER_SHORTCUT_DIST = 4.0
 local WALK_SPEED = 6.2
+local PUDU_WALK_FRAME_DISTANCE = 36.0
 
 -- Wizard hat head-anchor offsets per Pudú facing row (0..7) in 64px base units
 -- Rows: 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
@@ -227,8 +226,6 @@ local Game = {
     puduV = 0.0,
     puduFacingRow = 3, -- 3 = NE (diagonal up-right)
     puduWalkT = 0.0,
-    puduAnimCol = 1,
-    puduBobY = 0.0,
     puduMoving = false,
 
     -- Battle Arena & Dash-in State
@@ -487,7 +484,6 @@ local function enterPlayerTurn()
     end
     Game.battlePhase = "player_turn"
     Game.hud:openPrompt()
-    if Game.album:isOpen() then love.keyboard.setTextInput(false) end
 end
 
 local function acceptDecision(message)
@@ -574,13 +570,6 @@ local function endBattleTurn(enc, ex, ey, w)
         Game.defeatedMap[enc.id] = true
         Game.battleFX:startDefeatFinale(Game.enemyReaction, ex, ey)
         Game.battleFX:spawnParticles("confetti", w * 0.5, 100, 85)
-        local res = b.result
-        local saved = Game.album:recordVictory(enc.id, {
-            prompt = b.prompt, summonName = res.summon_name,
-            comboName = res.combo_triggered ~= "none" and res.combo_name or "",
-            isCritical = res.is_critical, narrator = res.narrator_text, reaction = Game.enemyReaction, turns = b.turn,
-        })
-        if not saved then showToast("No se pudo guardar el álbum.", 3) end
         Game.audio:playTrack("victory")
     elseif b.hp == 0 then
         Game.battlePhase = "defeat"
@@ -655,15 +644,7 @@ end
 -- Map screen-space input direction (dx, dy) to the 8 Pudu facing rows:
 -- 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
 local function screenDirToFacingRow(dx, dy)
-    if dx == 0 and dy > 0 then return 0 end
-    if dx > 0 and dy > 0 then return 1 end
-    if dx > 0 and dy == 0 then return 2 end
-    if dx > 0 and dy < 0 then return 3 end
-    if dx == 0 and dy < 0 then return 4 end
-    if dx < 0 and dy < 0 then return 5 end
-    if dx < 0 and dy == 0 then return 6 end
-    if dx < 0 and dy > 0 then return 7 end
-    return Game.puduFacingRow
+    return math.floor(math.atan2(dx, dy) * 4 / math.pi + 0.5) % 8
 end
 
 local function findSafeSpotNearEncounter(enc, offsetU)
@@ -821,16 +802,28 @@ end
 -- Overworld & Battle Update Loops
 --------------------------------------------------------------------------------
 
+local function updateDesertArrival(dt)
+    local arrival = Game.desertArrival
+    local finished = arrival:update(dt)
+    Game.puduU, Game.puduV = arrival.u, arrival.v
+    Game.puduFacingRow = arrival.facingRow
+    if finished then Game.desertArrival = nil end
+end
+
 local function updateExplore(dt)
+    if Game.desertArrival then
+        updateDesertArrival(dt)
+        return
+    end
+
     if Game.encounterCooldown > 0 then
         Game.encounterCooldown = math.max(0.0, Game.encounterCooldown - dt)
     end
 
+    Game.puduMoving = false
     -- Pause walk input while calm room-snapped camera pans between rooms (R7)
     if Game.stage:isCameraPanning() then
-        Game.puduMoving = false
-        Game.puduAnimCol = 1
-        Game.puduBobY = 0.0
+        Game.puduWalkT = 0.0
         Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
         return
     end
@@ -844,8 +837,7 @@ local function updateExplore(dt)
     local nextEncounter = nextOverworldEncounter()
     local gateU = nextEncounter and not Game.qaExplore and nextEncounter.u
     if dx ~= 0 or dy ~= 0 then
-        Game.puduMoving = true
-        Game.puduFacingRow = screenDirToFacingRow(dx, dy)
+        local startU, startV = Game.puduU, Game.puduV
         local du, dv = StageRenderer.screenVecToIso(dx, dy, WALK_SPEED)
         local candU = Game.puduU + du * dt
         local candV = Game.puduV + dv * dt
@@ -860,13 +852,19 @@ local function updateExplore(dt)
             Game.puduV = candV
         end
 
-        Game.puduWalkT = Game.puduWalkT + dt * 9.5
-        Game.puduAnimCol = (math.floor(Game.puduWalkT) % 6) + 1
-        Game.puduBobY = -math.abs(math.sin(Game.puduWalkT * 1.15)) * 3.2
-    else
-        Game.puduMoving = false
-        Game.puduAnimCol = 1
-        Game.puduBobY = math.sin(Game.elapsed * 3.0) * 1.2
+        local movedU, movedV = Game.puduU - startU, Game.puduV - startV
+        local screenX = movedU * StageRenderer.ISO_UX + movedV * StageRenderer.ISO_VX
+        local screenY = movedU * StageRenderer.ISO_UY + movedV * StageRenderer.ISO_VY
+        local distance = math.sqrt(screenX * screenX + screenY * screenY)
+        Game.puduMoving = distance > 1e-5
+        Game.puduFacingRow = Game.puduMoving and screenDirToFacingRow(screenX, screenY)
+            or screenDirToFacingRow(dx, dy)
+        if Game.puduMoving then
+            Game.puduWalkT = (Game.puduWalkT + distance / PUDU_WALK_FRAME_DISTANCE) % 4
+        end
+    end
+    if not Game.puduMoving then
+        Game.puduWalkT = 0.0
     end
 
     Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
@@ -1020,13 +1018,14 @@ local function drawPuduSprite(x, y, targetH, pose, litShader)
     local puduPair = assets.pudu
     local quads = assets.puduQuads
     local sc = targetH / 64.0
-    local isPlaceholderSheet = true
+    local headShiftX, headShiftY = 0.0, 0.0
 
     if puduPair and puduPair.diff and quads and quads[row] and quads[row][col] then
         local quad = quads[row][col]
         local _, _, qw, qh = quad:getViewport()
+        local footY
+        footY, headShiftX, headShiftY = StageRenderer.getPuduFrameAnchor(puduPair, row, col, qw, qh)
         sc = targetH / math.max(1, qh)
-        isPlaceholderSheet = puduPair.isPlaceholder and true or false
         love.graphics.setColor(1, 1, 1, 1)
         Game.stage:drawSpriteLit(
             puduPair,
@@ -1036,7 +1035,7 @@ local function drawPuduSprite(x, y, targetH, pose, litShader)
             sc * sxMul,
             sc * syMul,
             qw * 0.50,
-            qh * 0.88,
+            footY,
             quad,
             0.0,
             nil,
@@ -1055,18 +1054,9 @@ local function drawPuduSprite(x, y, targetH, pose, litShader)
         local unit = targetH / 64.0
         local off = HAT_HEAD_OFFSETS[row] or HAT_HEAD_OFFSETS[1]
 
-        -- Air-tuck / dash head shift when col == 5 (full on real sheet, subtle on procedural placeholder)
-        local dashShiftX, dashShiftY = 0.0, 0.0
-        if col == 5 then
-            local flip = (row == 5 or row == 6 or row == 7) and -1.0 or 1.0
-            local shiftFactor = isPlaceholderSheet and 0.25 or 1.0
-            dashShiftX = flip * 7.0 * unit * shiftFactor
-            dashShiftY = 6.5 * unit * shiftFactor
-        end
-
         -- Transform local head offset by Pudú's squash/stretch and body tilt
-        local localX = (off.x * unit + dashShiftX) * sxMul
-        local localY = (off.y * unit + dashShiftY) * syMul
+        local localX = (off.x * unit + headShiftX * sc) * sxMul
+        local localY = (off.y * unit + headShiftY * sc) * syMul
         local cosT = math.cos(tilt)
         local sinT = math.sin(tilt)
         local rotX = localX * cosT - localY * sinT
@@ -1168,7 +1158,6 @@ local function getHudState(battleEnc)
         mode = Game.mode, battlePhase = b and Game.battlePhase or nil,
         musicOff = audio.muted or not audio.musicEnabled,
         toast = Game.toastText, elapsed = Game.elapsed,
-        albumCount = Game.album:countUnlocked(Encounters.SELECTABLE), encounterCount = Encounters.count(),
     }
     if b then
         state.context, state.contextColor = battleEnc.name, battleEnc.color
@@ -1186,7 +1175,7 @@ local function getHudState(battleEnc)
         end
     else
         local biome = Encounters.getBiome(StageRenderer.getBiomeAt(Game.puduU))
-        local target = nextOverworldEncounter()
+        local target = not Game.desertArrival and nextOverworldEncounter()
         state.canStartBattle = target and (Game.qaExplore or distanceSquaredToEncounter(target) < ENCOUNTER_SHORTCUT_DIST ^ 2)
         state.context = ("%s (%d/%d)"):format(biome.name, campaignWins(), #Encounters.LIST)
         state.contextColor = biome.accentColor
@@ -1220,8 +1209,6 @@ function love.load(args)
     Game.battleFX = BattleFX.new()
     Game.battleFX:setTypography(Game.fonts)
     Game.battleFX:setShakeEnabled(not Game.cli.disableShake)
-    Game.album = VictoryAlbum.new()
-    if Game.cli.openAlbum then Game.album:toggle() end
     Game.autoPromptIndex = 1
 
     reloadAssets(false)
@@ -1263,6 +1250,12 @@ function love.load(args)
     end
 
     Game.stage:snapCameraToChunk(Game.puduU, Game.puduV)
+
+    if Game.mode == "explore" and not Game.qaExplore
+        and Game.cli.transitionPreview == nil and not Game.cli.battleEnterPreview then
+        Game.desertArrival = DesertArrival.new(StageRenderer.DESERT_ARRIVAL, Game.puduU, Game.puduV)
+        updateDesertArrival(0)
+    end
 
     -- Optional frozen JRPG transition preview (--transition-preview=0.0..1.0)
     if Game.cli.transitionPreview ~= nil then
@@ -1306,8 +1299,7 @@ function love.update(dt)
     Game.cliElapsed = Game.cliElapsed + dt
     pollWorkers()
     local b = Game.battle
-    if b and Game.battlePhase == "player_turn" and Game.transitionState == "none" and not Game.transitionPreview
-        and not Game.album:isOpen() then
+    if b and Game.battlePhase == "player_turn" and Game.transitionState == "none" and not Game.transitionPreview then
         if Game.ritualPreview then
             local preview = Game.ritualPreview
             Game.ritualPreview = nil
@@ -1351,9 +1343,12 @@ function love.update(dt)
         if Game.transitionState ~= "none" then
             updateTransition(safeDt)
         elseif Game.mode == "explore" then
-            if not Game.album:isOpen() then updateExplore(safeDt) end
+            updateExplore(safeDt)
         elseif Game.mode == "battle" then
-            if not Game.album:isOpen() then updateBattle(safeDt, dt) end
+            updateBattle(safeDt, dt)
+        end
+        if Game.mode == "explore" then
+            Game.stage:updateOverworldNPCs(Game.puduU, Game.puduV, safeDt)
         end
     end
 
@@ -1385,11 +1380,10 @@ end
 
 local function promptAvailable()
     return Game.mode == "battle" and Game.battlePhase == "player_turn"
-        and Game.transitionState == "none" and Game.transitionPreview == nil and not Game.album:isOpen()
+        and Game.transitionState == "none" and Game.transitionPreview == nil
 end
 
 function love.textinput(text)
-    if Game.ignoreAlbumText and text:lower() == "j" then return end
     if promptAvailable() then
         if Game.ignorePromptSlash and text == "/" then
             Game.ignorePromptSlash = false
@@ -1399,15 +1393,6 @@ function love.textinput(text)
     end
 end
 
-function love.keyreleased(key)
-    if key == "j" then Game.ignoreAlbumText = false end
-end
-
-local function toggleAlbum()
-    local open = Game.album:toggle()
-    love.keyboard.setTextInput(not open and Game.hud.promptOpen)
-end
-
 local function routeHudAction(action)
     if action == "music" then
         local enabled = Game.audio:toggleMusic()
@@ -1415,7 +1400,7 @@ local function routeHudAction(action)
     elseif action == "map" then
         if Game.mode == "battle" then
             triggerReturnToExplore()
-        else
+        elseif not Game.desertArrival then
             local target = nextOverworldEncounter()
             if target and (Game.qaExplore or distanceSquaredToEncounter(target) < ENCOUNTER_SHORTCUT_DIST ^ 2) then
                 triggerEncounterTransition(target.index)
@@ -1423,8 +1408,6 @@ local function routeHudAction(action)
         end
     elseif action == "retry" and (Game.battlePhase == "victory" or Game.battlePhase == "defeat") then
         enterBattleArenaImmediate(Game.encounterIndex, false, 0)
-    elseif action == "album" then
-        toggleAlbum()
     elseif action == "prompt" and promptAvailable() then
         Game.hud:openPrompt()
     elseif action == "conjure" and promptAvailable() then
@@ -1434,20 +1417,6 @@ end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
-    if Game.album:isOpen() then
-        local w, h = love.graphics.getDimensions()
-        local action, index = Game.album:hitTest(x, y, w, h)
-        if action == "close" or not Game.album:containsPoint(x, y, w, h) then
-            toggleAlbum()
-        elseif action == "clear" then
-            if not Game.album:clear() then showToast("No se pudo guardar el álbum.", 3) end
-        elseif action == "card" then
-            Game.album:close()
-            Game.transitionState, Game.transitionTimer, Game.transitionPreview = "none", 0, nil
-            enterBattleArenaImmediate(index, false)
-        end
-        return
-    end
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
     routeHudAction(Game.hud:hitTest(x, y))
 end
@@ -1475,20 +1444,7 @@ function love.keypressed(key, scancode, isrepeat)
         return
     end
 
-    if Game.album:isOpen() then
-        if key == "escape" or key == "j" and not isrepeat then
-            Game.ignoreAlbumText = key == "j"
-            toggleAlbum()
-        end
-        return
-    end
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
-    if key == "j" and (not Game.hud.promptOpen or Game.hud.input == ""
-        or love.keyboard.isDown("lctrl", "rctrl", "lgui", "rgui")) then
-        Game.ignoreAlbumText = true
-        if not isrepeat then toggleAlbum() end
-        return
-    end
     if Game.battlePhase == "ritual" and not isrepeat and Game.ritual:onKeyPressed(key, Game.audio) then return end
 
     local b = Game.battle
@@ -1543,10 +1499,14 @@ function love.draw()
         local biome = Encounters.getBiome(biomeId)
         local theme = Encounters.getTheme(biome.stageDefault)
         local lights = Game.stage:collectZoneLights(w, h, Game.elapsed)
-        local litShader = Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights)
-        local overPose = Game.beatSync and Game.beatSync:getPuduDancePose(
+        local litShader = Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights, nil, true)
+        local terrainShader = Game.shaders.terrain
+            and Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights, Game.shaders.terrain, true)
+        local arrival = Game.desertArrival
+        local overPose = arrival or Game.beatSync:getPuduDancePose(
             Game.puduMoving and "walk" or "overworld_idle",
-            Game.puduFacingRow
+            Game.puduFacingRow,
+            Game.puduWalkT
         )
 
         Game.stage:drawOverworld({
@@ -1559,16 +1519,15 @@ function love.draw()
             puduU = Game.puduU,
             puduV = Game.puduV,
             puduFacingRow = Game.puduFacingRow,
-            puduAnimCol = Game.puduAnimCol,
-            puduBobY = Game.puduBobY,
-            puduHatOffsetY = overPose and overPose.hatOffsetY or 0.0,
-            puduHatTilt = overPose and overPose.hatTilt or 0.0,
+            puduPose = overPose,
+            puduArrivalLift = arrival and arrival.lift,
             alertEncounterIdx = Game.alertEncounterIdx,
             alertTimer = (Game.transitionState == "alert") and Game.transitionTimer or 0.25,
             fonts = Game.fonts,
             litShader = litShader,
+            terrainShader = terrainShader,
         })
-        Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed)
+        Game.stage:drawAtmosphericLighting(Game.assets and Game.assets.lightRadial, lights, w, h, Game.elapsed, biomeId)
     else
         battleEnc = Encounters.getByIndex(Game.encounterIndex) or Encounters.LIST[1]
         battleTheme = Encounters.getTheme(battleEnc.stage)
@@ -1673,6 +1632,9 @@ function love.draw()
     local hudState = getHudState(battleEnc)
     Game.hud:drawTopBar(hudState, w)
     if Game.mode == "explore" then
+        if Game.transitionState == "none" and Game.transitionPreview == nil then
+            Game.stage:drawOverworldNPCDialogue(w, h, Game.fonts.heading)
+        end
         Game.stage:drawOverworldMinimap(
             Game.puduU,
             Game.puduV,
@@ -1682,7 +1644,7 @@ function love.draw()
             h,
             Game.fonts.small
         )
-        Game.hud:drawExploreBar(w, h)
+        if not Game.desertArrival then Game.hud:drawExploreBar(w, h) end
     else
         local b, phase = Game.battle, Game.battlePhase
         local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0) + enemyEnterOffX
@@ -1713,7 +1675,6 @@ function love.draw()
     elseif Game.transitionState == "to_explore" then
         Game.stage:drawBattleTransition(Game.transitionTimer / TO_EXPLORE_DURATION, w, h)
     end
-    Game.album:draw(Encounters.SELECTABLE, Game.assets.encounters, Game.fonts, w, h)
 
     local statsNow = love.graphics.getStats()
     Game.lastDrawCalls = statsNow.drawcalls or 0

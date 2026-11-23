@@ -84,6 +84,23 @@ local BAY_START, BAY_END = 27.4, 42.6
 local MARSH_START, MARSH_END = 42.8, 50.8
 local LIGHTHOUSE_U, LIGHTHOUSE_V = 38.5, -8.8
 
+local DESERT_ARRIVAL = {
+    startU = 2.7, startV = 0.0, deckHeight = 32,
+    finishU = 2.7, finishV = 0.7,
+}
+StageRenderer.DESERT_ARRIVAL = DESERT_ARRIVAL
+local TRUCK_HALF_WIDTH, TRUCK_LENGTH = 0.76, 3.25
+local ARICA_SIGN_U, ARICA_SIGN_V = 4.1, 5.15
+local BODOQUE = {
+    u = 7.15,
+    v = 2.0,
+    height = 102,
+    enterRadius = 2.35,
+    leaveRadius = 2.85,
+    name = "Juan Carlos Bodoque",
+    line = "¡La ruta de la caca!",
+}
+
 -- 6 explorable side alcoves distributed across all 4 biomes, each reachable from main path.
 StageRenderer.SIDE_ALCOVES = {
     { id = "bosque_rewe",      name = "Claro del Rewe",       biome = "bosque",   u = 68.0,  v = 6.4,  r = 2.6, prop = "rewe_totem" },
@@ -114,10 +131,10 @@ StageRenderer.BIOME_VISUALS = {
         name = "Bosque Valdiviano",
         floorTile = "grass_floor",
         pathTile = "stone_floor",
-        cliffTile = "grass_floor",
+        cliffTile = "mountain_floor",
         backdrop = { 0.14, 0.27, 0.17 },
-        groundTint = { 0.96, 1.00, 0.94 },
-        pathTint = { 0.98, 0.94, 0.82 },
+        groundTint = { 0.77, 0.93, 0.78 },
+        pathTint = { 0.84, 0.91, 0.75 },
         alcoveTint = { 0.84, 0.96, 0.82 },
         cliffTopTint = { 0.86, 0.96, 0.82 },
         cliffLeft = { 0.31, 0.36, 0.25 },
@@ -134,9 +151,9 @@ StageRenderer.BIOME_VISUALS = {
         pathTile = "stone_floor",
         cliffTile = "desert_floor",
         backdrop = { 0.56, 0.33, 0.18 },
-        groundTint = { 1.00, 0.92, 0.82 },
-        plateauTint = { 0.98, 0.72, 0.50 },
-        pathTint = { 1.00, 0.89, 0.70 },
+        groundTint = { 0.91, 0.78, 0.65 },
+        plateauTint = { 0.78, 0.57, 0.48 },
+        pathTint = { 1.00, 0.93, 0.79 },
         alcoveTint = { 0.98, 0.86, 0.64 },
         cliffTopTint = { 0.94, 0.66, 0.44 },
         cliffLeft = { 0.74, 0.38, 0.22 },
@@ -153,8 +170,8 @@ StageRenderer.BIOME_VISUALS = {
         pathTile = "stone_floor",
         cliffTile = "coast_floor",
         backdrop = { 0.11, 0.36, 0.54 },
-        groundTint = { 1.00, 0.98, 0.92 },
-        pathTint = { 0.90, 0.92, 0.96 },
+        groundTint = { 0.91, 1.04, 1.09 },
+        pathTint = { 0.89, 0.99, 1.08 },
         alcoveTint = { 0.84, 0.96, 0.96 },
         cliffTopTint = { 0.88, 0.88, 0.84 },
         cliffLeft = { 0.46, 0.49, 0.54 },
@@ -171,8 +188,8 @@ StageRenderer.BIOME_VISUALS = {
         pathTile = "stone_floor",
         cliffTile = "coast_floor",
         backdrop = { 0.18, 0.20, 0.29 },
-        groundTint = { 0.79, 0.92, 0.88 },
-        pathTint = { 0.98, 0.98, 1.00 },
+        groundTint = { 0.68, 0.85, 0.76 },
+        pathTint = { 0.84, 0.95, 1.08 },
         alcoveTint = { 0.94, 0.90, 1.00 },
         cliffTopTint = { 0.78, 0.80, 0.90 },
         cliffLeft = { 0.44, 0.47, 0.58 },
@@ -672,6 +689,19 @@ local function evalBaseCorridorElev(u)
     return 0.0
 end
 
+local DESERT_PULLOUT_ELEV = evalBaseCorridorElev(DESERT_ARRIVAL.startU)
+
+local function desertPulloutMask(u, v)
+    local distance = abs(u - DESERT_ARRIVAL.startU)
+    if distance >= 1.75 or v <= -4.5 or v >= DESERT_ARRIVAL.finishV then
+        return 0.0
+    end
+    local width = 1.0 - smoothstep(TRUCK_HALF_WIDTH, 1.75, distance)
+    local length = smoothstep(-4.5, -TRUCK_LENGTH, v)
+        * (1.0 - smoothstep(DESERT_ARRIVAL.startV, DESERT_ARRIVAL.finishV, v))
+    return width * length
+end
+
 -- Computes irregular flanking 3D cliff height bump (0 inside walkable corridor, ~2.2..2.8 outside)
 local function evalFlankCliffBump(u, v, pc, flatMask)
     local distFromPath = abs(v - pc)
@@ -737,7 +767,9 @@ function StageRenderer.getElevation(u, v)
 
     local encMask = evalEncounterMask(u, v)
     local alcMask, inAlcove = evalAlcoveMask(u, v)
-    local flatMask = max(encMask, alcMask)
+    local pullout = desertPulloutMask(u, v)
+    local flatMask = max(encMask, alcMask, pullout)
+    baseElev = lerp(baseElev, DESERT_PULLOUT_ELEV, pullout)
 
     -- Dry stone overlook alcove beside the marsh (only on the alcove's own side away from the marsh path!)
     if inAlcove and u >= MARSH_START and u <= MARSH_END and (v - pc) < -1.8 then
@@ -773,7 +805,7 @@ function StageRenderer.getTerrainType(u, v)
     local pc = StageRenderer.pathCenterV(u)
     local encMask, inEncDisk, inEncLane = evalEncounterMask(u, v)
     local alcMask, inAlcove = evalAlcoveMask(u, v)
-    local flatMask = max(encMask, alcMask)
+    local flatMask = max(encMask, alcMask, desertPulloutMask(u, v))
 
     -- 4. Side Alcoves (visually distinct flagstone/shrine ground outside central road)
     if inAlcove and abs(v - pc) > 1.75 then
@@ -806,6 +838,10 @@ end
 function StageRenderer.isWalkable(u, v)
     -- World longitudinal travel limits (safe traversal u = 0..116)
     if u < 0.0 or u > 116.5 then
+        return false
+    end
+
+    if abs(u - DESERT_ARRIVAL.startU) <= TRUCK_HALF_WIDTH and v >= -TRUCK_LENGTH and v <= 0.0 then
         return false
     end
 
@@ -914,12 +950,17 @@ function StageRenderer.new()
         overworldDecor = {},
         _decorBuilt = false,
         _tileMesh = nil,
+        _tileContact = {},
+        _tileSlope = {},
         _floorBandMesh = nil,
         _unitWhite = nil,
         _elevCache = {},
         _drawList = {},
         _drawPool = {},
         _drawCount = 0,
+        _bodoqueNearby = false,
+        _bodoqueDialogue = 0.0,
+        _bodoqueGesture = 0.0,
         -- Phase 2 HD-2D Lighting & Shader State
         lightingPreset = "dia",
         shaders = nil,
@@ -1005,7 +1046,7 @@ function StageRenderer:_ensureFloorBandMesh()
     return self._floorBandMesh
 end
 
-function StageRenderer:configureLitShader(theme, screenW, screenH, time, extraLights, litShaderOpt)
+function StageRenderer:configureLitShader(theme, screenW, screenH, time, extraLights, litShaderOpt, overworld)
     local litShader = litShaderOpt or (self.shaders and self.shaders.lit)
     if not litShader or not self.useLitShader then
         return nil
@@ -1067,6 +1108,16 @@ function StageRenderer:configureLitShader(theme, screenW, screenH, time, extraLi
 
     local themeSunFactor = clamp(((themeTbl and themeTbl.sunEnergy) or 1.30) / 1.30, 0.78, 1.14)
     local sunEnergy = preset.sunEnergy * themeSunFactor
+    if overworld and self.lightingPreset == "dia" then
+        local dusk = smoothstep(88.0, 98.0, self.camU)
+        ambBuf[1] = lerp(ambBuf[1], 0.32, dusk)
+        ambBuf[2] = lerp(ambBuf[2], 0.41, dusk)
+        ambBuf[3] = lerp(ambBuf[3], 0.57, dusk)
+        sunColBuf[1] = lerp(sunColBuf[1], 0.62, dusk)
+        sunColBuf[2] = lerp(sunColBuf[2], 0.78, dusk)
+        sunColBuf[3] = lerp(sunColBuf[3], 1.00, dusk)
+        sunEnergy = lerp(sunEnergy, 0.66, dusk)
+    end
 
     -- Pack up to 10 dynamic point lights into pre-allocated vec4 buffers
     local posBuf = self._lightPosBuf
@@ -1242,6 +1293,19 @@ end
 
 function StageRenderer:isCameraPanning()
     return self.camPanT < 1.0
+end
+
+function StageRenderer:updateOverworldNPCs(puduU, puduV, dt)
+    local du, dv = puduU - BODOQUE.u, puduV - BODOQUE.v
+    local radius = self._bodoqueNearby and BODOQUE.leaveRadius or BODOQUE.enterRadius
+    local nearby = du * du + dv * dv <= radius * radius
+    self._bodoqueGesture = max(0.0, self._bodoqueGesture - dt)
+    if nearby and not self._bodoqueNearby then
+        self._bodoqueGesture = 0.48
+    end
+    self._bodoqueNearby = nearby
+    local fade = nearby and dt / 0.18 or -dt / 0.22
+    self._bodoqueDialogue = clamp(self._bodoqueDialogue + fade, 0.0, 1.0)
 end
 
 function StageRenderer:isoToScreen(u, v, elev, w, h)
@@ -1661,14 +1725,41 @@ end
 -- 6. Overworld 3D Isometric Terrain Floor, Skirts, Water, Wayfinders & Beacons
 --------------------------------------------------------------------------------
 
+local TILE_VERTEX_FORMAT = {
+    { "VertexPosition", "float", 2 },
+    { "VertexTexCoord", "float", 2 },
+    { "VertexColor", "byte", 4 },
+    { "TerrainData", "float", 2 },
+}
+
+local function roadCoverage(u, v)
+    local width = (u >= MARSH_START and u <= MARSH_END) and 1.1 or 1.7
+    local distance = abs(v - StageRenderer.pathCenterV(u))
+    local road = (1.0 - smoothstep(width - 0.35, width + 0.65, distance))
+        * smoothstep(-0.9, 0.5, u) * (1.0 - smoothstep(115.7, 117.0, u))
+    local encounter = evalEncounterMask(u, v)
+    local alcove = evalAlcoveMask(u, v)
+    return max(road, smoothstep(0.58, 0.98, encounter), smoothstep(0.54, 0.98, alcove))
+end
+
+local function shoreCoverage(u, v, mode)
+    if mode == 2 then
+        return 1.0 - smoothstep(0.0, 1.8, min(u - RIVER_START, RIVER_END - u))
+    end
+    local lu, lv = u - LIGHTHOUSE_U, v - LIGHTHOUSE_V
+    local edge = min(u - BAY_START, BAY_END - u, sqrt(lu * lu + lv * lv) - 2.0)
+    return 1.0 - smoothstep(0.0, 2.1, edge)
+end
+
 function StageRenderer:_ensureTileMesh()
     if not self._tileMesh then
-        self._tileMesh = love.graphics.newMesh(4, "fan", "stream")
+        self._tileMesh = love.graphics.newMesh(TILE_VERTEX_FORMAT, 4, "fan", "stream")
     end
     return self._tileMesh
 end
 
-function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, g, b, a, normImg, litShader)
+function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, g, b,
+    normImg, shader, mode, contact, slope)
     local h = StageRenderer.STEP * 0.5
     local padX = 0.95
     local padY = 0.72
@@ -1676,38 +1767,52 @@ function StageRenderer:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, r, 
     local rx, ry = cx + halfW + padX, cy
     local bx, by = cx, cy + halfH + padY
     local lx, ly = cx - halfW - padX, cy
+    if mode == 0 then
+        ty, ry, by, ly = ty + slope[1], ry + slope[2], by + slope[3], ly + slope[4]
+    end
 
-    if litShader then
+    if shader and mode == nil then
         if img and normImg then
-            safeSend(litShader, "hasNormalMap", 1.0)
-            safeSend(litShader, "normalMap", normImg)
-            safeSend(litShader, "normalStrength", 0.92)
+            safeSend(shader, "hasNormalMap", 1.0)
+            safeSend(shader, "normalMap", normImg)
+            safeSend(shader, "normalStrength", 0.92)
         else
-            safeSend(litShader, "hasNormalMap", 0.0)
+            safeSend(shader, "hasNormalMap", 0.0)
         end
-        safeSend(litShader, "surfaceBaseY", cy)
+        safeSend(shader, "surfaceBaseY", cy)
     end
 
     if img then
         local mesh = self:_ensureTileMesh()
-        -- World-anchored UVs guarantee 100% seamless tiling across adjacent diamonds!
-        local uvScale = 0.36
-        local uTop, vTop = (u + h) * uvScale, (v - h) * uvScale
-        local uRig, vRig = (u + h) * uvScale, (v + h) * uvScale
-        local uBot, vBot = (u - h) * uvScale, (v + h) * uvScale
-        local uLef, vLef = (u - h) * uvScale, (v - h) * uvScale
-
+        local u0, u1, v0, v1 = u - h, u + h, v - h, v + h
+        local top, right, bottom, left = 0, 0, 0, 0
+        if mode == 0 then
+            top, right = roadCoverage(u1, v0), roadCoverage(u1, v1)
+            bottom, left = roadCoverage(u0, v1), roadCoverage(u0, v0)
+        elseif mode == 1 or mode == 2 then
+            top, right = shoreCoverage(u1, v0, mode), shoreCoverage(u1, v1, mode)
+            bottom, left = shoreCoverage(u0, v1, mode), shoreCoverage(u0, v0, mode)
+        elseif mode == nil then
+            -- The standard shader samples the same repeating image with scaled UVs.
+            u0, u1, v0, v1 = u0 * 0.36, u1 * 0.36, v0 * 0.36, v1 * 0.36
+        end
         mesh:setTexture(img)
-        mesh:setVertex(1, tx, ty, uTop, vTop, 1, 1, 1, 1)
-        mesh:setVertex(2, rx, ry, uRig, vRig, 1, 1, 1, 1)
-        mesh:setVertex(3, bx, by, uBot, vBot, 1, 1, 1, 1)
-        mesh:setVertex(4, lx, ly, uLef, vLef, 1, 1, 1, 1)
-        love.graphics.setColor(r, g, b, a or 1.0)
+        mesh:setVertex(1, tx, ty, u1, v0, 1, 1, 1, 1, top, contact and contact[1] or 0)
+        mesh:setVertex(2, rx, ry, u1, v1, 1, 1, 1, 1, right, contact and contact[2] or 0)
+        mesh:setVertex(3, bx, by, u0, v1, 1, 1, 1, 1, bottom, contact and contact[3] or 0)
+        mesh:setVertex(4, lx, ly, u0, v0, 1, 1, 1, 1, left, contact and contact[4] or 0)
+        love.graphics.setColor(r, g, b, 1.0)
         love.graphics.draw(mesh)
     else
-        love.graphics.setColor(r, g, b, a or 1.0)
+        love.graphics.setColor(r, g, b, 1.0)
         love.graphics.polygon("fill", tx, ty, rx, ry, bx, by, lx, ly)
     end
+end
+
+local function slopeCorner(elev, side, endHeight, diagonal, pixelScale)
+    local range = max(elev, side, endHeight, diagonal) - min(elev, side, endHeight, diagonal)
+    if range >= 0.38 then return 0 end
+    return (elev - (elev + side + endHeight + diagonal) * 0.25) * pixelScale
 end
 
 function StageRenderer:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z)
@@ -1868,9 +1973,9 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
     -- Solid terrain 3D cliff faces (Left-front = sunlit face, Right-front = deeper shadow face)
     local diffL = elev - eL
     local diffR = elev - eR
-    local tuck = 2.6
+    local tuck = 0.75
 
-    if diffL > 0.04 then
+    if diffL > 0.10 then
         local dropL = diffL * StageRenderer.ELEV_PX * z + tuck
         local cl = biomeVis.cliffLeft
         love.graphics.setColor(cl[1], cl[2], cl[3], 1.0)
@@ -1902,14 +2007,14 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
         end
 
         -- Crisp top lip highlight
-        local lip = biomeVis.cliffLip
-        love.graphics.setColor(lip[1], lip[2], lip[3], 0.92)
-        love.graphics.setLineWidth(max(1.3, 2.1 * z))
-        love.graphics.line(lx, ly, bx, by)
-        love.graphics.setLineWidth(1)
+        if diffL > 0.40 then
+            local lip = biomeVis.cliffLip
+            love.graphics.setColor(lip[1], lip[2], lip[3], 0.40)
+            love.graphics.line(lx, ly, bx, by)
+        end
     end
 
-    if diffR > 0.04 then
+    if diffR > 0.10 then
         local dropR = diffR * StageRenderer.ELEV_PX * z + tuck
         local cr = biomeVis.cliffRight
         love.graphics.setColor(cr[1], cr[2], cr[3], 1.0)
@@ -1938,11 +2043,11 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
             end
         end
 
-        local lip = biomeVis.cliffLip
-        love.graphics.setColor(lip[1] * 0.88, lip[2] * 0.88, lip[3] * 0.88, 0.68)
-        love.graphics.setLineWidth(max(1.1, 1.7 * z))
-        love.graphics.line(bx, by, rx, ry)
-        love.graphics.setLineWidth(1)
+        if diffR > 0.40 then
+            local lip = biomeVis.cliffLip
+            love.graphics.setColor(lip[1] * 0.76, lip[2] * 0.76, lip[3] * 0.76, 0.36)
+            love.graphics.line(bx, by, rx, ry)
+        end
     end
 end
 
@@ -2037,6 +2142,37 @@ function StageRenderer:drawOverworldFloor(ctx)
     local z = self.camZoom or 0.72
     local step = StageRenderer.STEP
     local litShader = (ctx.litShader ~= nil and ctx.litShader ~= false and self.useLitShader) and ctx.litShader or nil
+    local terrainShader = ctx.terrainShader
+    local contact, slope = self._tileContact, self._tileSlope
+    local roadPair = tiles and tiles.stone_floor
+    local activeMode, activeGround, activeRoadTint = nil, false, nil
+    if terrainShader then
+        safeSend(terrainShader, "specStrength", 0.10)
+        safeSend(terrainShader, "roadTexture", roadPair and roadPair.diff or self:_getUnitWhite())
+        safeSend(terrainShader, "hasRoadNormal", roadPair and roadPair.norm and 1.0 or 0.0)
+        if roadPair and roadPair.norm then safeSend(terrainShader, "roadNormal", roadPair.norm) end
+    end
+
+    local function drawSurface(mode, cx, cy, halfW, halfH, u, v, r, g, b, ground, roadTint)
+        love.graphics.setShader(terrainShader)
+        if activeMode ~= mode then
+            safeSend(terrainShader, "terrainMode", mode)
+            activeMode = mode
+        end
+        if mode == 0 and activeGround ~= ground then
+            local norm = ground and ground.norm
+            safeSend(terrainShader, "hasNormalMap", norm and 1.0 or 0.0)
+            if norm then safeSend(terrainShader, "normalMap", norm) end
+            activeGround = ground
+        end
+        if mode == 0 and activeRoadTint ~= roadTint then
+            safeSend(terrainShader, "roadTint", roadTint)
+            activeRoadTint = roadTint
+        end
+        local image = ground and ground.diff or self:_getUnitWhite()
+        self:_drawTexturedDiamond(image, cx, cy, halfW, halfH, u, v, r, g, b,
+            nil, terrainShader, mode, contact, slope)
+    end
 
     -- 1. Seamless biome backdrop fill (guarantees zero black voids anywhere)
     local camBiome = StageRenderer.getBiomeAt(self.camU)
@@ -2111,6 +2247,7 @@ function StageRenderer:drawOverworldFloor(ctx)
         local u = iu * step
         local du = u - camU
         local rowOff = r * cols
+        local prevRowOff = (r - 1) * cols
         local nextRowOff = (r + 1) * cols -- neighbor (u - STEP, v)
         local biomeId = StageRenderer.getBiomeAt(u)
         local vis = StageRenderer.BIOME_VISUALS[biomeId] or StageRenderer.BIOME_VISUALS.bosque
@@ -2132,9 +2269,12 @@ function StageRenderer:drawOverworldFloor(ctx)
                 local eR = elevCache[rowOff + c + 1]     -- front-right neighbor (u, v + STEP)
                 local cy = baseCy - elev * elevPxZ
                 local terrain = StageRenderer.getTerrainType(u, v)
-
+                local isWater = terrain == "water" or terrain == "river"
+                local isDeck = terrain == "bridge" or terrain == "pier"
                 -- Draw 3D cliff skirts / pier pilings first
-                if terrain ~= "water" and terrain ~= "river" then
+                local hasSkirt = isDeck or elev - min(eL, eR) > 0.10
+                if not isWater and hasSkirt then
+                    love.graphics.setShader(litShader)
                     if litShader then
                         safeSend(litShader, "hasNormalMap", 0.0)
                         safeSend(litShader, "surfaceBaseY", cy)
@@ -2143,7 +2283,40 @@ function StageRenderer:drawOverworldFloor(ctx)
                 end
 
                 -- Draw top diamond surface
-                if terrain == "water" or terrain == "river" then
+                if terrainShader then
+                    local backL = c > 0 and elevCache[rowOff + c - 1] or elev
+                    local backR = r > 0 and elevCache[prevRowOff + c] or elev
+                    contact[1] = clamp((max(backL, backR) - elev) * 1.3, 0.0, 1.0)
+                    contact[2] = clamp((max(backR, eR) - elev) * 1.3, 0.0, 1.0)
+                    contact[3] = clamp((max(eL, eR) - elev) * 1.3, 0.0, 1.0)
+                    contact[4] = clamp((max(backL, eL) - elev) * 1.3, 0.0, 1.0)
+                    if isWater then
+                        local mode = terrain == "river" and 2 or 1
+                        drawSurface(mode, cx, cy, halfW, halfH, u, v, 1, 1, 1)
+                    elseif isDeck then
+                        drawSurface(3, cx, cy, halfW, halfH, u, v, 0.66, 0.46, 0.29)
+                    else
+                        -- Join gentle slopes at their shared corners while preserving tall cliff faces.
+                        local nw = r > 0 and c > 0 and elevCache[prevRowOff + c - 1] or elev
+                        local ne = r > 0 and elevCache[prevRowOff + c + 1] or elev
+                        local southwest = c > 0 and elevCache[nextRowOff + c - 1] or elev
+                        slope[1] = slopeCorner(elev, backL, backR, nw, elevPxZ)
+                        slope[2] = slopeCorner(elev, backR, eR, ne, elevPxZ)
+                        slope[3] = slopeCorner(elev, eL, eR, elevCache[nextRowOff + c + 1], elevPxZ)
+                        slope[4] = slopeCorner(elev, backL, eL, southwest, elevPxZ)
+                        local tileKey, tint = vis.floorTile, vis.groundTint
+                        if terrain == "cliff" then
+                            tileKey, tint = vis.cliffTile, vis.cliffTopTint
+                        elseif terrain == "marsh" then
+                            tileKey, tint = "grass_floor", { 0.55, 0.72, 0.56 }
+                        elseif biomeId == "desierto" and elev > 0.55 then
+                            tint = vis.plateauTint
+                        end
+                        local grade = clamp(0.96 + elev * 0.04, 0.90, 1.08)
+                        drawSurface(0, cx, cy, halfW, halfH, u, v, tint[1] * grade, tint[2] * grade, tint[3] * grade,
+                            tiles and tiles[tileKey], vis.pathTint)
+                    end
+                elseif isWater then
                     if litShader then
                         safeSend(litShader, "hasNormalMap", 0.0)
                         safeSend(litShader, "specStrength", 0.30)
@@ -2153,7 +2326,7 @@ function StageRenderer:drawOverworldFloor(ctx)
                     if litShader then
                         safeSend(litShader, "specStrength", 0.14)
                     end
-                elseif terrain == "bridge" or terrain == "pier" then
+                elseif isDeck then
                     if litShader then
                         safeSend(litShader, "hasNormalMap", 0.0)
                         safeSend(litShader, "surfaceBaseY", cy)
@@ -2194,7 +2367,8 @@ function StageRenderer:drawOverworldFloor(ctx)
                     local tilePair = tiles and tiles[tileKey] or nil
                     local img = tilePair and tilePair.diff or nil
                     local norm = tilePair and tilePair.norm or nil
-                    self:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v, tr * elevShade, tg * elevShade, tb * elevShade, 1.0, norm, litShader)
+                    self:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v,
+                        tr * elevShade, tg * elevShade, tb * elevShade, norm, litShader)
 
                     -- Subtle glossy mud puddle sheen in marsh cells
                     if terrain == "marsh" and ((iu * 7 + iv * 13) % 3 == 0) then
@@ -2212,7 +2386,7 @@ function StageRenderer:drawOverworldFloor(ctx)
         end
     end
 
-    if litShader then
+    if litShader or terrainShader then
         love.graphics.setShader()
     end
 
@@ -2246,21 +2420,47 @@ function StageRenderer:drawOverworldFloor(ctx)
         end
     end
 
-    -- 6. Subtle top atmospheric horizon mist tint (gives depth & frames top HUD bar cleanly)
+    -- Soft mist beneath the HUD without a visible horizontal edge.
     local hc = camVis.hazeCol
     local mr, mg, mb = hc[1], hc[2], hc[3]
     if litShader then
         mr, mg, mb = clamp(mr * st[1], 0, 1), clamp(mg * st[2], 0, 1), clamp(mb * st[3], 0, 1)
     end
-    love.graphics.setColor(mr, mg, mb, 0.14)
-    love.graphics.rectangle("fill", 0, 0, sw, 46)
-    love.graphics.setColor(mr, mg, mb, 0.06)
-    love.graphics.rectangle("fill", 0, 46, sw, 30)
+    local mist = self:_ensureFloorBandMesh()
+    local endY = sh * 0.31
+    mist:setTexture()
+    mist:setVertex(1, 0, 0, 0, 0, mr, mg, mb, 0.12)
+    mist:setVertex(2, sw, 0, 1, 0, mr, mg, mb, 0.12)
+    mist:setVertex(3, sw, endY, 1, 1, mr, mg, mb, 0)
+    mist:setVertex(4, 0, endY, 0, 1, mr, mg, mb, 0)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(mist)
 end
 
 --------------------------------------------------------------------------------
 -- 7. Overworld Landmarks & Procedural Decor Placement
 --------------------------------------------------------------------------------
+
+-- Heights are measured in world pixels. Small plants frame the foreground;
+-- the mature trees reach across more than one 186 px terrain diamond.
+local SCENERY_HEIGHT = {
+    ancient_tree = 245, araucaria_tree = 226, calafate_bush = 29,
+    apacheta_sundial = 62, biome_arch = 127, coast_lighthouse = 144,
+    copihue = 37, debris_pile = 34, desert_cactus = 80, lantern_post = 71,
+    lily_pad = 25, moai_relic = 67, mossy_boulder = 39, mossy_log = 42,
+    mountain_crystal = 58, orb_shrine = 52, pincoya_shrine = 82,
+    quena_monolith = 66, rewe_totem = 92, rock_monolith = 105,
+    stone_pedestal = 34, valdivian_fern = 35, valdivian_shrub = 38,
+    lettuce_truck = 248, arica_sign = 91,
+}
+local FOLIAGE_SWAY = {
+    ancient_tree = 0.009, araucaria_tree = 0.012, calafate_bush = 0.023,
+    copihue = 0.032, valdivian_fern = 0.050, valdivian_shrub = 0.032,
+}
+
+local function sceneryHeight(prop)
+    return (SCENERY_HEIGHT[prop.kind] or 86) * (prop.scale or 1.0)
+end
 
 local function isTooCloseToList(u, v, list, minDist)
     local d2 = minDist * minDist
@@ -2300,8 +2500,8 @@ function StageRenderer:buildOverworldDecor(encountersList)
         local biome = Encounters.getBiome(Encounters.BIOME_ORDER[i])
         local u = biome.uEnd - 1
         local pc = StageRenderer.pathCenterV(u)
-        addProp("biome_arch", u, pc - 3.45, 1.18, biome.id, style)
-        addProp("biome_arch", u, pc + 3.45, 1.18, biome.id, style)
+        addProp("biome_arch", u, pc - 4.5, 1.05, biome.id, style)
+        addProp("lantern_post", u, pc + 3.6, 0.95, biome.id)
     end
 
     for _, u in ipairs({ RIVER_START - 0.8, RIVER_END + 0.8 }) do
@@ -2310,6 +2510,7 @@ function StageRenderer:buildOverworldDecor(encountersList)
         addProp("lantern_post", u, pc + 2.65, 1.0, "bosque")
     end
     addProp("coast_lighthouse", LIGHTHOUSE_U, LIGHTHOUSE_V, 1.35, "costa")
+    addProp("debris_pile", 43.8, StageRenderer.pathCenterV(43.8) + 3.2, 1.08, "costa")
     local pierU = BAY_START - 0.2
     local pierV = StageRenderer.pathCenterV(pierU)
     addProp("lantern_post", pierU, pierV - 2.75, 1.0, "costa")
@@ -2323,10 +2524,22 @@ function StageRenderer:buildOverworldDecor(encountersList)
     addProp("coast_lighthouse", 109.0, -6.7, 1.32, "chiloe")
     addProp("pincoya_shrine", 115.6, 4.5, 1.12, "chiloe")
 
-    addProp("araucaria_tree", 58.5, StageRenderer.pathCenterV(58.5) - 5.2, 1.32, "bosque")
-    addProp("ancient_tree", 65.5, StageRenderer.pathCenterV(65.5) - 4.8, 1.28, "bosque")
-    addProp("araucaria_tree", 71.5, StageRenderer.pathCenterV(71.5) - 5.4, 1.36, "bosque")
-    addProp("desert_cactus", 2.5, StageRenderer.pathCenterV(2.5) - 4.8, 1.30, "desierto")
+    addProp("ancient_tree", 54.8, StageRenderer.pathCenterV(54.8) - 5.0, 1.10, "bosque")
+    addProp("araucaria_tree", 58.5, StageRenderer.pathCenterV(58.5) - 5.7, 1.18, "bosque")
+    addProp("ancient_tree", 63.0, StageRenderer.pathCenterV(63.0) - 5.3, 1.31, "bosque")
+    addProp("araucaria_tree", 71.5, StageRenderer.pathCenterV(71.5) - 5.4, 1.23, "bosque")
+    addProp("ancient_tree", 90.0, StageRenderer.pathCenterV(90.0) - 5.4, 1.22, "bosque")
+    addProp("araucaria_tree", 58.0, StageRenderer.pathCenterV(58.0) + 7.8, 0.69, "bosque")
+    addProp("calafate_bush", 97.0, StageRenderer.pathCenterV(97.0) + 3.8, 1.22, "chiloe")
+    addProp("mossy_log", 61.0, StageRenderer.pathCenterV(61.0) + 4.2, 1.20, "bosque")
+    addProp("valdivian_fern", 59.4, StageRenderer.pathCenterV(59.4) + 4.6, 1.22, "bosque")
+    addProp("copihue", 62.0, StageRenderer.pathCenterV(62.0) + 5.1, 1.04, "bosque")
+    addProp("rock_monolith", 1.5, StageRenderer.pathCenterV(1.5) - 6.0, 1.36, "desierto")
+    addProp("rock_monolith", 10.0, StageRenderer.pathCenterV(10.0) - 7.2, 1.12, "desierto")
+    addProp("quena_monolith", 21.0, StageRenderer.pathCenterV(21.0) - 4.5, 1.06, "desierto")
+    addProp("stone_pedestal", 101.4, StageRenderer.pathCenterV(101.4) - 3.3, 1.07, "chiloe")
+    addProp("lettuce_truck", DESERT_ARRIVAL.startU, DESERT_ARRIVAL.startV, 1.0, "desierto")
+    addProp("arica_sign", ARICA_SIGN_U, ARICA_SIGN_V, 1.0, "desierto")
     addProp("desert_cactus", 7.0, StageRenderer.pathCenterV(7.0) + 5.2, 1.25, "desierto")
     addProp("desert_cactus", 11.5, StageRenderer.pathCenterV(11.5) - 5.1, 1.34, "desierto")
     addProp("desert_cactus", 17.0, StageRenderer.pathCenterV(17.0) + 5.1, 1.28, "desierto")
@@ -2341,10 +2554,10 @@ function StageRenderer:buildOverworldDecor(encountersList)
 
     -- F. Procedural Side Biome Decor with strict walkability & view clearance
     local bosqueFarProps = { "araucaria_tree", "ancient_tree", "araucaria_tree", "mossy_boulder", "copihue", "valdivian_fern" }
-    local bosqueNearLow = { "valdivian_fern", "valdivian_shrub", "copihue", "mossy_boulder" }
+    local bosqueNearLow = { "valdivian_fern", "valdivian_shrub", "copihue", "mossy_boulder", "mossy_log" }
     local desiertoProps = { "desert_cactus", "mountain_crystal", "rock_monolith", "desert_cactus", "moai_relic", "apacheta_sundial" }
     local costaFarProps = { "valdivian_shrub", "mossy_boulder", "lantern_post", "pincoya_shrine" }
-    local chiloeProps = { "lantern_post", "mossy_boulder", "valdivian_fern", "pincoya_shrine" }
+    local chiloeProps = { "lantern_post", "mossy_boulder", "calafate_bush", "valdivian_fern", "pincoya_shrine" }
 
     for u = -2.0, 117.0, 2.6 do
         local pc = StageRenderer.pathCenterV(u)
@@ -2372,7 +2585,7 @@ function StageRenderer:buildOverworldDecor(encountersList)
                         and terrain ~= "pier" then
 
                         -- Keep foreground (+v) close band low so tall props never cover the Pudu!
-                        local isForegroundNear = (side > 0 and abs(pv - StageRenderer.pathCenterV(pu)) < 5.0)
+                        local isForegroundNear = side > 0
                         local kind = nil
                         local sc = 0.85 + h3 * 0.42
 
@@ -2402,7 +2615,9 @@ function StageRenderer:buildOverworldDecor(encountersList)
                         end
 
                         if kind then
-                            addProp(kind, pu, pv, sc, biome)
+                            if not isTooCloseToList(pu, pv, decor, 1.55) then
+                                addProp(kind, pu, pv, sc, biome)
+                            end
                         end
                     end
                 end
@@ -2419,6 +2634,153 @@ end
 -- 8. Stylized Prop & Entity Renderers (Modo A Sprites + Modo B Geometric Art)
 --------------------------------------------------------------------------------
 
+local function paintFace(r, g, b, ...)
+    love.graphics.setColor(r, g, b, 1)
+    love.graphics.polygon("fill", ...)
+end
+
+local function drawLettuceCrate(x, y)
+    paintFace(0.44, 0.28, 0.14, x, y, x + 27, y - 13.5, x + 27, y + 2, x, y + 15.5)
+    paintFace(0.61, 0.38, 0.19, x - 13, y - 6.5, x, y, x, y + 15.5, x - 13, y + 9)
+    paintFace(0.21, 0.30, 0.16, x - 13, y - 6.5, x + 14, y - 20, x + 27, y - 13.5, x, y)
+    for i = 0, 2 do
+        local leafX, leafY = x - 6 + i * 9, y - 9 - i * 4.5
+        paintFace(0.31, 0.59, 0.22, leafX - 7, leafY - 2, leafX - 4, leafY - 11,
+            leafX + 2, leafY - 14, leafX + 8, leafY - 9, leafX + 8, leafY - 2, leafX + 2, leafY + 3)
+        paintFace(0.61, 0.76, 0.30, leafX - 5, leafY - 6, leafX - 3, leafY - 11,
+            leafX + 2, leafY - 13, leafX + 5, leafY - 9, leafX + 1, leafY - 6)
+    end
+    paintFace(0.77, 0.51, 0.26, x, y, x + 27, y - 13.5, x + 27, y - 10, x, y + 3.5)
+    paintFace(0.91, 0.62, 0.32, x - 13, y - 6.5, x, y, x, y + 3.5, x - 13, y - 3)
+end
+
+local TRUCK_WHEELS = { { 33, -31 }, { -67, 18 }, { -213, -55 } }
+
+local function drawLettuceTruck(x, y, zoom, font)
+    local lg = love.graphics
+    local deck = DESERT_ARRIVAL.deckHeight
+    lg.push()
+    lg.translate(x, y)
+    lg.scale(zoom)
+
+    -- The cargo bay points along +v, with space behind the truck for the ramp.
+    lg.push()
+    lg.translate(-79, -26)
+    lg.rotate(math.atan(0.5))
+    lg.setColor(0.10, 0.08, 0.06, 0.20)
+    lg.ellipse("fill", 7, 9, 150, 38)
+    lg.setColor(0.13, 0.10, 0.08, 0.27)
+    lg.ellipse("fill", 0, 0, 126, 28)
+    lg.pop()
+
+    paintFace(0.15, 0.17, 0.16, -237, -88, -189, -106, -38, -23, -38, 24, -235, -67)
+    for _, wheel in ipairs(TRUCK_WHEELS) do
+        local wx, wy = wheel[1], wheel[2]
+        lg.setColor(0.10, 0.13, 0.13, 1)
+        lg.ellipse("fill", wx, wy, 16, 20, 12)
+        lg.setColor(0.26, 0.30, 0.27, 1)
+        lg.ellipse("fill", wx - 1, wy - 1, 9, 12, 10)
+        lg.setColor(0.58, 0.58, 0.47, 1)
+        lg.ellipse("fill", wx - 1, wy - 1, 5, 6, 8)
+    end
+
+    -- Ochre cab and its windshield, door and step on the visible side.
+    paintFace(0.47, 0.25, 0.13, -246, -107, -231, -100, -231, -63, -246, -70)
+    paintFace(0.89, 0.56, 0.24, -246, -107, -224, -120, -209, -112, -231, -100)
+    paintFace(0.69, 0.37, 0.16, -231, -100, -219, -141, -180, -121.5, -180, -57.5, -231, -83)
+    paintFace(0.94, 0.66, 0.32, -219, -141, -142, -179.5, -103, -160, -180, -121.5)
+    paintFace(0.24, 0.38, 0.37, -215, -131, -185, -116, -185, -91, -222, -109.5)
+    paintFace(0.55, 0.69, 0.60, -215, -131, -185, -116, -185, -112, -216, -127.5)
+    paintFace(0.94, 0.61, 0.27, -223, -105, -186, -86.5, -186, -65, -223, -83.5)
+    paintFace(0.31, 0.24, 0.15, -198, -87, -188, -82, -188, -78, -198, -83)
+    paintFace(0.95, 0.81, 0.52, -244, -95, -237, -91.5, -237, -83.5, -244, -87)
+    paintFace(0.31, 0.35, 0.32, -246, -75, -232, -68, -232, -62, -246, -69)
+
+    -- Insulated box. Every cargo face follows the same 2:1 floor projection.
+    paintFace(0.62, 0.70, 0.56, -191, -197.5, -47, -125.5, 47, -172.5, -97, -244.5)
+    paintFace(0.76, 0.78, 0.62, -188, -196, -47, -125.5, -42, -128, -183, -198.5)
+    paintFace(0.29, 0.46, 0.36, -191, -197.5, -47, -125.5, -47, -8.5, -191, -80.5)
+    paintFace(0.39, 0.56, 0.42, -186, -189, -52, -122, -52, -116, -186, -183)
+    paintFace(0.22, 0.34, 0.28, -186, -90, -52, -23, -52, -15, -186, -82)
+
+    lg.push()
+    lg.translate(-173, -153)
+    lg.shear(0, 0.5)
+    lg.setColor(0.77, 0.78, 0.56, 1)
+    lg.rectangle("fill", 0, 0, 104, 28)
+    lg.setColor(0.16, 0.31, 0.20, 1)
+    lg.setFont(font)
+    lg.printf("LECHUGAS", 0, (28 - font:getHeight()) * 0.5, 104, "center")
+    lg.pop()
+
+    -- Dark opening, visible crates and the lower metal loading threshold.
+    paintFace(0.39, 0.52, 0.40, -47, -125.5, 47, -172.5, 47, -55.5, -47, -8.5)
+    paintFace(0.12, 0.17, 0.15, -39, -120, 39, -159, 39, -56, -39, -17)
+    paintFace(0.20, 0.26, 0.21, 19, -149, 39, -159, 39, -56, 19, -46)
+    paintFace(0.27, 0.29, 0.23, -39, -17, -59, -27, 19, -66, 39, -56)
+    drawLettuceCrate(10, -54)
+    drawLettuceCrate(-34, -29)
+
+    local run = DESERT_ARRIVAL.finishV - DESERT_ARRIVAL.startV
+    local rampX = run * StageRenderer.ISO_VX
+    local rampY = run * StageRenderer.ISO_VY
+    local rampHalfWidth = 34
+    local rampHalfDepth = rampHalfWidth * 0.5
+    local lx, ly = -rampHalfWidth, -deck + rampHalfDepth
+    local rx, ry = rampHalfWidth, -deck - rampHalfDepth
+    local bx, by = rampX - rampHalfWidth, rampY + rampHalfDepth
+    local ex, ey = rampX + rampHalfWidth, rampY - rampHalfDepth
+    paintFace(0.32, 0.30, 0.23, lx, ly, bx, by, bx, by + 5, lx, ly + 5)
+    paintFace(0.49, 0.50, 0.39, lx, ly, rx, ry, ex, ey, bx, by)
+    for i = 1, 5 do
+        local t = i / 6
+        local sx, sy = lerp(lx, bx, t), lerp(ly, by, t)
+        local tx, ty = lerp(rx, ex, t), lerp(ry, ey, t)
+        paintFace(0.61, 0.60, 0.45, sx, sy, tx, ty, tx + 1.8, ty + 2.2, sx + 1.8, sy + 2.2)
+    end
+    paintFace(0.60, 0.64, 0.49, -47, -16.5, 47, -63.5, 47, -55.5, -47, -8.5)
+    paintFace(0.80, 0.32, 0.19, -46, -31, -39, -34.5, -39, -24, -46, -20.5)
+    paintFace(0.80, 0.32, 0.19, 39, -73.5, 46, -77, 46, -66.5, 39, -63)
+
+    lg.pop()
+end
+
+local function drawAricaSign(x, y, zoom, font)
+    local lg = love.graphics
+    lg.push()
+    lg.translate(x, y)
+    lg.scale(zoom)
+    lg.setColor(0.12, 0.09, 0.07, 0.24)
+    lg.ellipse("fill", 14, 2, 42, 10)
+    lg.setColor(0.32, 0.37, 0.31, 1)
+    lg.rectangle("fill", -32, -60, 7, 63)
+    lg.rectangle("fill", 25, -60, 7, 63)
+    lg.setColor(0.58, 0.61, 0.52, 1)
+    lg.rectangle("fill", -32, -60, 2, 59)
+    lg.rectangle("fill", 25, -60, 2, 59)
+    lg.setColor(0.13, 0.24, 0.20, 1)
+    lg.rectangle("fill", -58, -95, 116, 64, 5, 5)
+    lg.setColor(0.75, 0.80, 0.63, 1)
+    lg.rectangle("fill", -55, -92, 110, 58, 3, 3)
+    lg.setColor(0.12, 0.33, 0.25, 1)
+    lg.rectangle("fill", -52, -89, 104, 52, 2, 2)
+    lg.pop()
+
+    -- Keep the letters on whole screen pixels while the board follows the room zoom.
+    local width = floor(104 * zoom + 0.5)
+    local left = floor(x - width * 0.5 + 0.5)
+    local halfLine = font:getHeight() * 0.5
+    local kmY = floor(y - 76 * zoom - halfLine + 0.5)
+    local aricaY = floor(y - 51 * zoom - halfLine + 0.5)
+    lg.setFont(font)
+    lg.setColor(0.06, 0.18, 0.13, 1)
+    lg.printf("KM 23", left, kmY + 1, width, "center")
+    lg.printf("ARICA", left, aricaY + 1, width, "center")
+    lg.setColor(0.98, 0.97, 0.88, 1)
+    lg.printf("KM 23", left, kmY, width, "center")
+    lg.printf("ARICA", left, aricaY, width, "center")
+end
+
 local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, litShader, alphaOpt)
     local aMul = alphaOpt or 1.0
     local propsMap = (assetsOrProps and assetsOrProps.props) or assetsOrProps
@@ -2426,14 +2788,37 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
     local useLit = (litShader ~= nil and litShader ~= false and stage and stage.useLitShader)
 
     -- Mode A drop-in: if a real prop sprite exists in propsMap[kind].diff, draw it lit!
-    local pair = (type(propsMap) == "table") and propsMap[prop.kind] or nil
+    local worldProp = prop.u ~= nil
+    local scenery = worldProp and assetsOrProps and assetsOrProps.scenery
+    local pair = scenery and scenery[prop.kind] or (type(propsMap) == "table" and propsMap[prop.kind])
     if type(pair) == "table" and pair.diff and not pair.isPlaceholder then
         local img = pair.diff
         local iw, ih = img:getDimensions()
-        local targetH = 86.0 * (prop.scale or 1.0) * z
+        local targetH = worldProp and sceneryHeight(prop) * z or 86.0 * (prop.scale or 1.0) * z
         local sc = targetH / max(1, ih)
-        love.graphics.setColor(0.04, 0.04, 0.08, 0.30 * aMul)
-        love.graphics.ellipse("fill", sx, sy, 22 * (prop.scale or 1.0) * z, 9 * (prop.scale or 1.0) * z)
+        local sway, lift = 0.0, 0.0
+        local wind = worldProp and FOLIAGE_SWAY[prop.kind]
+        if wind then
+            sway = sin(time * 1.42 + prop.u * 0.69 + prop.v * 0.45) * wind
+        end
+        if prop.kind == "lily_pad" then
+            lift = sin(time * 1.6 + (prop.u or 0)) * 1.25 * z
+        else
+            local contact = min(iw * sc * 0.36, targetH * 0.29, 33 * z)
+            if worldProp then
+                local preset = StageRenderer.LIGHTING_PRESETS[stage.lightingPreset]
+                local dx, dy = -preset.sunDir[1], -preset.sunDir[2] * 0.58
+                local length = targetH * 0.49
+                love.graphics.push()
+                love.graphics.translate(sx + dx * length * 0.68, sy + dy * length * 0.68)
+                love.graphics.rotate(math.atan2(dy, dx))
+                love.graphics.setColor(0.035, 0.063, 0.064, 0.14 + preset.sunEnergy * 0.075)
+                love.graphics.ellipse("fill", 0, 0, max(contact, length * 0.64), contact * 0.57)
+                love.graphics.pop()
+            end
+            love.graphics.setColor(0.04, 0.05, 0.07, 0.29 * aMul)
+            love.graphics.ellipse("fill", sx, sy + z, contact, max(3 * z, contact * 0.35))
+        end
         love.graphics.setColor(1, 1, 1, aMul)
         local emBoost = 0.0
         local emCol = nil
@@ -2445,7 +2830,8 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
             emBoost, emCol = 0.18, { 1.0, 0.84, 0.38 }
         end
         if stage then
-            stage:drawSpriteLit(pair, sx, sy, 0, sc, sc, iw * 0.5, ih * 0.92, nil, emBoost, emCol, useLit and litShader or nil, true)
+            stage:drawSpriteLit(pair, sx, sy + lift, sway, sc, sc, iw * 0.5, ih * 0.96,
+                nil, emBoost, emCol, useLit and litShader or nil, true)
         else
             love.graphics.draw(img, sx, sy, 0, sc, sc, iw * 0.5, ih * 0.92)
         end
@@ -2802,6 +3188,15 @@ end
 local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets, defeated, isAlerted, alertTimer, font, litShader)
     local encPair = assets and assets.encounters and assets.encounters[enc.id]
     local targetH = (enc.scale or 2.55) * 38.0 * (z / 0.72)
+    if encPair and encPair.isPlaceholder and assets.scenery then
+        if enc.id == "caleuche" then
+            encPair = assets.scenery.caleuche_ship or encPair
+            targetH = targetH * 1.12
+        elseif enc.id == "pila_de_ropa" then
+            encPair = assets.scenery.textile_bale or encPair
+            targetH = targetH * 0.85
+        end
+    end
     local bob = defeated and 0.0 or sin(time * 3.0 + idx * 1.1) * 2.5 * z
     local alpha = defeated and 0.52 or 1.0
 
@@ -2880,30 +3275,66 @@ local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets,
     end
 end
 
-local function drawPuduWithHat(stage, sx, sy, facingRow, animCol, targetH, bobY, assets, litShader, hatOffsetY, hatTilt)
+-- Head motion measured relative to the first frame of each row in the stock 60px sheet.
+local PUDU_HEAD_MOTION = {
+    [0] = { [3] = { -1, -2 }, [4] = { 0, 0 }, [5] = { 1, -2 } },
+    [1] = { [3] = { 4, -2 }, [4] = { 1, 0 }, [5] = { 5, -1 } },
+    [2] = { [3] = { 2, -1 }, [4] = { 0, 0 }, [5] = { 4, -1 } },
+    [3] = { [3] = { 4, -2 }, [4] = { 2, 0 }, [5] = { 4, -1 } },
+    [4] = { [3] = { 0, -3 }, [4] = { 0, 0 }, [5] = { 0, -3 } },
+    [5] = { [3] = { -3, -2 }, [4] = { -1, 0 }, [5] = { -3, -1 } },
+    [6] = { [3] = { -2, -1 }, [4] = { 0, 0 }, [5] = { -4, -1 } },
+    [7] = { [3] = { -5, -2 }, [4] = { -1, 0 }, [5] = { -6, -1 } },
+}
+
+function StageRenderer.getPuduFrameAnchor(pair, row, col, qw, qh)
+    local defaultFootY = qh * 0.88
+    if qw ~= 60 or qh ~= 60 or pair.isCustom or pair.isPlaceholder then
+        return defaultFootY, 0, 0
+    end
+
+    local footY = 56
+    local pivotShiftY = defaultFootY - footY
+    local frames = PUDU_HEAD_MOTION[row]
+    local motion = frames and frames[col]
+    if motion then
+        return footY, motion[1], pivotShiftY + motion[2]
+    end
+    return footY, 0, pivotShiftY - (col == 2 and 1 or 0)
+end
+
+local function drawPuduWithHat(stage, sx, sy, facingRow, animCol, targetH, bobY, assets, litShader, pose, lift)
     local row = clamp(floor(facingRow or 3), 0, 7)
     local col = clamp(floor(animCol or 1), 1, 6)
-    local dy = bobY or 0.0
+    local tilt = pose and pose.tilt or 0.0
+    local scaleX = pose and pose.scaleX or 1.0
+    local scaleY = pose and pose.scaleY or 1.0
+    local frameY = sy + (pose and pose.jumpY or bobY or 0.0) - (lift or 0.0)
 
     -- Soft contact shadow beneath hooves
-    love.graphics.setColor(0.04, 0.04, 0.08, 0.34)
+    local shadowAlpha = 0.34 - 0.22 * smoothstep(0.0, 25.0, sy - frameY)
+    love.graphics.setColor(0.04, 0.04, 0.08, shadowAlpha)
     love.graphics.ellipse("fill", sx, sy + 2, targetH * 0.25, targetH * 0.09)
 
     local puduPair = assets and assets.pudu
     local quads = assets and assets.puduQuads
+    local headX, headY = 0.0, 0.0
     if puduPair and puduPair.diff and quads and quads[row] and quads[row][col] then
         local quad = quads[row][col]
         local _, _, qw, qh = quad:getViewport()
         local sc = targetH / max(1, qh)
+        local footY, shiftX, shiftY = StageRenderer.getPuduFrameAnchor(puduPair, row, col, qw, qh)
+        headX, headY = shiftX * sc, shiftY * sc
         love.graphics.setColor(1, 1, 1, 1)
         if stage then
-            stage:drawSpriteLit(puduPair, sx, sy + dy, 0, sc, sc, qw * 0.5, qh * 0.88, quad, 0.0, nil, litShader, true)
+            stage:drawSpriteLit(puduPair, sx, frameY, tilt, sc * scaleX, sc * scaleY, qw * 0.5, footY,
+                quad, 0.0, nil, litShader, true)
         else
-            love.graphics.draw(puduPair.diff, quad, sx, sy + dy, 0, sc, sc, qw * 0.5, qh * 0.88)
+            love.graphics.draw(puduPair.diff, quad, sx, frameY, tilt, sc * scaleX, sc * scaleY, qw * 0.5, footY)
         end
     else
         love.graphics.setColor(0.58, 0.35, 0.20, 1.0)
-        love.graphics.circle("fill", sx, sy - targetH * 0.4 + dy, targetH * 0.28)
+        love.graphics.circle("fill", sx, frameY - targetH * 0.4, targetH * 0.28)
     end
 
     -- Pointy brown wizard hat anchored cleanly to the Pudu's head for the current facing row
@@ -2913,9 +3344,12 @@ local function drawPuduWithHat(stage, sx, sy, facingRow, animCol, targetH, bobY,
         local unit = targetH / 64.0
         local off = StageRenderer.HAT_HEAD_OFFSETS[row] or StageRenderer.HAT_HEAD_OFFSETS[3]
         local hatSc = (targetH * 0.58) / max(1, hh)
-        local hatX = sx + off.x * unit
-        local hatY = sy + off.y * unit + dy * 1.12 + (hatOffsetY or 0.0)
-        local hRot = hatTilt or 0.0
+        local localX = (off.x * unit + headX) * scaleX
+        local localY = (off.y * unit + headY) * scaleY
+        local cosT, sinT = cos(tilt), sin(tilt)
+        local hatX = sx + localX * cosT - localY * sinT
+        local hatY = frameY + localX * sinT + localY * cosT + (pose and pose.hatOffsetY or 0.0)
+        local hRot = pose and pose.hatTilt or tilt
         love.graphics.setColor(1, 1, 1, 1)
         if stage then
             stage:drawSpriteLit(hatPair, hatX, hatY, hRot, hatSc, hatSc, hw * 0.50, hh * 0.78, nil, 0.0, nil, litShader, true)
@@ -2930,6 +3364,24 @@ local function sortByDepth(a, b)
         return a.sortY < b.sortY
     end
     return a.tie < b.tie
+end
+
+local function drawBodoque(stage, pair, x, y, zoom, time, litShader)
+    local iw, ih = pair.diff:getDimensions()
+    local h = BODOQUE.height * zoom / 0.72
+    local scale = h / ih
+    local gesture = sin(pi * stage._bodoqueGesture / 0.48) ^ 2
+    local breath = sin(time * 2.8) * 0.012
+    local sx = scale * (1.0 - breath * 0.40 - gesture * 0.018)
+    local sy = scale * (1.0 + breath + gesture * 0.042)
+
+    love.graphics.setColor(0.07, 0.05, 0.09, 0.18)
+    love.graphics.ellipse("fill", x + 3 * zoom, y + 2 * zoom, 23 * zoom, 8 * zoom)
+    love.graphics.setColor(0.04, 0.04, 0.07, 0.25)
+    love.graphics.ellipse("fill", x, y, 15 * zoom, 4 * zoom)
+    love.graphics.setColor(1, 1, 1, 1)
+    stage:drawSpriteLit(pair, x, y, 0, sx, sy, iw * 0.5, ih, nil, 0, nil, litShader, true)
+    stage._bodoqueScreenX, stage._bodoqueScreenTop = x, y - ih * sy
 end
 
 function StageRenderer:drawOverworld(ctx)
@@ -2952,7 +3404,7 @@ function StageRenderer:drawOverworld(ctx)
         self:drawOverworldFloor(ctx)
     end
 
-    -- 2. Gather all visible props, rivals, and Pudu into reusable Y-sort list (ZERO per-frame tables)
+    -- 2. Gather visible props and characters into the reusable Y-sort list.
     local list = self._drawList
     local pool = self._drawPool
     local count = 0
@@ -2987,7 +3439,8 @@ function StageRenderer:drawOverworld(ctx)
         if abs(prop.u - camU) <= 18.5 and abs(prop.v - camV) <= 18.5 then
             local elev = StageRenderer.getElevation(prop.u, prop.v)
             local sx, sy = self:isoToScreen(prop.u, prop.v, elev, sw, sh)
-            if sx >= -110 and sx <= sw + 110 and sy >= -110 and sy <= sh + 160 then
+            local extent = sceneryHeight(prop) * z
+            if sx >= -extent and sx <= sw + extent and sy >= -32 and sy <= sh + extent then
                 local baseY = baseScreenY + (prop.u - camU) * uyZ + (prop.v - camV) * vyZ
                 -- Flat lily pads stay underneath characters
                 local tie = (prop.kind == "lily_pad") and -1000 or i
@@ -3010,6 +3463,17 @@ function StageRenderer:drawOverworld(ctx)
         end
     end
 
+    self._bodoqueScreenX = nil
+    local bodoquePair = assets and assets.bodoque
+    if bodoquePair and abs(BODOQUE.u - camU) <= 18.0 then
+        local elev = StageRenderer.getElevation(BODOQUE.u, BODOQUE.v)
+        local sx, sy = self:isoToScreen(BODOQUE.u, BODOQUE.v, elev, sw, sh)
+        if sx >= -80 and sx <= sw + 80 and sy >= 0 and sy <= sh + 120 then
+            local baseY = baseScreenY + (BODOQUE.u - camU) * uyZ + (BODOQUE.v - camV) * vyZ
+            pushEntry("bodoque", baseY, 15000, sx, sy, bodoquePair, 0)
+        end
+    end
+
     -- Hero Pudu
     local puduU = ctx.puduU or 3.8
     local puduV = ctx.puduV or StageRenderer.pathCenterV(puduU)
@@ -3028,34 +3492,79 @@ function StageRenderer:drawOverworld(ctx)
 
     -- 3. Draw strictly in Y-sorted depth order
     local smallFont = (ctx.fonts and ctx.fonts.small) or makeFallbackFont()
+    local headingFont = (ctx.fonts and ctx.fonts.heading) or smallFont
     local puduTargetH = (ctx.puduTargetH or 84.0) * (z / 0.72)
 
     for i = 1, count do
         local item = list[i]
         if item.kind == "prop" then
-            drawStylizedProp(self, item.data, item.sx, item.sy, z, time, assets, litShader, 1.0)
+            if item.data.kind == "lettuce_truck" then
+                drawLettuceTruck(item.sx, item.sy, z, headingFont)
+            elseif item.data.kind == "arica_sign" then
+                drawAricaSign(item.sx, item.sy, z, headingFont)
+            else
+                drawStylizedProp(self, item.data, item.sx, item.sy, z, time, assets, litShader, 1.0)
+            end
         elseif item.kind == "rival" then
             local enc = item.data
             local idx = item.idx
             local isDef = (defeatedMap[enc.id] == true) or (defeatedMap[idx] == true)
             local isAlerted = (ctx.alertEncounterIdx == idx)
             drawRivalEntity(self, enc, idx, item.sx, item.sy, sw, sh, z, time, assets, isDef, isAlerted, ctx.alertTimer, smallFont, litShader)
+        elseif item.kind == "bodoque" then
+            drawBodoque(self, item.data, item.sx, item.sy, z, time, litShader)
         else
             drawPuduWithHat(
                 self,
                 item.sx,
                 item.sy,
                 ctx.puduFacingRow or 3,
-                ctx.puduAnimCol or 1,
+                (ctx.puduPose and ctx.puduPose.col) or ctx.puduAnimCol or 1,
                 puduTargetH,
                 ctx.puduBobY or 0.0,
                 assets,
                 litShader,
-                ctx.puduHatOffsetY,
-                ctx.puduHatTilt
+                ctx.puduPose,
+                (ctx.puduArrivalLift or 0.0) * z
             )
         end
     end
+end
+
+-- Draw after the world post-processing so the letter edges stay sharp.
+function StageRenderer:drawOverworldNPCDialogue(w, h, font)
+    local x, headY = self._bodoqueScreenX, self._bodoqueScreenTop
+    local progress = self._bodoqueDialogue
+    if not x or progress == 0 or x < 12 or x > w - 12 then return end
+
+    local f = font or makeFallbackFont()
+    local alpha = smoothstep(0.0, 1.0, progress)
+    local padding = 12
+    local lineH = f:getHeight()
+    local boxW = max(f:getWidth(BODOQUE.name), f:getWidth(BODOQUE.line)) + padding * 2
+    local boxH = lineH * 2 + 18
+    local left = floor(clamp(x - boxW * 0.5, 12, w - boxW - 12))
+    local top = floor(headY - boxH - 14 + (1.0 - alpha) * 5)
+    local bottom = top + boxH
+    -- Keep the card above the sprite and away from the map and HUD.
+    if top < 54 or bottom + 12 > h - 60 or (left < 231 and top < 185) then return end
+    local tailX = floor(clamp(x, left + 14, left + boxW - 14))
+
+    love.graphics.push("all")
+    love.graphics.setFont(f)
+    love.graphics.setColor(0.04, 0.03, 0.08, 0.48 * alpha)
+    love.graphics.rectangle("fill", left + 2, top + 3, boxW, boxH, 8, 8)
+    love.graphics.setColor(0.96, 0.66, 0.45, 0.88 * alpha)
+    love.graphics.polygon("fill", tailX - 7, bottom - 2, tailX + 7, bottom - 2, tailX, bottom + 9)
+    love.graphics.rectangle("fill", left, top, boxW, boxH, 8, 8)
+    love.graphics.setColor(0.10, 0.07, 0.14, alpha)
+    love.graphics.polygon("fill", tailX - 5, bottom - 2, tailX + 5, bottom - 2, tailX, bottom + 7)
+    love.graphics.rectangle("fill", left + 1, top + 1, boxW - 2, boxH - 2, 7, 7)
+    love.graphics.setColor(1.0, 0.72, 0.53, alpha)
+    love.graphics.print(BODOQUE.name, left + padding, top + 7)
+    love.graphics.setColor(1.0, 0.97, 0.93, alpha)
+    love.graphics.print(BODOQUE.line, left + padding, top + 10 + lineH)
+    love.graphics.pop()
 end
 
 --------------------------------------------------------------------------------
@@ -3952,7 +4461,10 @@ function StageRenderer:collectZoneLights(w, h, time)
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
     local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
-    local boost = preset.lanternBoost or 0.6
+    local boost = preset.lanternBoost
+    if self.lightingPreset == "dia" then
+        boost = lerp(boost, 1.0, smoothstep(88.0, 98.0, self.camU))
+    end
     local z = self.camZoom or 0.72
     local camU = self.camU
     local camV = self.camV
@@ -3981,21 +4493,22 @@ function StageRenderer:collectZoneLights(w, h, time)
             local elev = StageRenderer.getElevation(prop.u, prop.v)
             local sx, sy = self:isoToScreen(prop.u, prop.v, elev, sw, sh)
             if sx >= -140 and sx <= sw + 140 and sy >= -140 and sy <= sh + 140 then
-                local s = (prop.scale or 1.0) * z
+                local h = sceneryHeight(prop) * z
                 if k == "lantern_post" then
-                    local flicker = 0.90 + 0.10 * sin(tNow * 4.0 + prop.u)
-                    self:_pushLight(sx + 10 * s, sy - 48 * s, 165 * z, 1.00, 0.76, 0.32, 0.88 * boost * flicker, 0.76, 62)
+                    local flicker = 0.94 + 0.06 * sin(tNow * 4.0 + prop.u)
+                    self:_pushLight(sx + h * 0.21, sy - h * 0.58, 250 * z, 1.00, 0.73, 0.34,
+                        0.96 * boost * flicker, 0.66, 62)
                 elseif k == "mountain_crystal" then
                     local pulse = 0.86 + 0.14 * sin(tNow * 3.0 + prop.u)
-                    self:_pushLight(sx, sy - 24 * s, 150 * z, 0.34, 0.88, 1.00, 0.76 * max(0.50, boost) * pulse, 0.70, 48)
+                    self:_pushLight(sx, sy - h * 0.60, 180 * z, 0.34, 0.88, 1.00, 0.52 * max(0.50, boost) * pulse, 0.58, 48)
                 elseif k == "pincoya_shrine" then
-                    self:_pushLight(sx, sy - 46 * s, 165 * z, 0.30, 0.94, 0.92, 0.78 * max(0.50, boost), 0.72, 60)
+                    self:_pushLight(sx - h * 0.08, sy - h * 0.44, 200 * z, 1.00, 0.72, 0.39, 0.56 * max(0.50, boost), 0.68, 60)
                 elseif k == "orb_shrine" or k == "quena_monolith" then
-                    self:_pushLight(sx, sy - 46 * s, 170 * z, 1.00, 0.82, 0.36, 0.80 * max(0.45, boost), 0.72, 60)
+                    self:_pushLight(sx, sy - h * 0.79, 200 * z, 0.45, 0.94, 0.87, 0.80 * max(0.45, boost), 0.70, 60)
                 elseif k == "coast_lighthouse" then
-                    self:_pushLight(sx, sy - 114 * s, 235 * z, 1.00, 0.92, 0.56, 1.00 * max(0.55, boost), 0.92, 110)
+                    self:_pushLight(sx, sy - h * 0.77, 255 * z, 1.00, 0.84, 0.42, 1.00 * max(0.55, boost), 0.72, 110)
                 elseif k == "caleuche_ship" then
-                    self:_pushLight(sx - 32 * s, sy - 15 * s, 145 * z, 0.42, 0.98, 0.88, 0.65 * max(0.45, boost), 0.65, 52)
+                    self:_pushLight(sx - h * 0.31, sy - h * 0.18, 145 * z, 0.42, 0.98, 0.88, 0.65 * max(0.45, boost), 0.65, 52)
                 elseif k == "biome_arch" then
                     local st = prop.extra or "stone"
                     local lr, lg, lb = 0.34, 0.80, 0.44
@@ -4004,7 +4517,7 @@ function StageRenderer:collectZoneLights(w, h, time)
                     elseif st == "harbor" then
                         lr, lg, lb = 0.30, 0.84, 0.96
                     end
-                    self:_pushLight(sx, sy - 78 * s, 155 * z, lr, lg, lb, 0.70 * max(0.45, boost), 0.66, 72)
+                    self:_pushLight(sx, sy - h * 0.71, 155 * z, lr, lg, lb, 0.48 * max(0.45, boost), 0.66, 72)
                 end
             end
         end
@@ -4013,7 +4526,7 @@ function StageRenderer:collectZoneLights(w, h, time)
     return self:_finalizeLightCollection()
 end
 
-function StageRenderer:drawAtmosphericLighting(lightRadialImg, lights, w, h, time)
+function StageRenderer:drawAtmosphericLighting(lightRadialImg, lights, w, h, time, worldBiome)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
@@ -4055,6 +4568,11 @@ function StageRenderer:drawAtmosphericLighting(lightRadialImg, lights, w, h, tim
 
     -- 2. Diagonal volumetric sunbeams via shaders.sunbeam (strictly OFF in noche where beamStrength == 0)
     local beamStrength = preset.beamStrength or 0.0
+    if worldBiome == "bosque" then
+        beamStrength = beamStrength * 1.44
+    elseif worldBiome == "chiloe" then
+        beamStrength = beamStrength * 0.47
+    end
     local beamShader = self.shaders and self.shaders.sunbeam
     if beamShader and beamStrength > 0.001 then
         local white = self:_getUnitWhite()

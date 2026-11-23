@@ -178,14 +178,6 @@ game.autoPromptIndex = 1
 game.audio, game.hud, game.ritual = audio, hud, ritual
 game.assets = { encounters = {}, gags = {}, props = {} }
 game.battleFX = require("battle_fx").new()
-local victories = {}
-game.album = {
-    isOpen = function() return false end,
-    recordVictory = function(_, id, entry)
-        victories[id] = entry
-        return true
-    end,
-}
 game.battleIn, game.battleOut = channel(), channel()
 game.spriteIn, game.spriteOut = channel(), channel()
 
@@ -235,7 +227,7 @@ cast("silla")
 cast("pintura", "scared")
 assert(game.battle.nonCritMissCount == 0 and not game.battle.pendingSemiHint)
 assert(game.battlePhase == "victory")
-assert(victories.mimo_muro.prompt == "pintura" and victories.mimo_muro.turns == 2)
+assert(game.defeatedMap.mimo_muro)
 assert(game.battleFX.defeatFinale.reaction == game.battle.result.enemy_reaction)
 state.battlePhase, state.lastPrompt = "victory", "pintura"
 hud:drawTopBar(state, 1280)

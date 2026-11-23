@@ -11,7 +11,6 @@ Si tienes el ZIP portátil, extrae la carpeta completa y ejecuta **PuduFantasy.e
 - Camina con WASD o las flechas. Acércate al siguiente rival o pulsa Tab cuando aparezca el botón de combate.
 - En la arena, escribe una idea y pulsa Enter. Puedes pegar con Ctrl+V y corregir con Retroceso.
 - Cuando aparezca el ritual, sigue las flechas con el teclado o con WASD para potenciar el golpe.
-- Pulsa J o el botón Álbum para ver las victorias guardadas y elegir una revancha. Si ya estás escribiendo un prompt, usa Ctrl+J.
 - Esc o Tab te devuelve al mapa. Los rivales vencidos quedan marcados durante la partida.
 - F8 alterna el sonido y F12 guarda una captura. F5 recarga el arte.
 - En combate, F7 cambia la iluminación y Ctrl+1 a Ctrl+9 salta a un rival para pruebas.
@@ -29,6 +28,8 @@ La aventura comienza en el Desierto de Atacama con la Pila de Ropa. Sigue por Co
 Los cuatro rivales de la aventura admiten invocaciones libres. El juez local reconoce debilidades, curas, autogoles, ocho estados y seis combos. El modo `--mock` evalúa en Lua. En macOS y Linux puedes usar `./run.sh` con LÖVE 11.5.
 
 Para iniciar un combate directamente, usa `--mode=battle --encounter=1` y cambia el número del 1 al 4 según el orden de la aventura. Los números 5 al 9 abren combates de QA.
+
+Para probar un reemplazo local del arte del mapa, coloca el PNG y su mapa de normales `_n.png` en `assets/custom/` con el nombre del original y pulsa F5. Los suelos y sprites originales están en el [repositorio Flora y Fauna Chilena](https://github.com/Ruglehjs/flora-y-fauna-chilena-sprites/tree/468faea58bc6cc07307a0c797185ed7785978051).
 
 ## Puente de IA opcional
 

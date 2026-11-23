@@ -38,6 +38,11 @@ extern number numLights;
 extern vec4 lightPosRadius[10];
 extern vec4 lightColorEnergy[10];
 
+#ifdef MAP_SURFACE
+varying vec2 surfaceData;
+#endif
+
+#ifdef PIXEL
 vec3 safeNormalize(vec3 v, vec3 fallback) {
     float lenSq = dot(v, v);
     if (lenSq < 0.000001) {
@@ -53,7 +58,86 @@ float compressShoulder(float c) {
     return max(c, 0.0);
 }
 
+#ifdef MAP_SURFACE
+extern Image roadTexture;
+extern Image roadNormal;
+extern number hasRoadNormal;
+extern vec3 roadTint;
+extern number terrainMode;
+extern number time;
+
+vec3 terrainNormal(vec2 slope) {
+    // Project the normal from the ground's U/V axes onto the screen.
+    return normalize(vec3((slope.x + slope.y) * 0.68,
+                          (slope.y - slope.x) * 0.88, 1.0));
+}
+
+void sampleTerrain(Image ground, vec2 world, vec3 tint, out vec3 albedo, out vec3 normal) {
+    if (terrainMode > 0.5 && terrainMode < 2.5) {
+        bool river = terrainMode > 1.5;
+        float phase = river ? world.x * 7.2 + world.y * 2.0 : world.x * 3.0 + world.y * 2.6;
+        float bend = sin(world.y * 1.6 - world.x * 0.8) * 1.6 + sin(world.y * 4.3 + time * 0.5) * 0.38;
+        float swell = sin(phase - time * 1.25 + bend);
+        float ripple = sin(world.x * 13.2 - world.y * 6.0 - time * 2.2 + bend * 1.2);
+        float breakUp = smoothstep(0.15, 0.96, sin(world.y * 6.6 + world.x * 1.9 + time * 0.38));
+        float crest = smoothstep(0.83, 0.99, swell) * breakUp;
+        float shallow = surfaceData.x;
+        vec3 deep = river ? vec3(0.055, 0.28, 0.27) : vec3(0.055, 0.28, 0.40);
+        vec3 edge = river ? vec3(0.22, 0.49, 0.39) : vec3(0.19, 0.53, 0.55);
+        albedo = mix(deep, edge, shallow) * (1.0 + swell * 0.045 + ripple * 0.018);
+        float foam = smoothstep(0.72, 0.99, shallow) * smoothstep(0.25, 0.92, swell) * breakUp;
+        albedo += vec3(0.58, 0.84, 0.83) * (crest * (0.045 + shallow * 0.06) + foam * 0.13);
+        normal = terrainNormal(vec2(swell * 0.12 + ripple * 0.04, swell * 0.07 - ripple * 0.07));
+        return;
+    }
+    if (terrainMode > 2.5) {
+        // Planks cross the U-axis, with grain and staggered board ends along V.
+        float board = world.x * 3.35;
+        float row = floor(board);
+        float seam = smoothstep(0.015, 0.075, fract(board));
+        float endJoint = smoothstep(0.003, 0.023, fract(world.y * 0.51 + mod(row, 3.0) * 0.33));
+        float variation = fract(sin(row * 12.9898) * 437.54);
+        float grain = sin(world.x * 175.0 + sin(world.y * 17.0) * 0.8 + sin(world.y * 5.0 + row));
+        float fineGrain = sin(world.x * 267.0 + world.y * 11.0);
+        albedo = tint * (0.91 + variation * 0.15 + grain * 0.025 + fineGrain * 0.012);
+        albedo *= 0.61 + seam * endJoint * 0.39;
+        albedo += tint * smoothstep(0.74, 0.98, fract(board)) * 0.07;
+        normal = terrainNormal(vec2((seam - 1.0) * 0.5 + grain * 0.12, 0.0));
+        return;
+    }
+
+    float patch = sin(world.x * 1.7 + sin(world.y * 0.83)) * sin(world.y * 1.45 - world.x * 0.58);
+    float border = surfaceData.x + patch * 0.12;
+    float road = smoothstep(0.16, 0.79, border);
+    albedo = vec3(0.0);
+    vec2 slope = vec2(0.0);
+    if (road < 0.999) {
+        vec2 uv = world * 0.29;
+        vec2 breakUv = world.yx * 0.17 + vec2(0.17, -0.36);
+        vec3 groundColor = mix(Texel(ground, uv).rgb, Texel(ground, breakUv).rgb, 0.33);
+        albedo = groundColor * tint * (0.99 + patch * 0.084) * (1.0 - road);
+        if (hasNormalMap > 0.5) {
+            slope = (Texel(normalMap, uv).xy * 2.0 - 1.0) * (1.0 - road);
+        }
+    }
+    if (road > 0.001) {
+        vec2 pathUv = world * 0.42;
+        albedo += Texel(roadTexture, pathUv).rgb * roadTint * road;
+        if (hasRoadNormal > 0.5) {
+            slope += (Texel(roadNormal, pathUv).xy * 2.0 - 1.0) * road;
+        }
+    }
+    normal = terrainNormal(slope * 0.95);
+}
+#endif
+
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+#ifdef MAP_SURFACE
+    vec3 albedo;
+    vec3 N;
+    sampleTerrain(tex, tc, color.rgb, albedo, N);
+    float outAlpha = 1.0;
+#else
     vec4 texel = Texel(tex, tc);
     float outAlpha = texel.a * color.a;
     if (outAlpha < 0.004) {
@@ -73,6 +157,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
         vec2 rotXY = vec2(nm.x * ca - nm.y * sa, nm.x * sa + nm.y * ca);
         N = safeNormalize(vec3(rotXY, max(nm.z, 0.05)), vec3(0.0, 0.0, 1.0));
     }
+#endif
 
     // Hemispheric ambient with subtle warm/cool variation and light vertical sky lift.
     float hemiT = clamp(N.y * -0.5 + 0.5, 0.0, 1.0);
@@ -89,6 +174,14 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec3 H = safeNormalize(L + vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0));
     float ndh = max(dot(N, H), 0.0);
     float spec = (ndh > 0.0001) ? (pow(ndh, 20.0) * max(specStrength, 0.0) * energy) : 0.0;
+#ifdef MAP_SURFACE
+    float contact = surfaceData.y;
+    hemiAmbient *= 1.0 - contact * 0.29;
+    ndl *= 1.0 - contact * 0.32;
+    if (terrainMode > 0.5 && terrainMode < 2.5) {
+        spec += pow(ndh, 16.0) * energy * 0.18;
+    }
+#endif
 
     // Billboard rim glow + gentle top sun lift (preserves dark pixel-art outlines).
     vec3 rimGlow = vec3(0.0);
@@ -139,6 +232,17 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 
     return vec4(lit, outAlpha);
 }
+#endif
+]]
+
+local TERRAIN_VERTEX_CODE = [[
+#ifdef VERTEX
+attribute vec2 TerrainData;
+vec4 position(mat4 transformProjection, vec4 vertexPosition) {
+    surfaceData = TerrainData;
+    return transformProjection * vertexPosition;
+}
+#endif
 ]]
 
 local SUNBEAM_SHADER_CODE = [[
@@ -387,6 +491,7 @@ function Shaders.load()
     local warnings = {}
     local shaderSet = {
         lit = compileShader("lit", LIT_SHADER_CODE, warnings),
+        terrain = compileShader("terrain", "#define MAP_SURFACE\n" .. LIT_SHADER_CODE .. TERRAIN_VERTEX_CODE, warnings),
         sunbeam = compileShader("sunbeam", SUNBEAM_SHADER_CODE, warnings),
         post = compileShader("post", POST_SHADER_CODE, warnings),
         _warnings = warnings,

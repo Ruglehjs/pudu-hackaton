@@ -36,7 +36,6 @@ Pudu-hackaton/
 ├── battle_fx.lua                   # Invocaciones, partículas, burbujas, textos flotantes zero-overlap, combos y finales cómicos
 ├── battle_hud.lua                  # HUD minimalista estilo Final Fantasy (strip 78px, barra rival diegética, cero spoilers)
 ├── director_panel.lua              # Panel Director [F2] para artistas/QA (biomas, reacciones, luz, escala, combos)
-├── victory_album.lua               # Modal "Álbum de Locuras" [J] en grilla 3x3 con persistencia victory_album.json
 ├── battle_worker.lua               # Hilo LÖVE2D HTTP hacia /battle_prompt + fallback offline completo
 ├── sprite_worker.lua               # Hilo LÖVE2D HTTP hacia /sprite (decodificación base64 -> Image + normal map)
 ├── ai_bridge.py                    # Servidor HTTP local 127.0.0.1:18425 (Vertex AI / Gemini API + caché RAM/disco)
@@ -90,7 +89,7 @@ Pudu-hackaton/
 | `beat_sync.lua` | PLL sin deriva acoplado a `audio:getTrackState()`, groove idle del Pudú/rivales y rebote elástico del sombrero café. |
 | `spell_ritual.lua` | Ritual de flechas luminosas convexas (2 primitivas por flecha) que suma `+8%` de poder al ritmo del jugador mientras responde la IA. |
 | `battle_fx.lua` / `battle_hud.lua` | Invocaciones, VFX, textos flotantes zero-overlap, combos, strip inferior Final Fantasy de `78px` y barra diegética rival. |
-| `director_panel.lua` / `victory_album.lua` | Herramienta Director `[F2]` y modal "Álbum de Locuras" `[J]` con persistencia `victory_album.json`. |
+| `director_panel.lua` | Herramienta Director `[F2]`. |
 | `battle_worker.lua` / `sprite_worker.lua` / `ai_bridge.py` | Hilos HTTP hacia `127.0.0.1:18425`, juez offline de 0 ms con paridad exacta de 34 campos JSON y generación/caché de sprites en vivo. |
 
 ---
@@ -102,7 +101,7 @@ Cualquier PR, commit o subagente que viole una de estas 10 reglas debe corregirs
 ### R1. LÖVE2D 11.5 estricto y soporte dual Fused / Unfused
 - `conf.lua` fija `t.version = "11.5"`, `1280×720`, `t.window.msaa = 0`, `t.window.highdpi = false`.
 - Todos los sprites pixel-art y normal maps usan `img:setFilter("nearest", "nearest")`. Solo `light_radial.png` y canvases HDR/post usan `"linear"`.
-- Toda carga de sprites (`AssetLoader.loadImageRaw`) y persistencia (`victory_album.json`, `stage_overrides.json`) debe soportar tanto ejecución desde carpeta como ejecutable fusionado (`love.filesystem.isFused()`), priorizando carpeta externa (`AssetLoader.getExternalBaseDir()` / `getSourceBaseDirectory()`) para que `[F5]` y `assets/custom/` funcionen incluso dentro del `.exe`.
+- Toda carga de sprites (`AssetLoader.loadImageRaw`) y persistencia (`stage_overrides.json`) debe soportar tanto ejecución desde carpeta como ejecutable fusionado (`love.filesystem.isFused()`), priorizando carpeta externa (`AssetLoader.getExternalBaseDir()` / `getSourceBaseDirectory()`) para que `[F5]` y `assets/custom/` funcionen incluso dentro del `.exe`.
 
 ### R2. CERO Unicode tofu (`[X]` / `□`) en fuentes
 - La fuente empaquetada `assets/fonts/PTSans.ttc` soporta ASCII + español completo (`á é í ó ú ü ñ Á É Í Ó Ú Ü Ñ ¡ ¿ ...`).
@@ -133,7 +132,7 @@ Ningún elemento de UI o texto de combate puede pisar a otro. Respetar estrictam
 
 | Carril / Elemento | Zona reservada (`1280×720`) | Regla anti-solapamiento |
 |---|---|---|
-| **Barra superior HUD** | `y = 10..48` | Izquierda: 1 chip de contexto (Bioma o Rival). Derecha: controles compactos (`Música`, `Álbum [J]`, `Mapa/Huir`, `Director [F2]`). |
+| **Barra superior HUD** | `y = 10..48` | Izquierda: 1 chip de contexto (Bioma o Rival). Derecha: controles compactos (`Música`, `Mapa/Huir`, `Director [F2]`). |
 | **Toast / Narración superior** | Centro `y = 12..46` | Auto-ajustado; **oculto durante fase `ritual`**. |
 | **Píldora de estado del Ritual** | Centro `y >= 56` | Siempre `>= 42px` encima de la bandeja de flechas (`panelY >= 126`). |
 | **Bandeja de Flechas del Ritual** | Centro `barY = max(minBarY, h * 0.235)` | Barra de poder debajo (`panelY + panelH + 8`). |
@@ -174,7 +173,7 @@ Para evitar conflictos de merge cuando trabajen varios subagentes en paralelo, c
 | **Combat VFX & Ritual Specialist** | `battle_fx.lua`, `spell_ritual.lua` | `audio.lua`, `beat_sync.lua`, `main.lua` |
 | **Audio & Groove Specialist** | `audio.lua`, `beat_sync.lua`, `tools/generate_battle_music.py`, `tools/generate_lyria3_music.py` | `main.lua` |
 | **AI Bridge & Offline Judge Specialist** | `ai_bridge.py`, `battle_worker.lua`, `sprite_worker.lua`, `requirements.txt`, `.env.example` | `encounters.lua`, `json.lua`, `tools/sprite_studio.py` |
-| **UI / HUD & Tools Specialist** | `battle_hud.lua`, `director_panel.lua`, `victory_album.lua` | `main.lua`, `encounters.lua` |
+| **UI / HUD & Tools Specialist** | `battle_hud.lua`, `director_panel.lua` | `main.lua`, `encounters.lua` |
 | **Sprite & Asset Pipeline Specialist** | `asset_loader.lua`, `tools/sprite_studio.py`, `tools/generate_encounter_sprites.py`, `tools/generate_popular_gags.py`, `assets/` | `encounters.lua` |
 | **QA & Release Build Engineer** | `tools/build_windows_exe.py`, `screenshots/`, `dist/` | Todos los `.lua` y `.py` |
 
@@ -221,7 +220,7 @@ Todo PR debe preservar estos flags en `main.lua` (`parseCliArgs` con patrones `%
 | `--lighting=dia\|atardecer\|noche\|teatral` | Fija preset de iluminación HD-2D. |
 | `--transition-preview=0.0..1.0` | Congela la cortinilla JRPG en el progreso indicado para captura. |
 | `--battle-enter-preview` | Captura la animación de entrada corriendo a la arena. |
-| `--open-director` / `--open-album` | Abre el Panel Director `[F2]` o el Álbum de Locuras `[J]` al inicio. |
+| `--open-director` | Abre el Panel Director `[F2]` al inicio. |
 | `--disable-gi` / `--disable-bloom` | Permite medir rendimiento y validar degradación limpia. |
 | `--print-perf` | Imprime la línea `[PERF] fps=... deferred=... gi=... bloom=... drawcalls=...` al salir. |
 | `--screenshot=<ruta.png>` | Guarda captura PNG limpia `0.35s` antes de cerrar. |

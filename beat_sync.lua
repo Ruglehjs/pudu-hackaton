@@ -21,8 +21,9 @@ local ceil = math.ceil
 local max = math.max
 local min = math.min
 
-local STRIDE_COLS = { 2, 3, 4, 5 }
-local WALK_COLS = { 2, 3, 4, 3 }
+local WALK_COLS = { 3, 4, 5, 4 }
+local PUDU_POSE_FIELDS = { "scaleX", "scaleY", "jumpY", "tilt", "stepX", "stepY", "hatOffsetY", "hatTilt" }
+local ENEMY_POSE_FIELDS = { "offsetX", "offsetY", "scaleX", "scaleY", "tilt", "squash" }
 
 local function clamp(v, lo, hi)
     if v < lo then
@@ -52,6 +53,28 @@ local function resolveValidBpm(val)
     return nil
 end
 
+local function blendPose(state, kind, pose, fields, time, duration)
+    if state.kind ~= kind then
+        state.from = state.pose
+        state.started = time
+        state.kind = kind
+    end
+    if state.from then
+        local progress = clamp((time - state.started) / duration, 0.0, 1.0)
+        if progress >= 1.0 then
+            state.from = nil
+        else
+            local weight = progress * progress * (3.0 - 2.0 * progress)
+            for _, field in ipairs(fields) do
+                local start = state.from[field]
+                pose[field] = start + (pose[field] - start) * weight
+            end
+        end
+    end
+    state.pose = pose
+    return pose
+end
+
 --------------------------------------------------------------------------------
 -- Constructor & Reset
 --------------------------------------------------------------------------------
@@ -68,6 +91,8 @@ function BeatSync.new(defaultBpm)
         _lastTrackPos = nil,
         _lastTrackId = nil,
         _loopBeatBase = 0.0,
+        _puduPose = {},
+        _enemyPose = {},
         trackSynced = false,
     }, BeatSync)
     return self
@@ -90,6 +115,8 @@ function BeatSync:reset(bpm)
     self._lastTrackPos = nil
     self._lastTrackId = nil
     self._loopBeatBase = 0.0
+    self._puduPose = {}
+    self._enemyPose = {}
     self.trackSynced = false
 end
 
@@ -195,12 +222,11 @@ local function evalBeatBounceCore(phase, squashX, squashY, hopHeight)
         scaleY = 1.0 - syAmp * sq
     end
 
-    -- Buoyant airborne hop window [0.22, 0.94]
-    if p >= 0.22 and p <= 0.94 then
-        local hT = (p - 0.22) / 0.72
-        local arc = sin(hT * PI)
-        local buoyant = arc * (1.14 - 0.14 * arc)
-        jumpY = -hop * buoyant
+    -- Keep the takeoff and landing tangent to the ground.
+    if p >= 0.22 and p <= 0.92 then
+        local hT = clamp((p - 0.22) / 0.70, 0.0, 1.0)
+        local arc = sin(hT * PI) ^ 1.5
+        jumpY = -hop * arc
         hopWeight = arc
         -- Subtle mid-air vertical stretch during ascent/apex
         scaleX = scaleX - sxAmp * 0.35 * arc
@@ -222,64 +248,65 @@ end
 -- Pudu Choreography & Wizard Hat Spring Physics
 --------------------------------------------------------------------------------
 
-function BeatSync:getPuduDancePose(mode, facingDirOverride)
+local function walkFrame(phase)
+    return WALK_COLS[(floor(phase + 0.5) % #WALK_COLS) + 1]
+end
+
+local function evalStride(phase)
+    local step = sin(phase * PI * 0.5)
+    local previousStep = sin((phase - 0.32) * PI * 0.5)
+    return step, step * step, previousStep * previousStep
+end
+
+local function evalHatLift(phase, hopHeight, jumpY)
+    local _, _, delayedJumpY = evalBeatBounceCore((phase - 0.09) % 1.0, 0.0, 0.0, hopHeight)
+    return clamp((delayedJumpY - jumpY) * 0.36, -2.3, 1.25) - 0.35
+end
+
+local function evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
     local p = self.beatPhase
     local bar = self.barBeat
     local bf = self.beatFloat
     local t = self.time
-    local animMode = mode or "battle_idle"
 
     if animMode == "battle_enter" then
         local row = normalizeRow(facingDirOverride, 2)
-        local col = STRIDE_COLS[(floor(t * 12.0) % 4) + 1]
-        local trotSin = sin(t * 13.5)
-        local trotWave = abs(trotSin)
-        local jumpY = -trotWave * 11.5
-        local tilt = 0.09 + trotSin * 0.03
-        local scaleX = 1.05 - 0.08 * trotWave
-        local scaleY = 0.95 + 0.09 * trotWave
-        local hatOffsetY = -1.5 - abs(sin(t * 13.5 - 0.5)) * 3.8
-        local hatTilt = -0.14 - sin(t * 13.5 - 0.4) * 0.07
+        local stridePhase = t * 12.0
+        local trot, lift, delayedLift = evalStride(stridePhase)
+        local tilt = 0.07 + trot * 0.025
 
         return {
             row = row,
-            col = col,
-            scaleX = scaleX,
-            scaleY = scaleY,
-            jumpY = jumpY,
+            col = walkFrame(stridePhase),
+            scaleX = 1.035 - 0.055 * lift,
+            scaleY = 0.965 + 0.065 * lift,
+            jumpY = -8.0 * lift,
             tilt = tilt,
             stepX = 0.0,
             stepY = 0.0,
-            hatOffsetY = hatOffsetY,
-            hatTilt = hatTilt,
+            hatOffsetY = (lift - delayedLift) * 2.8 - 0.7,
+            hatTilt = tilt - 0.12 + (lift - delayedLift) * 0.10,
             noteSparkle = false,
         }
     end
 
     if animMode == "walk" then
         local row = normalizeRow(facingDirOverride, 3)
-        local walkCycle = t * 8.5
-        local col = WALK_COLS[(floor(walkCycle) % 4) + 1]
-        local stepSin = sin(walkCycle * PI * 0.5)
-        local stepArc = abs(stepSin)
-        local jumpY = -stepArc * 3.8
-        local scaleX = 1.0 + (1.0 - stepArc) * 0.03 - stepArc * 0.02
-        local scaleY = 1.0 - (1.0 - stepArc) * 0.03 + stepArc * 0.025
-        local tilt = stepSin * 0.035
-        local hatOffsetY = -0.6 - abs(sin(walkCycle * PI * 0.5 - 0.45)) * 1.8
-        local hatTilt = tilt * 1.15 - 0.03
+        local walkCycle = walkPhase or t * 8.5
+        local step, lift, delayedLift = evalStride(walkCycle)
+        local tilt = step * 0.028
 
         return {
             row = row,
-            col = col,
-            scaleX = scaleX,
-            scaleY = scaleY,
-            jumpY = jumpY,
+            col = walkFrame(walkCycle),
+            scaleX = 1.020 - 0.033 * lift,
+            scaleY = 0.980 + 0.038 * lift,
+            jumpY = -1.8 * lift,
             tilt = tilt,
             stepX = 0.0,
             stepY = 0.0,
-            hatOffsetY = hatOffsetY,
-            hatTilt = hatTilt,
+            hatOffsetY = (lift - delayedLift) * 1.4 - 0.35,
+            hatTilt = tilt - 0.02 + (lift - delayedLift) * 0.045,
             noteSparkle = false,
         }
     end
@@ -289,12 +316,12 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
         local breathe = sin(t * 2.6)
         local sway = sin(t * 1.3)
         local tilt = sway * 0.012
-        local hatOffsetY = -0.4 - breathe * 0.85
+        local hatOffsetY = -0.35 - breathe * 0.45
         local hatTilt = tilt * 1.2 + sin(t * 1.3 - 0.3) * 0.015
 
         return {
             row = row,
-            col = 1,
+            col = breathe > 0.65 and 2 or 1,
             scaleX = 1.0 - breathe * 0.018,
             scaleY = 1.0 + breathe * 0.024,
             jumpY = 0.0,
@@ -311,34 +338,30 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
         local defaultRow = (bar % 2 == 0) and 0 or 1
         local row = normalizeRow(facingDirOverride, defaultRow)
         local scaleX, scaleY, jumpY, hopWeight
-        local col
-        local tilt
+        local hopPhase, hopHeight, tilt
 
         if bar == 0 or bar == 2 then
-            local subP = (p * 2.0) % 1.0
-            scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(subP, 0.11, 0.12, 14.0)
-            col = (hopWeight > 0.35) and 5 or 1
+            hopPhase, hopHeight = (p * 2.0) % 1.0, 14.0
+            scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(hopPhase, 0.11, 0.12, hopHeight)
             tilt = ((bar == 0) and 0.09 or -0.09) * sin(p * PI)
         else
-            scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, 0.12, 0.13, 21.0)
-            col = (hopWeight > 0.25) and 5 or 1
+            hopPhase, hopHeight = p, 19.0
+            scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(hopPhase, 0.12, 0.13, hopHeight)
             tilt = 0.11 * sin(p * TWO_PI)
         end
 
-        local lagSin = sin((p - 0.40) * TWO_PI)
-        local hatOffsetY = -1.8 * hopWeight - (3.2 + 1.4 * hopWeight) * lagSin
-        local hatTilt = tilt * 1.45 + sin((bf - 0.16) * PI) * 0.09
+        local hatTilt = tilt * 1.25 + sin((bf - 0.16) * PI) * 0.065
 
         return {
             row = row,
-            col = col,
+            col = hopWeight > 0.35 and 3 or 1,
             scaleX = scaleX,
             scaleY = scaleY,
             jumpY = jumpY,
             tilt = tilt,
             stepX = sin(bf * PI) * 4.0,
             stepY = 0.0,
-            hatOffsetY = hatOffsetY,
+            hatOffsetY = evalHatLift(hopPhase, hopHeight, jumpY),
             hatTilt = hatTilt,
             noteSparkle = false,
         }
@@ -346,7 +369,7 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
 
     if animMode == "hurt" then
         local row = normalizeRow(facingDirOverride, 1)
-        local shake = sin(t * 42.0)
+        local shake = sin(t * 26.0)
 
         return {
             row = row,
@@ -357,7 +380,7 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
             tilt = -0.16 + shake * 0.04,
             stepX = -6.0 + shake * 3.5,
             stepY = 0.0,
-            hatOffsetY = -5.5 - abs(shake) * 2.5,
+            hatOffsetY = -1.6 - abs(shake) * 1.4,
             hatTilt = -0.26 + shake * 0.08,
             noteSparkle = false,
         }
@@ -365,7 +388,7 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
 
     if animMode == "cast" or animMode == "ritual" then
         local row = normalizeRow(facingDirOverride, 2)
-        local pulse = self.beatPulse
+        local pulse = 0.5 + 0.5 * cos((p - 0.12) * TWO_PI)
         local sway = sin(bf * PI)
         local ritualLift = (animMode == "ritual") and (1.5 * abs(sway)) or 0.0
         local tilt = 0.07 + 0.03 * sway
@@ -388,45 +411,26 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
     end
 
     -- Default: "battle_idle" (4-beat Mario & Luigi: Superstar Saga idle groove)
-    local baseRow = normalizeRow(facingDirOverride, 1)
-    local inten = 1.0
-    local row = baseRow
-    local col = 1
-    local scaleX, scaleY, jumpY, hopWeight
-    local tilt = 0.0
-    local stepX = 0.0
-    local stepY = 0.0
-
+    local row = normalizeRow(facingDirOverride, 1)
+    local sway = sin(p * PI)
+    local squashX, squashY, hopHeight, tilt, stepX
     if bar == 0 then
-        scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, 0.10, 0.11, 11.0)
-        tilt = 0.065 * sin(p * PI)
-        stepX = 4.5 * sin(p * PI)
-        col = (p < 0.52) and 2 or 3
-        row = baseRow
+        squashX, squashY, hopHeight = 0.08, 0.09, 9.0
+        tilt, stepX = 0.045 * sway, 3.5 * sway
     elseif bar == 1 then
-        scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, 0.085, 0.095, 10.5)
-        tilt = -0.075 * sin(p * PI)
-        stepX = -4.0 * sin(p * PI)
-        row = (p >= 0.24 and p <= 0.78) and 2 or baseRow
-        col = 4
+        squashX, squashY, hopHeight = 0.07, 0.08, 8.0
+        tilt, stepX = -0.055 * sway, -3.0 * sway
     elseif bar == 2 then
-        scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, 0.105, 0.115, 13.0)
-        tilt = 0.060 * sin(p * PI)
-        stepX = 5.0 * sin(p * PI)
-        col = (p < 0.48) and 2 or 3
-        row = baseRow
+        squashX, squashY, hopHeight = 0.085, 0.095, 10.5
+        tilt, stepX = 0.05 * sway, 4.0 * sway
     else -- bar == 3: flourish hop with air tuck
-        scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, 0.115, 0.125, 18.0)
-        tilt = 0.085 * sin(p * TWO_PI)
-        stepX = 0.0
-        col = (p < 0.24) and 1 or ((p < 0.76) and 5 or 1)
-        row = baseRow
+        squashX, squashY, hopHeight = 0.095, 0.105, 14.5
+        tilt, stepX = 0.065 * sin(p * TWO_PI), 0.0
     end
 
-    -- Wizard hat elastic follow-through physics
-    local lagSin = sin((p - 0.42) * TWO_PI)
-    local hatOffsetY = (-0.85 * hopWeight - (2.55 + 0.95 * hopWeight) * lagSin) * inten
-    local hatTilt = tilt * 1.35 + sin((bf - 0.18) * PI) * 0.065 * inten
+    local scaleX, scaleY, jumpY, hopWeight = evalBeatBounceCore(p, squashX, squashY, hopHeight)
+    local col = hopWeight > 0.42 and 3 or 1
+    local hatTilt = tilt * 1.15 + sin((bf - 0.18) * PI) * 0.035
 
     return {
         row = row,
@@ -436,28 +440,33 @@ function BeatSync:getPuduDancePose(mode, facingDirOverride)
         jumpY = jumpY,
         tilt = tilt,
         stepX = stepX,
-        stepY = stepY,
-        hatOffsetY = hatOffsetY,
+        stepY = 0.0,
+        hatOffsetY = evalHatLift(p, hopHeight, jumpY),
         hatTilt = hatTilt,
         noteSparkle = false,
     }
+end
+
+function BeatSync:getPuduDancePose(mode, facingDirOverride, walkPhase)
+    local animMode = mode or "battle_idle"
+    local pose = evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
+    return blendPose(self._puduPose, animMode, pose, PUDU_POSE_FIELDS, self.time, 0.12)
 end
 
 --------------------------------------------------------------------------------
 -- Enemy Counterpoint Groove & Stylized Reactions
 --------------------------------------------------------------------------------
 
-function BeatSync:getEnemyGroove(reaction)
+local function evaluateEnemyGroove(self, r)
     local bf = self.beatFloat
     local t = self.time
-    local r = reaction or "idle"
 
     if r == "crying" then
         local sob = abs(sin(t * 7.5))
         local sx = 1.04 + sob * 0.04
         local sy = 0.93 - sob * 0.05
         return {
-            offsetX = sin(t * 28.0) * 1.8,
+            offsetX = sin(t * 18.0) * 1.5,
             offsetY = 3.0 + sob * 2.5,
             scaleX = sx,
             scaleY = sy,
@@ -485,7 +494,7 @@ function BeatSync:getEnemyGroove(reaction)
         local sx = 1.09 - stomp * 0.05
         local sy = 0.94 + stomp * 0.06
         return {
-            offsetX = sin(t * 45.0) * 2.6,
+            offsetX = sin(t * 24.0) * 2.0,
             offsetY = -stomp * 5.0,
             scaleX = sx,
             scaleY = sy,
@@ -495,15 +504,16 @@ function BeatSync:getEnemyGroove(reaction)
     end
 
     if r == "shocked" then
-        local jolt = abs(sin(t * 18.0))
-        local sx = 0.90 + sin(t * 40.0) * 0.04
-        local sy = 1.14 - sin(t * 40.0) * 0.04
+        local shake = sin(t * 22.0)
+        local jolt = shake * shake
+        local sx = 0.92 + shake * 0.025
+        local sy = 1.12 - shake * 0.025
         return {
-            offsetX = sin(t * 58.0) * 4.5,
-            offsetY = -9.0 - jolt * 5.0,
+            offsetX = shake * 2.8,
+            offsetY = -8.0 - jolt * 3.6,
             scaleX = sx,
             scaleY = sy,
-            tilt = sin(t * 52.0) * 0.10,
+            tilt = shake * 0.065,
             squash = sx - 1.0,
         }
     end
@@ -523,7 +533,7 @@ function BeatSync:getEnemyGroove(reaction)
     end
 
     if r == "frozen" then
-        local chatter = (sin(t * 3.5) > 0.3) and sin(t * 60.0) or 0.0
+        local chatter = max(0.0, sin(t * 3.5)) ^ 2 * sin(t * 26.0)
         local sx = 0.98
         local sy = 1.02
         return {
@@ -537,7 +547,7 @@ function BeatSync:getEnemyGroove(reaction)
     end
 
     if r == "wet" then
-        local shiver = sin(t * 34.0)
+        local shiver = sin(t * 21.0)
         local sx = 0.95 + abs(shiver) * 0.04
         local sy = 0.96
         return {
@@ -551,7 +561,7 @@ function BeatSync:getEnemyGroove(reaction)
     end
 
     if r == "scared" then
-        local trem = sin(t * 48.0)
+        local trem = sin(t * 23.0)
         local sx = 0.92 + trem * 0.03
         local sy = 1.05 - trem * 0.03
         return {
@@ -668,6 +678,11 @@ function BeatSync:getEnemyGroove(reaction)
         tilt = -sin(bf * PI) * 0.048,
         squash = sx - 1.0,
     }
+end
+
+function BeatSync:getEnemyGroove(reaction)
+    local kind = reaction or "idle"
+    return blendPose(self._enemyPose, kind, evaluateEnemyGroove(self, kind), ENEMY_POSE_FIELDS, self.time, 0.10)
 end
 
 --------------------------------------------------------------------------------

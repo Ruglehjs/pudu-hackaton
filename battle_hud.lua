@@ -177,10 +177,7 @@ function BattleHUD:drawTopBar(state, w)
     drawMusicNoteIcon(right + 12, 21, state.musicOff)
     oneLine(f.body, music, right + 35, 28 - f.body:getHeight() / 2, musicW - 39)
     self.hits[#self.hits + 1] = { action = "music", x = right, y = 11, w = musicW, h = 34 }
-    local album = ("Álbum [J] (%d/%d)"):format(state.albumCount or 0, state.encounterCount or 9)
-    local albumW = f.body:getWidth(album) + 24
-    right = right - albumW - 8
-    self:_button("album", album, right, 11, albumW, 34, true, true)
+
 
     if state.toast and state.battlePhase ~= "ritual" then
         local left = 14 + chipW + 12

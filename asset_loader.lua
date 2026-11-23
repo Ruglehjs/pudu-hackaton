@@ -1100,6 +1100,31 @@ local function makeGagTile(pattern)
   return {diff=newPixelImage(data, false), isPlaceholder=true}
 end
 
+local function makeBodoquePlaceholder()
+  local w, h = 44, 64
+  local data = love.image.newImageData(w, h)
+  -- Match the drop-in sprite's centered feet and transparent margins.
+  fillEllipse(data, w, h, 16, 57, 6, 5, 0.24, 0.12, 0.14)
+  fillEllipse(data, w, h, 28, 57, 6, 5, 0.24, 0.12, 0.14)
+  fillEllipse(data, w, h, 22, 48, 15, 10, 0.39, 0.33, 0.31)
+  for y = 43, 54, 4 do
+    fillRect(data, w, h, 9, y, 27, 2, 0.77, 0.70, 0.60)
+  end
+  fillEllipse(data, w, h, 15, 14, 5, 13, 0.63, 0.12, 0.16)
+  fillEllipse(data, w, h, 28, 15, 5, 13, 0.72, 0.14, 0.18)
+  fillEllipse(data, w, h, 22, 31, 15, 14, 0.75, 0.14, 0.20)
+  fillEllipse(data, w, h, 18, 27, 10, 8, 0.85, 0.23, 0.24)
+  for x = 15, 27, 12 do
+    fillEllipse(data, w, h, x, 28, 3, 3, 0.99, 0.94, 0.84)
+    fillEllipse(data, w, h, x - 1, 28, 1.5, 2, 0.12, 0.08, 0.09)
+  end
+  fillEllipse(data, w, h, 20, 38, 7, 3, 0.31, 0.06, 0.10)
+  fillRect(data, w, h, 16, 37, 9, 2, 1.0, 0.73, 0.24)
+  fillEllipse(data, w, h, 19, 34, 3, 2, 0.98, 0.57, 0.17)
+  applyOutline(data, 0, 0, w, h, 0.19, 0.07, 0.10)
+  return { diff = newPixelImage(data, false), isPlaceholder = true }
+end
+
 function AssetLoader.loadAll(encountersList)
   local realCount = 0
   local placeholderCount = 0
@@ -1117,6 +1142,15 @@ function AssetLoader.loadAll(encountersList)
     return pair
   end
 
+  local function loadDropIn(name, basePath, repeatWrap)
+    local pair = AssetLoader.loadSpritePair("assets/custom/" .. name, repeatWrap)
+    if pair then
+      pair.isCustom = true
+      return pair
+    end
+    return AssetLoader.loadSpritePair(basePath, repeatWrap)
+  end
+
   local assets = {
     tiles = {},
     portraits = {},
@@ -1126,7 +1160,7 @@ function AssetLoader.loadAll(encountersList)
   }
 
   -- 1. Hero Pudú 8-direction sheet (6 cols x 8 rows) + quads
-  local pudu = AssetLoader.loadSpritePair("assets/sprites/pudu_8dir_sheet", false, "nearest")
+  local pudu = loadDropIn("pudu_8dir_sheet", "assets/sprites/pudu_8dir_sheet", false)
   if not pudu then
     pudu = makePuduPlaceholderSheet()
   end
@@ -1134,7 +1168,7 @@ function AssetLoader.loadAll(encountersList)
   assets.puduQuads = AssetLoader.buildQuads(assets.pudu.diff, 6, 8)
 
   -- 2. Wizard hat gag
-  local wizardHat = AssetLoader.loadSpritePair("assets/sprites/gags/pudu_wizard_hat", false, "nearest")
+  local wizardHat = loadDropIn("pudu_wizard_hat", "assets/sprites/gags/pudu_wizard_hat", false)
   if not wizardHat then
     wizardHat = makeWizardHatPlaceholder()
   end
@@ -1145,9 +1179,7 @@ function AssetLoader.loadAll(encountersList)
   for id in pairs(rules.sprites) do
     local pattern = gagTiles[id]
     local folder = pattern and "assets/sprites/gags/" or "assets/sprites/"
-    local pair = AssetLoader.loadSpritePair("assets/custom/" .. id, false)
-    if pair then pair.isCustom = true end
-    pair = pair or AssetLoader.loadSpritePair(folder .. id, false)
+    local pair = loadDropIn(id, folder .. id, false)
     pair = pair or (pattern and makeGagTile(pattern)) or assets.mysterySummon
     local group = pattern and assets.gags or assets.props
     group[id] = trackPair(pair)
@@ -1156,12 +1188,29 @@ function AssetLoader.loadAll(encountersList)
   -- 3. 5 seamlessly tileable biome floor tiles
   for i = 1, #TILE_NAMES do
     local name = TILE_NAMES[i]
-    local tile = AssetLoader.loadSpritePair("assets/tiles/" .. name, true, "nearest")
+    local tile = loadDropIn(name, "assets/tiles/" .. name, true)
     if not tile then
       tile = makeBiomeTilePlaceholder(name)
     end
     assets.tiles[name] = trackPair(tile)
   end
+
+  -- Scenery is independent of the battle summon catalog.
+  local scenery = {
+    "ancient_tree", "apacheta_sundial", "araucaria_tree", "biome_arch", "calafate_bush", "caleuche_ship",
+    "coast_lighthouse", "copihue", "debris_pile", "desert_cactus", "lantern_post",
+    "lily_pad", "moai_relic", "mossy_boulder", "mossy_log", "mountain_crystal",
+    "orb_shrine", "pincoya_shrine", "quena_monolith", "rewe_totem", "rock_monolith",
+    "stone_pedestal", "textile_bale", "valdivian_fern", "valdivian_shrub",
+  }
+  assets.scenery = {}
+  for _, name in ipairs(scenery) do
+    local pair = loadDropIn(name, "assets/sprites/props/" .. name, false)
+    if pair then assets.scenery[name] = trackPair(pair) end
+  end
+
+  local bodoque = loadDropIn("bodoque", "assets/sprites/npcs/bodoque", false)
+  assets.bodoque = trackPair(bodoque or makeBodoquePlaceholder())
 
   -- 4. Radial soft light halo (linear filter)
   local lightRadial = AssetLoader.loadImageRaw("assets/sprites/light_radial.png", false, "linear")
