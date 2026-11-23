@@ -90,8 +90,8 @@ function BattleFX:setTypography(fonts)
     self.fonts = fonts
 end
 
-function BattleFX:setRivalCard(card)
-    self.rivalCard = card
+function BattleFX:setRivalCard(rivalCard)
+    self.rivalCard = rivalCard
 end
 
 function BattleFX:clearTurn()
@@ -753,7 +753,9 @@ local function sceneReservations(self, fonts)
     local reserved = propReservations(self, face, banner)
     reserved[#reserved + 1] = shakeSafe(self, face)
     local card = self.rivalCard
-    if card then reserved[#reserved + 1] = box(card.x - 4, card.y - 4, card.w + 8, card.h + 8) end
+    if card then
+        reserved[#reserved + 1] = box(card.x - 4, card.y - 4, card.w + 8, card.h + 8)
+    end
     if banner then reserved[#reserved + 1] = banner end
     local a = self.anchors
     if a then
@@ -953,8 +955,7 @@ function BattleFX:drawFrontParticles(fonts, px, py, ex, ey)
     end
     drawParticles(self.particles)
     if self.activeCombo and Spectacles then
-        Spectacles.drawComboBanner(self.activeCombo, fonts, OUTLINE_RING_4PX, CRIT_GLOW_OFFSETS,
-            self.w, bannerMaxWidth(self))
+        Spectacles.drawComboBanner(self.activeCombo, fonts, self.w, bannerMaxWidth(self))
     end
     local font = fonts.damage or fonts.title or fonts.heading or fonts.body or lg.getFont()
     for i = #self.texts, 1, -1 do drawText(self, self.texts[i], font, reserved) end

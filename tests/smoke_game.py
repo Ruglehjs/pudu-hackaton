@@ -19,7 +19,13 @@ HARNESS = """
 require("game_main")
 local updateGame = love.update
 local ordinaryPrint = print
-local turns, step, elapsed = 0, 1, 0
+local game
+for i = 1, 40 do
+    local name, value = debug.getupvalue(updateGame, i)
+    if name == "Game" then game = value; break end
+end
+assert(game)
+local turns, step = 0, 1
 local arrows, nextArrow, arrowTimer = {"up", "left", "down", "right"}, 1, 0
 function print(line, ...)
     ordinaryPrint(line, ...)
@@ -35,7 +41,8 @@ local function cast(text)
 end
 function love.update(dt)
     updateGame(dt)
-    elapsed = elapsed + math.min(dt, 0.05)
+    local onMap = game.mode == "explore" and game.transitionState == "none"
+    local playerReady = game.battlePhase == "player_turn" and game.hud.promptOpen
     if (step == 3 and turns == 1) or (step == 4 and turns == 2) or (step == 7 and turns == 3) then
         arrowTimer = arrowTimer + dt
         if arrowTimer >= 0.09 then
@@ -44,11 +51,11 @@ function love.update(dt)
             arrowTimer = 0
         end
     end
-    if step == 1 and elapsed > 1.0 then
+    if step == 1 and playerReady then
         love.event.push("textinput", "modo diosá")
         key("backspace")
         key("return")
-    elseif step == 2 and turns == 1 then
+    elseif step == 2 and turns == 1 and playerReady then
         cast("charco")
     elseif step == 3 and turns == 2 then
         local signal = io.open(os.getenv("PUDU_SMOKE_DISCONNECTED"), "rb")
@@ -57,18 +64,18 @@ function love.update(dt)
         cast("rayo")
     elseif step == 4 and turns == 3 then
         key("return")
-    elseif step == 5 and elapsed > 1.1 then
+    elseif step == 5 and onMap then
         key("tab")
-    elseif step == 6 and elapsed > 2.6 then
+    elseif step == 6 and playerReady then
         cast("rayo")
     elseif step == 7 and turns == 4 then
         key("escape")
-    elseif step == 8 and elapsed > 1.1 then
+    elseif step == 8 and onMap then
         key("escape")
     else
         return
     end
-    step, elapsed = step + 1, 0
+    step = step + 1
 end
 """
 TURN = re.compile(r"turno=(\d+) rival=(\S+) juez=(\S+) ms=(\d+) aprobado=(\w+) "
@@ -106,7 +113,11 @@ def prepare_game(path):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("main.lua", HARNESS.encode("utf-8"))
         for lua in ROOT.glob("*.lua"):
-            archive.write(lua, "game_main.lua" if lua.name == "main.lua" else lua.name)
+            if lua.name == "conf.lua":
+                conf = lua.read_text(encoding="utf-8").replace("pudu_fantasy_battle", "pudu_fantasy_smoke")
+                archive.writestr("conf.lua", conf)
+            else:
+                archive.write(lua, "game_main.lua" if lua.name == "main.lua" else lua.name)
         archive.write(ROOT / "battle_rules.json", "battle_rules.json")
         for asset in (ROOT / "assets").rglob("*"):
             if asset.is_file() and asset.name != ".gitkeep":

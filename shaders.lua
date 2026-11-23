@@ -65,6 +65,8 @@ extern number hasRoadNormal;
 extern vec3 roadTint;
 extern number terrainMode;
 extern number waterPollution;
+extern number waterCleanupFront;
+extern vec2 waterCleanupOrigin;
 extern number time;
 
 vec3 terrainNormal(vec2 slope) {
@@ -89,10 +91,20 @@ void sampleTerrain(Image ground, vec2 world, vec3 tint, out vec3 albedo, out vec
         float foam = smoothstep(0.72, 0.99, shallow) * smoothstep(0.25, 0.92, swell) * breakUp;
         albedo += vec3(0.58, 0.84, 0.83) * (crest * (0.045 + shallow * 0.06) + foam * 0.13);
         if (!river && waterPollution > 0.0) {
+            float pollution = waterPollution;
+            float cleanupFoam = 0.0;
+            if (waterCleanupFront > -8.0) {
+                vec2 offset = abs(world - waterCleanupOrigin);
+                float distance = offset.y + 0.42 * offset.x + sin(world.x * 0.7) * 0.45;
+                float front = waterCleanupFront - distance;
+                pollution *= 1.0 - smoothstep(-1.8, 1.8, front);
+                cleanupFoam = (1.0 - smoothstep(0.0, 0.90, abs(front))) * (0.42 + 0.58 * breakUp);
+            }
             float slick = sin(world.x * 1.8 - world.y * 1.1 + bend + swell * 0.4);
             float iridescence = smoothstep(0.10, 0.94, slick) * (0.48 + 0.52 * shallow);
             vec3 oil = mix(vec3(0.085, 0.046, 0.15), vec3(0.30, 0.14, 0.31), iridescence);
-            albedo = mix(albedo, oil * (1.0 + swell * 0.10), waterPollution);
+            albedo = mix(albedo, oil * (1.0 + swell * 0.10), pollution);
+            albedo += vec3(0.25, 0.48, 0.49) * cleanupFoam;
         }
         normal = terrainNormal(vec2(swell * 0.12 + ripple * 0.04, swell * 0.07 - ripple * 0.07));
         return;
@@ -143,7 +155,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec3 albedo;
     vec3 N;
     sampleTerrain(tex, tc, color.rgb, albedo, N);
-    float outAlpha = 1.0;
+    float outAlpha = color.a;
 #else
     vec4 texel = Texel(tex, tc);
     float outAlpha = texel.a * color.a;

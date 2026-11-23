@@ -10,6 +10,7 @@ Si tienes el ZIP portátil, extrae la carpeta completa y ejecuta **PuduFantasy.e
 Para abrir esa misma build con el puente opcional, usa **Jugar_con_IA.bat**.
 
 - Camina con WASD o las flechas. Acércate al siguiente rival o pulsa Tab cuando aparezca el botón de combate.
+- Usa la rueda del mouse para acercar o alejar un poco el mapa.
 - En la arena, escribe una idea y pulsa Enter. Puedes pegar con Ctrl+V y corregir con Retroceso.
 - Cuando aparezca el ritual, sigue las flechas con el teclado o con WASD para potenciar el golpe.
 - Esc o Tab te devuelve al mapa. Los rivales vencidos quedan marcados durante la partida.
@@ -24,7 +25,7 @@ Para entrar directamente en una pelea o reproducir un combo desde PowerShell:
 .\Jugar_Windows.bat --mock --demo-finale=crying
 ```
 
-La aventura comienza en el Desierto de Atacama con la Pila de Ropa. Sigue por Costa con la Gaviota Mafiosa y por Bosque con el Puma Dramático. El Caleuche espera al final en Chiloé. Cada victoria abre el camino al siguiente encuentro.
+La aventura comienza en el Desierto de Atacama con el Vertedero de telas. Sigue en la costa de Valparaíso con el Derrame de petróleo y en la cordillera con el Deshielo glaciar. El Incendio forestal espera al final en el Bosque de Chiloé. Cada victoria abre el camino al siguiente encuentro.
 
 Los cuatro rivales de la aventura admiten invocaciones libres. El juez local reconoce debilidades, curas, autogoles, ocho estados y seis combos. El modo `--mock` evalúa en Lua. En macOS y Linux puedes usar `./run.sh` con LÖVE 11.5.
 
