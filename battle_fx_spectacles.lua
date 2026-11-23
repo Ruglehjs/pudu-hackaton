@@ -2,6 +2,7 @@ local g = love.graphics
 local pi, tau = math.pi, 2 * math.pi
 local sin, cos = math.sin, math.cos
 local utf8 = require("utf8")
+local Skin = require("battle_ui_skin")
 
 local Spectacles = {}
 
@@ -381,12 +382,7 @@ function Spectacles.getComboBannerBounds(combo, fonts, sw, maxWidth)
     return sw * 0.5 - half - 22, 80, half * 2 + 44, 60
 end
 
-local function ribbon(mode, cx, cy, half)
-    g.polygon(mode, cx - half - 14, cy - 23, cx + half + 2, cy - 23,
-        cx + half + 14, cy + 23, cx - half - 2, cy + 23)
-end
-
-function Spectacles.drawComboBanner(combo, fonts, outlineRing4px, critGlowOffsets, sw, maxWidth)
+function Spectacles.drawComboBanner(combo, fonts, sw, maxWidth)
     if not combo then return end
     local age = combo.age or 0
     local alpha = 1 - smooth((age - 1.64) / ((combo.duration or 2.2) - 1.64))
@@ -401,36 +397,17 @@ function Spectacles.drawComboBanner(combo, fonts, outlineRing4px, critGlowOffset
     g.push("all")
     g.setBlendMode("alpha")
     g.setFont(font)
-    g.setColor(0.05, 0.025, 0.08, 0.66 * alpha)
-    ribbon("fill", cx + 4, cy + 7, half)
-    g.setColor(0.063, 0.031, 0.094, 0.96 * alpha)
-    ribbon("fill", cx, cy, half)
-    g.setLineWidth(6)
-    ribbon("line", cx, cy, half)
-    tint(theme.accent, alpha)
-    g.setLineWidth(2)
-    ribbon("line", cx, cy, half)
-    tint(theme.accent, alpha * 0.24)
-    g.line(cx - half - 3, cy - 17, cx + half - 4, cy - 17)
-    g.line(cx - half + 4, cy + 17, cx + half + 3, cy + 17)
-
-    if critGlowOffsets then
-        g.setBlendMode("add")
-        tint(theme.accent, alpha * 0.06)
-        for _, offset in ipairs(critGlowOffsets) do
-            g.print(text, tx + offset[1], ty + offset[2], 0, scale, scale)
-        end
-        g.setBlendMode("alpha")
-    end
-    g.setColor(0.063, 0.031, 0.094, alpha)
-    for _, offset in ipairs(outlineRing4px or {}) do
-        g.print(text, tx + offset[1], ty + offset[2], 0, scale, scale)
-    end
+    Skin.wood(g, cx - half - 14, cy - 24, 2 * (half + 14), 48, alpha)
+    g.setColor(0.16, 0.085, 0.047, alpha)
+    g.print(text, tx, ty + 2, 0, scale, scale)
     tint(theme.primary, alpha)
     g.print(text, tx, ty, 0, scale, scale)
-    local glintSize = 7 + sin(age * 12) * 2
-    glint(cx - half + 6, cy, glintSize, glintSize * 1.55)
-    glint(cx + half - 6, cy, glintSize, glintSize * 1.55)
+    tint(theme.accent, alpha)
+    local glintSize = 5 + sin(age * 12) * 1.5
+    glint(cx - half + 4, cy, glintSize, glintSize * 1.55)
+    glint(cx + half - 4, cy, glintSize, glintSize * 1.55)
+    Skin.pin(g, cx - half - 5, cy + 15, alpha)
+    Skin.pin(g, cx + half + 5, cy - 15, alpha)
     g.pop()
 end
 

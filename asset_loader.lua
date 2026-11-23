@@ -1101,6 +1101,10 @@ local function makeGagTile(pattern)
 end
 
 local groundScenery = {
+  completo_italiano = {
+    ".........ww../.......wwttr./.....ggrrggrb/...wrrgggttbb/.wgggttttbbb./bttttbbbb..../.bbbb........",
+    { b={0.64,0.33,0.11}, t={0.96,0.62,0.24}, w={1.00,0.94,0.77}, r={0.84,0.24,0.14}, g={0.40,0.68,0.21} },
+  },
   discarded_shirt = {
     "....r...r.../..rrrrrrrr../.lrrrrdddrr./llrrrrdd..rr/.l.rrldd..../...rrlddd.../...lrrrrd.../....lrrr....",
     { r={0.64,0.28,0.25}, l={0.84,0.47,0.34}, d={0.38,0.17,0.20} },
@@ -1274,13 +1278,15 @@ function AssetLoader.loadAll(encountersList)
   local foregrounds = {
     mirador = "vereda",
     plaza = "bosque",
-    pantano = "chiloe",
   }
-  local arenaStages = { "vereda", "muelle", "bosque", "chiloe", "mirador", "plaza", "pantano", "esquina", "oficina" }
+  local arenaStages = { "vereda", "muelle", "bosque", "montana", "mirador", "plaza", "pantano", "esquina", "oficina" }
   for _, stage in ipairs(arenaStages) do
     local background = loadDropIn(stage .. "_arena", arenaDir .. stage .. "_arena", false)
     if background then
       local foreground = loadDropIn(stage .. "_foreground", arenaDir .. stage .. "_foreground", false)
+      if stage == "pantano" and not foreground then
+        foreground = loadDropIn("chiloe_foreground", arenaDir .. "chiloe_foreground", false)
+      end
       assets.battleArenas[stage] = {
         background = trackPair(background),
         foreground = foreground and trackPair(foreground),

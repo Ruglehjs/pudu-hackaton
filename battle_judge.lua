@@ -13,15 +13,21 @@ local rules = loadRules()
 local Judge = {}
 
 local accents = {
-    ["á"]="a", ["é"]="e", ["í"]="i", ["ó"]="o", ["ú"]="u", ["ü"]="u", ["ñ"]="n",
-    ["Á"]="a", ["É"]="e", ["Í"]="i", ["Ó"]="o", ["Ú"]="u", ["Ü"]="u", ["Ñ"]="n",
+    ["á"]="a", ["é"]="e", ["í"]="i", ["ó"]="o", ["ú"]="u", ["ü"]="u",
+    ["Á"]="a", ["É"]="e", ["Í"]="i", ["Ó"]="o", ["Ú"]="u", ["Ü"]="u",
 }
 local uppercase = {["á"]="Á", ["é"]="É", ["í"]="Í", ["ó"]="Ó", ["ú"]="Ú", ["ü"]="Ü", ["ñ"]="Ñ"}
 local charPattern = "[^\128-\191][\128-\191]*"
-local function normalize(s)
+local function normalize(s, keepEnye)
     if type(s) ~= "string" then return "" end
+    if keepEnye then
+        s = s:gsub("[nN]\204\131", "ñ"):gsub("Ñ", "ñ")
+    else
+        s = s:gsub("ñ", "n"):gsub("Ñ", "n")
+    end
     s = s:gsub("\204[\128-\191]", ""):gsub("\205[\128-\175]", "")
-    return (s:gsub(charPattern, accents):lower():gsub("[^a-z0-9]+", " "):match("^%s*(.-)%s*$"))
+    local separators = keepEnye and "[^a-z0-9ñ]+" or "[^a-z0-9]+"
+    return (s:gsub(charPattern, accents):lower():gsub(separators, " "):match("^%s*(.-)%s*$"))
 end
 
 -- The JSON decoder can receive opaque bytes from a broken local bridge. Give
@@ -78,6 +84,17 @@ local function hasWords(text, words)
     end
     return false
 end
+
+function Judge.hasProfanity(text)
+    return hasWords(normalize(text, true), rules.dialogue_profanity)
+end
+
+local function cleanBattleText(text, limit, fallback)
+    local clipped = utf8Clip(text, limit)
+    if Judge.hasProfanity(clipped) or (clipped ~= text and Judge.hasProfanity(text)) then return fallback end
+    return clipped
+end
+
 local function exactSprite(text)
     local first, rest = text:match("^(%S+)%s+(.+)$")
     while first and contains(rules.prefixes, first) do
@@ -152,13 +169,14 @@ function Judge.standaloneLuaEvaluate(rawPrompt, encounter)
     local rival = rules.rivals[encounter.id] or rules.rivals.nino_helado
     local sprite = exactSprite(text)
     local r = {
-        approved = true, reject_reason = "", summon_name = utf8Clip(rawPrompt, 34),
+        approved = true, reject_reason = "",
+        summon_name = cleanBattleText(rawPrompt, rules.limits.summon_name, rules.neutral_summon_name),
         sprite_mode = sprite == "none" and "generate_live" or "existing", existing_sprite = sprite,
         sprite_prompt = "A curious enchanted stage prop with expressive eyes, pixel art facing right",
         keep_purple = hasWords(text, {"morado", "morada", "violeta", "uva", "berenjena", "pulpo"}),
         delivery_style = "throw_arc", particle_fx = "confetti", sfx = "sfx_boing", reaction_sfx = "sfx_rimshot",
         outcome_type = "creative_chaos", is_critical = false, damage_to_enemy = 30, damage_to_pudu = 0, heal_pudu = 0,
-        enemy_reaction = "confused", pudu_reaction = "happy", enemy_speech = "¡Me distraje aplaudiendo y me caí de poto!",
+        enemy_reaction = "confused", pudu_reaction = "happy", enemy_speech = "¡Me distraje aplaudiendo y perdí el equilibrio!",
         narrator_text = rival.gag, enemy_counter_name = rival.counter, enemy_counter_line = rival.line,
         enemy_counter_damage = rival.counter_damage or 11, enemy_counter_fx = "wind",
         comedy_score = 6, comedy_badge = "¡BUENA TALLA!",
@@ -233,7 +251,8 @@ function Judge.ensureResultCoherence(raw, prompt, encounter)
         local value = raw[key]
         if type(value) == type(base) then
             if rules.limits[key] then
-                local clean = utf8Clip(value, rules.limits[key])
+                local limit = rules.limits[key]
+                local clean = key == "sprite_prompt" and utf8Clip(value, limit) or cleanBattleText(value, limit, base)
                 if clean ~= "" then r[key] = clean end
             elseif rules.enums[key] then
                 if contains(rules.enums[key], value) then r[key] = value end

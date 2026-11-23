@@ -83,7 +83,7 @@ Pudu-hackaton/
 | `main.lua` | Integrador único de callbacks `love.*`, `love.errorhandler` con salida `exit 1` bajo `--quit-after=`, `parseCliArgs` (`%-%-`), hot-reload `[F5]`, captura `--screenshot` y despacho a módulos. |
 | `json.lua` | `json.encode(val)` y `json.decode(str)` UTF-8 sin dependencias externas para LuaJIT. |
 | `audio.lua` | `Audio.new(muted)` + `Audio.TRACK_META` (`user_battle` `139.20 BPM`/`beatOffset=0.342`, `overworld` `116.04`, `superstar` `132.01`, `boss` `141.16`, `plaza` `120.00`, `victory` `136.84`). Carga `"static"` protegida con `pcall`; si faltan archivos los guarda en `self.missing` sin crash. En mute mantiene el `Source` corriendo a volumen `0.0` para preservar `source:tell("seconds")`. Expone `playTrack`, `getTrackState`, `play`, `setTrackPaused`, `setMusicVolume`, `toggleMusic`, `toggleMute`, `stopAll`. |
-| `encounters.lua` | Definición de los 4 biomas (`desierto`, `costa`, `bosque`, `chiloe`), 4 rivales de campaña, temas de escenario, `semiHintLine` y lectura/escritura de overrides. |
+| `encounters.lua` | Definición de los 4 biomas (`desierto`, `costa`, `montana`, `chiloe`), 4 rivales de campaña, temas de escenario, `semiHintLine` y lectura/escritura de overrides. |
 | `stage_renderer.lua` | Overworld diagonal `↗`, relieve 3D, cámara calma room-snapped, arena lateral JRPG y minimapa. |
 | `shaders.lua` / `lighting_pipeline.lua` | Compilación GLSL con `safeSend`/`hasUniform`, MRT Deferred 2D, 2D GI, Dual-Kawase Bloom, ACES, fallback `lit`+`post` y telemetría `[PERF]`. |
 | `beat_sync.lua` | PLL sin deriva acoplado a `audio:getTrackState()`, groove idle del Pudú/rivales y rebote elástico del sombrero café. |
@@ -143,7 +143,7 @@ Ningún elemento de UI o texto de combate puede pisar a otro. Respetar estrictam
 | **Strip inferior Final Fantasy** | Fondo `h - 86 .. h - 8` (`78px` alto) | Izquierda: retrato + HP Pudú. Derecha: caja pura de prompt. |
 
 ### R7. Cámara calma Room-Snapped en el mapa diagonal `↗`
-- El Overworld asciende en diagonal de abajo-izquierda hacia arriba-derecha (`↗`, `u = 0..118`) a través de 4 biomas (`desierto` -> `costa` -> `bosque` -> `chiloe`), con un combate obligatorio por bioma.
+- El Overworld asciende en diagonal de abajo-izquierda hacia arriba-derecha (`↗`, `u = 0..118`) a través de 4 biomas (`desierto` -> `costa` -> `montana` -> `chiloe`), con un combate obligatorio por bioma.
 - La cámara en exploración permanece **100% QUIETA** dentro de la habitación activa (cero seguimiento nervioso frame a frame que provoque mareo).
 - Solo dispara **un único paneo suave (`smoothstep`)** cuando el Pudú cruza el umbral del cuarto (`du > 7.4` o `dv > 5.4`), bloqueando brevemente el avance durante el paneo.
 
@@ -210,7 +210,7 @@ Todo PR debe preservar estos flags en `main.lua` (`parseCliArgs` con patrones `%
 | Flag CLI | Propósito QA / Automatización |
 |---|---|
 | `--mode=explore\|battle` | Inicia directo en Overworld `↗` o en Arena de Batalla. |
-| `--biome=desierto\|costa\|bosque\|chiloe` | Teleporta al bioma indicado en modo exploración. `ciudad` es un alias de `chiloe`. |
+| `--biome=desierto\|costa\|montana\|chiloe` | Teleporta al bioma indicado en modo exploración. `montaña` apunta a `montana`. `bosque` y `ciudad` apuntan a `chiloe`. |
 | `--encounter=1..9` | Selecciona uno de los 4 combates de campaña o uno de los combates de QA (5 al 9). |
 | `--mock` | Activa modo prueba 0 ms (sin llamadas externas a Gemini). |
 | `--auto-prompt="<texto>"` | Envía el prompt automáticamente y resuelve las flechas del ritual en modo test. |

@@ -23,10 +23,10 @@ OUTPUT = ROOT / "screenshots/qa_final"
 ENGINE = ROOT / "tools/love-win64/lovec.exe"
 PERF = re.compile(r"\[PERF\] fps=(\d+) deferred=(\w+) gi=(\w+) bloom=(\w+) drawcalls=(\d+)")
 SCENES = (
-    ("01_overworld_bosque", 2, "--mode=explore", "--biome=bosque"),
-    ("02_overworld_desierto", 2, "--mode=explore", "--biome=desierto"),
-    ("03_overworld_costa", 2, "--mode=explore", "--biome=costa"),
-    ("04_overworld_chiloe", 2, "--mode=explore", "--biome=ciudad"),
+    ("01_overworld_desierto", 2, "--mode=explore", "--biome=desierto"),
+    ("02_overworld_costa", 2, "--mode=explore", "--biome=costa"),
+    ("03_overworld_montana", 2, "--mode=explore", "--biome=montana"),
+    ("04_overworld_chiloe", 2, "--mode=explore", "--biome=chiloe"),
     ("05_transicion_jrpg", 1.8, "--mode=explore", "--encounter=3", "--transition-preview=0.45"),
     ("06_batalla_inicio", 1.4, "--mode=battle", "--encounter=1", "--battle-enter-preview", "--screenshot-phase=battle_enter"),
     ("07_batalla_ritual_flechas", 2.2, "--mode=battle", "--encounter=1", "--test-ritual"),

@@ -46,11 +46,11 @@ Todos los campos son opcionales; solo sobreescribe los que necesites.
 |---|---|---|
 | `overworld_desierto` | Exploración Atacama | `assets/audio/bgm_overworld_desierto.wav` |
 | `overworld_costa` | Exploración Valparaíso | `assets/audio/bgm_overworld_costa.wav` |
-| `overworld_bosque` | Exploración Bosque Valdiviano | `assets/audio/bgm_overworld_bosque.wav` |
+| `overworld_bosque` | Exploración Cordillera de los Andes | `assets/audio/bgm_overworld_bosque.wav` |
 | `overworld_chiloe` | Exploración Chiloé | `assets/audio/bgm_overworld_chiloe.wav` |
 | `battle_fardo` | Batalla Fardo (Atacama) | `assets/audio/bgm_battle_pila_ropa.wav` |
 | `battle_mancha` | Batalla La Mancha (Valparaíso) | `assets/audio/bgm_battle_gaviota.wav` |
-| `battle_brasa` | Batalla Brasa (Bosque Valdiviano) | `assets/audio/bgm_battle_puma.wav` |
-| `battle_tempano` | Batalla Témpano (Jefe Final — Chiloé) | `assets/audio/bgm_battle_caleuche.wav` |
+| `battle_brasa` | Incendio forestal (jefe final de Chiloé) | `assets/audio/bgm_battle_puma.wav` |
+| `battle_tempano` | Deshielo glaciar (Cordillera de los Andes) | `assets/audio/bgm_battle_caleuche.wav` |
 | `victory` | Fanfarria de victoria | `assets/audio/bgm_victory.wav` |
 | `defeat` | Jingle de derrota | `assets/audio/bgm_defeat.wav` |

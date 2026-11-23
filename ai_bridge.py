@@ -55,7 +55,9 @@ Los combos exigen un estado de un turno ANTERIOR. Menciona el cambio físico que
 en escena. Usa exclusivamente el JSON pedido. summon_name: máximo 34 caracteres.
 enemy_speech y enemy_counter_line: 72; narrator_text: 78; anticipation_line: 52.
 sprite_prompt: descripción del objeto en inglés, 10 a 16 palabras, incluye facing right.
-Sin emojis. Reacciona a la situación del rival y no repitas el prompt como chiste."""
+Todo texto visible debe ser apto para todas las edades, sin garabatos, groserías ni emojis.
+Si el jugador escribe un garabato, reformula la invocación con vocabulario limpio.
+Reacciona a la situación del rival y no repitas el prompt como chiste."""
 
 
 def _clip(text, limit):
@@ -65,13 +67,25 @@ def _clip(text, limit):
     return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
 
 
-def _words(value):
+def _words(value, *, keep_enye=False):
     bare = unicodedata.normalize("NFKD", _clip(value, 600).casefold())
-    return " ".join(re.findall(r"[a-z0-9]+", "".join(c for c in bare if not unicodedata.combining(c))))
+    if keep_enye:
+        bare = bare.replace("n\u0303", "ñ")
+    pattern = r"[a-z0-9ñ]+" if keep_enye else r"[a-z0-9]+"
+    return " ".join(re.findall(pattern, "".join(c for c in bare if not unicodedata.combining(c))))
 
 
 def _includes(normalized, phrases):
-    return any(" " + phrase + " " in " " + normalized + " " for phrase in phrases)
+    padded = f" {normalized} "
+    return any(f" {phrase} " in padded for phrase in phrases)
+
+
+def _clean_battle_text(text, limit, fallback):
+    clipped = _clip(text, limit)
+    if (_includes(_words(clipped, keep_enye=True), RULES["dialogue_profanity"])
+            or (clipped != text and _includes(_words(text, keep_enye=True), RULES["dialogue_profanity"]))):
+        return fallback
+    return clipped
 
 
 def _strings(value):
@@ -112,7 +126,7 @@ def _judge_local(prompt, enc):
     words = _words(text)
     rival = RULES["rivals"].get(enc["id"], RULES["rivals"]["nino_helado"])
     sprite = match_exact_existing_sprite(text) or "none"
-    name = _clip(text, 34)
+    name = _clean_battle_text(text, TEXT_LIMITS["summon_name"], RULES["neutral_summon_name"])
     state = next((s for s in RULES["states"] if _includes(words, s["words"])), None)
     r = dict(
         approved=True, reject_reason="", summon_name=name, sprite_mode="existing" if sprite != "none" else "generate_live",
@@ -121,7 +135,7 @@ def _judge_local(prompt, enc):
         delivery_style="throw_arc", particle_fx="confetti", sfx="sfx_boing", reaction_sfx="sfx_rimshot",
         outcome_type="creative_chaos", is_critical=False, damage_to_enemy=30, damage_to_pudu=0, heal_pudu=0,
         enemy_reaction="confused", pudu_reaction="happy",
-        enemy_speech="¡Me distraje aplaudiendo y me caí de poto!", narrator_text=rival["gag"],
+        enemy_speech="¡Me distraje aplaudiendo y perdí el equilibrio!", narrator_text=rival["gag"],
         enemy_counter_name=rival["counter"], enemy_counter_line=rival["line"], enemy_counter_damage=rival.get("counter_damage", 11),
         enemy_counter_fx="wind", comedy_score=6, comedy_badge="¡BUENA TALLA!", keep_prop_on_stage=bool(state),
         prop_anchor="ground_enemy", status_tag="DESPISTADO", ritual_theme_color="#68CEA4",
@@ -196,8 +210,10 @@ def sanitize_battle_result(raw, prompt, encounter):
         if isinstance(raw.get(key), bool):
             r[key] = raw[key]
     for key, limit in TEXT_LIMITS.items():
-        if isinstance(raw.get(key), str) and raw[key].strip():
-            r[key] = _clip(raw[key], limit)
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            r[key] = (_clip(value, limit) if key in ("sprite_prompt", "ritual_theme_color")
+                      else _clean_battle_text(value, limit, base[key]))
     for key, (lo, hi) in RANGES.items():
         v = raw.get(key)
         if type(v) is int or (type(v) is float and math.isfinite(v)):

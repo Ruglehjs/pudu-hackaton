@@ -1,15 +1,13 @@
 local Skin = require("battle_ui_skin")
+local Scores = require("battle_scores")
 local BattleHUD = {}
 BattleHUD.__index = BattleHUD
+BattleHUD.VICTORY_ENTRANCE = 0.45
 
 local g
 local CHAR = "[^\128-\191][\128-\191]*"
 local PROMPT_LIMIT = 68
-local INK = { 0.98, 0.98, 1 }
-local MUTED = { 0.68, 0.78, 0.91 }
-local GOLD = { 1, 0.85, 0.48 }
-local BLUE_TOP = { 0.13, 0.26, 0.50 }
-local BLUE_BOTTOM = { 0.035, 0.075, 0.19 }
+local SCORE_ROWS = 6
 local STATE_TAGS = {
     mojado = { "MOJADO", { 0.45, 0.80, 1.00 } },
     congelado = { "CONGELADO", { 0.62, 0.94, 1.00 } },
@@ -46,7 +44,7 @@ end
 
 local function label(font, text, x, y, width, align, color)
     g.setFont(font)
-    g.setColor(color or INK)
+    g.setColor(color or Skin.cream)
     g.printf(text, x, math.floor(y), width, align or "left")
 end
 
@@ -54,23 +52,13 @@ local function oneLine(font, text, x, y, width, align, color)
     label(font, fit(BattleHUD.displayText(text), font, width), x, y, width, align, color)
 end
 
-local function drawExploreWindow(x, y, w, h)
-    g.setColor(0.015, 0.025, 0.06, 0.55)
-    g.rectangle("fill", x + 2, y + 4, w, h, 8)
-    g.setColor(0.025, 0.04, 0.09)
-    g.rectangle("fill", x, y, w, h, 7)
-    for i = 0, 4 do
-        local mix = i / 4
-        local bandH = (h - 8) / 5
-        g.setColor(BLUE_TOP[1] + (BLUE_BOTTOM[1] - BLUE_TOP[1]) * mix,
-            BLUE_TOP[2] + (BLUE_BOTTOM[2] - BLUE_TOP[2]) * mix,
-            BLUE_TOP[3] + (BLUE_BOTTOM[3] - BLUE_TOP[3]) * mix)
-        g.rectangle("fill", x + 4, y + 4 + i * bandH, w - 8, bandH)
-    end
-    g.setColor(0.82, 0.89, 1, 0.96)
-    g.setLineWidth(2)
-    g.rectangle("line", x + 3, y + 3, w - 6, h - 6, 5)
-    g.setLineWidth(1)
+local function drawName(font, text, centerX, centerY, width)
+    text = BattleHUD.displayText(text)
+    local textWidth = font:getWidth(text)
+    local scale = math.min(1, width / math.max(1, textWidth))
+    g.setColor(Skin.cream)
+    g.print(text, font, math.floor(centerX - textWidth * scale / 2),
+        math.floor(centerY - font:getHeight() * scale / 2), 0, scale, scale)
 end
 
 local function drawBar(x, y, w, h, ratio, color)
@@ -87,8 +75,8 @@ local function drawBar(x, y, w, h, ratio, color)
     end
 end
 
-local function drawMusicNoteIcon(x, y, muted, inBattle)
-    g.setColor(muted and (inBattle and Skin.muted or MUTED) or (inBattle and Skin.gold or GOLD))
+local function drawMusicNoteIcon(x, y, muted)
+    g.setColor(muted and Skin.muted or Skin.gold)
     g.ellipse("fill", x + 3, y + 12, 3.5, 2.5)
     g.ellipse("fill", x + 12, y + 10, 3.5, 2.5)
     g.setLineWidth(2)
@@ -137,74 +125,83 @@ function BattleHUD:backspace()
     if self.promptOpen then self.input = self.input:gsub(CHAR .. "$", "") end
 end
 
+local function contains(mx, my, x, y, w, h)
+    return mx ~= nil and mx >= x and mx <= x + w and my >= y and my <= y + h
+end
+
 function BattleHUD:hitTest(mx, my)
     for _, hit in ipairs(self.hits) do
-        if mx >= hit.x and mx <= hit.x + hit.w and my >= hit.y and my <= hit.y + hit.h then
+        if contains(mx, my, hit.x, hit.y, hit.w, hit.h) then
             return hit.action
         end
     end
 end
 
-function BattleHUD:_button(action, text, x, y, w, h, enabled, style)
-    local font = self.fonts.body
-    local color = INK
-    local inset = 5
-    if style == "explore" then
-        drawExploreWindow(x, y, w, h)
-    else
-        Skin.wood(g, x, y, w, h)
-        color = Skin.cream
-        if style == "spell" then
-            font = self.fonts.story or self.fonts.heading
-            color = enabled and Skin.cream or Skin.muted
-            g.setColor(enabled and { 0.54, 0.57, 0.28 } or { 0.43, 0.38, 0.24 })
-            g.rectangle("fill", x + 3, y + 3, w - 6, h - 7, 7)
-            g.setColor(enabled and { 0.22, 0.31, 0.14 } or { 0.25, 0.23, 0.15 })
-            g.rectangle("fill", x + 5, y + 5, w - 10, h - 11, 5)
-            if action == "conjure" then
-                Skin.spark(g, x + 17, y + h / 2 - 1, 5, enabled and Skin.gold or Skin.muted)
-                inset = 26
-            end
-        end
+function BattleHUD:_buttonFace(action, x, y, w, h, enabled, spell)
+    Skin.wood(g, x, y, w, h)
+    local hovered = enabled and contains(self.pointerX, self.pointerY, x, y, w, h)
+    if spell or hovered then
+        g.setColor(hovered and Skin.gold or (enabled and { 0.54, 0.57, 0.28 } or { 0.43, 0.38, 0.24 }))
+        g.rectangle("fill", x + 3, y + 3, w - 6, h - 7, 7)
+        g.setColor(hovered and { 0.28, 0.37, 0.16 } or (enabled and { 0.22, 0.31, 0.14 } or { 0.25, 0.23, 0.15 }))
+        g.rectangle("fill", x + 5, y + 5, w - 10, h - 11, 5)
     end
-    oneLine(font, text, x + inset, y + (h - font:getHeight()) / 2 - 1, w - inset - 5, "center", color)
     if enabled then self.hits[#self.hits + 1] = { action = action, x = x, y = y, w = w, h = h } end
+end
+
+function BattleHUD:_button(action, text, x, y, w, h, enabled, spell)
+    self:_buttonFace(action, x, y, w, h, enabled, spell)
+    local font = spell and (self.fonts.story or self.fonts.heading) or self.fonts.body
+    local inset = 5
+    if action == "conjure" then
+        Skin.spark(g, x + 17, y + h / 2 - 1, 5, enabled and Skin.gold or Skin.muted)
+        inset = 26
+    end
+    oneLine(font, text, x + inset, y + (h - font:getHeight()) / 2 - 1, w - inset - 5, "center",
+        enabled and Skin.cream or Skin.muted)
 end
 
 function BattleHUD:drawTopBar(state, w)
     self.hits = {}
+    self.pointerX, self.pointerY = state.pointerX, state.pointerY
     local f = self.fonts
     local inBattle = state.mode == "battle"
-    local contextFont = inBattle and (f.story or f.heading) or f.body
+    local contextFont = f.story or f.heading
     local context = BattleHUD.displayText(state.context)
-    local chipW = math.min(contextFont:getWidth(context) + (inBattle and 55 or 42), w * 0.30)
-    if inBattle then
-        Skin.wood(g, 14, 11, chipW, 34)
-        Skin.sprig(g, 24, 31, -0.2, 0.64)
-        Skin.pin(g, 14 + chipW - 10, 28)
-        oneLine(contextFont, context, 49, 27 - contextFont:getHeight() / 2, chipW - 52, "left", Skin.cream)
-    else
-        drawExploreWindow(14, 11, chipW, 34)
-        g.setColor(state.contextColor or GOLD)
-        g.circle("fill", 30, 28, 4)
-        oneLine(contextFont, context, 42, 28 - contextFont:getHeight() / 2, chipW - 36)
-    end
+    local chipW = math.min(contextFont:getWidth(context) + 55, w * (inBattle and 0.30 or 0.43))
+    Skin.wood(g, 14, 11, chipW, 34)
+    Skin.sprig(g, 24, 31, -0.2, 0.64)
+    Skin.pin(g, 14 + chipW - 10, 28)
+    oneLine(contextFont, context, 49, 27 - contextFont:getHeight() / 2, chipW - 52, "left", Skin.cream)
 
     local right = w - 14
     if state.canStartBattle or state.battlePhase == "player_turn" then
         local text = state.mode == "explore" and "Combate [Tab]" or "Mapa [Esc]"
         local width = f.body:getWidth(text) + 24
         right = right - width
-        self:_button("map", text, right, 11, width, 34, true, inBattle and "wood" or "explore")
+        self:_button("map", text, right, 11, width, 34, true)
         right = right - 8
     end
     local music = "Música"
     local musicW = f.body:getWidth(music) + 43
     right = right - musicW
-    if inBattle then Skin.wood(g, right, 11, musicW, 34) else drawExploreWindow(right, 11, musicW, 34) end
-    drawMusicNoteIcon(right + 12, 21, state.musicOff, inBattle)
-    oneLine(f.body, music, right + 35, 28 - f.body:getHeight() / 2, musicW - 39, "left", inBattle and Skin.cream or INK)
-    self.hits[#self.hits + 1] = { action = "music", x = right, y = 11, w = musicW, h = 34 }
+    self:_buttonFace("music", right, 11, musicW, 34, true)
+    drawMusicNoteIcon(right + 12, 21, state.musicOff)
+    oneLine(f.body, music, right + 35, 28 - f.body:getHeight() / 2, musicW - 39, "left", Skin.cream)
+
+    if state.canOpenScores then
+        local text = "Puntajes [F3]"
+        local width = f.body:getWidth(text) + 24
+        right = right - width - 8
+        self:_button("scores", text, right, 11, width, 34, true)
+    end
+    if state.totalScore and state.battlePhase ~= "ritual" then
+        local text = ("%d pts"):format(state.totalScore)
+        local width = f.body:getWidth(text) + 22
+        right = right - width - 8
+        Skin.wood(g, right, 11, width, 34)
+        label(f.body, text, right, 28 - f.body:getHeight() / 2, width, "center", Skin.gold)
+    end
 
     if state.toast and state.battlePhase ~= "ritual" then
         local left = 14 + chipW + 12
@@ -213,47 +210,77 @@ function BattleHUD:drawTopBar(state, w)
         local toast = fit(BattleHUD.displayText(state.toast), f.body, room - 22)
         local tw = f.body:getWidth(toast) + 22
         local tx = clamp((w - tw) / 2, left, left + room - tw)
-        if inBattle then Skin.paper(g, tx, 12, tw, 32) else drawExploreWindow(tx, 12, tw, 32) end
-        label(f.body, toast, tx + 11, 28 - f.body:getHeight() / 2, tw - 22, "center", inBattle and Skin.ink or GOLD)
+        Skin.paper(g, tx, 12, tw, 32)
+        label(f.body, toast, tx + 11, 28 - f.body:getHeight() / 2, tw - 22, "center", Skin.ink)
     end
 end
 
 function BattleHUD:drawExploreBar(w, h)
-    local text = "WASD / Flechas para caminar"
     local f = self.fonts.small
-    local width = f:getWidth(text) + 26
-    drawExploreWindow(w - width - 14, h - 40, width, 30)
-    label(f, text, w - width - 14, h - 25 - f:getHeight() / 2, width, "center")
+    local walk = "Caminar"
+    local keys = { "WASD", "Flechas" }
+    local width = f:getWidth(walk) + f:getWidth(keys[1]) + f:getWidth(keys[2]) + 80
+    local x, y = w - width - 14, h - 43
+    Skin.wood(g, x, y, width, 33)
+    Skin.sprig(g, x + 11, y + 22, -0.28, 0.50)
+    local textY = y + (33 - f:getHeight()) / 2
+    label(f, walk, x + 32, textY, f:getWidth(walk) + 2, "left", Skin.cream)
+    local keyX = x + 41 + f:getWidth(walk)
+    for _, key in ipairs(keys) do
+        local keyW = f:getWidth(key) + 12
+        Skin.paper(g, keyX, y + 6, keyW, 21)
+        label(f, key, keyX, textY, keyW, "center", Skin.ink)
+        keyX = keyX + keyW + 4
+    end
 end
 
-function BattleHUD:layoutRivalPortrait(name, ex, w, h)
+function BattleHUD:drawCompletoPickup(w, h, image)
+    local title, detail = "¡Completo recogido!", "El próximo rival empezará con la mitad de su vida."
+    local heading, body = self.fonts.heading, self.fonts.body
+    local width = math.max(heading:getWidth(title), body:getWidth(detail)) + 76
+    local x, y = math.floor((w - width) / 2), h - 48
+    Skin.wood(g, x, y, width, 42)
+    Skin.paper(g, x + 5, y + 5, 47, 32)
+    local iw, ih = image:getDimensions()
+    local scale = math.min(35 / iw, 24 / ih)
+    g.setColor(1, 1, 1, 1)
+    g.draw(image, x + 29, y + 21, 0, scale, scale, iw / 2, ih / 2)
+    label(heading, title, x + 61, y + 3, width - 67, "left", Skin.cream)
+    label(body, detail, x + 61, y + 3 + heading:getHeight(), width - 67, "left", Skin.cream)
+end
+
+function BattleHUD:layoutPortrait(name, centerX, w, h)
     local font = self.fonts.story or self.fonts.heading
     local size = math.floor(clamp(52 + (h - 540) * 0.16, 52, 86))
     local width = clamp(font:getWidth(BattleHUD.displayText(name)) + 28, size + 12, w * 0.24)
-    return { x = math.floor(clamp(ex - width / 2, 16, w - width - 16)),
+    return { x = math.floor(clamp(centerX - width / 2, 16, w - width - 16)),
         y = math.floor(54 + clamp((h - 540) * 0.04, 0, 18)), w = width, h = size + 28, size = size }
 end
 
-function BattleHUD:drawRivalPortrait(state, card)
+local function drawFramedPortrait(image, faceX, y, size, accent)
+    g.setColor(0.12, 0.07, 0.05, 0.75)
+    g.rectangle("fill", faceX - 2, y + 2, size + 4, size + 4, 3)
+    g.setColor(accent or Skin.gold)
+    g.rectangle("fill", faceX - 2, y - 2, size + 4, size + 4, 3)
+    g.setColor(0.16, 0.08, 0.06)
+    g.rectangle("fill", faceX, y, size, size)
+    if image then
+        local iw, ih = image:getDimensions()
+        local scale = size / math.max(iw, ih)
+        g.setColor(1, 1, 1)
+        g.draw(image, faceX + size / 2, y + size / 2, 0, scale, scale, iw / 2, ih / 2)
+    end
+end
+
+function BattleHUD:drawPortrait(name, image, card, active)
     local x, y, w, size = card.x, card.y, card.w, card.size
     local faceX = math.floor(x + (w - size) / 2)
     local font = self.fonts.story or self.fonts.heading
     Skin.wood(g, x, y + size + 2, w, 26)
-    oneLine(font, state.rivalName, x + 8, y + size + 14 - font:getHeight() / 2, w - 16, "center", Skin.cream)
-
-    g.setColor(0.12, 0.07, 0.05, 0.75)
-    g.rectangle("fill", faceX - 2, y + 2, size + 4, size + 4, 3)
-    g.setColor(state.rivalShouts and { 1, 0.67, 0.34 } or Skin.gold)
-    g.rectangle("fill", faceX - 2, y - 2, size + 4, size + 4, 3)
-    g.setColor(0.16, 0.08, 0.06)
-    g.rectangle("fill", faceX, y, size, size)
-    local image = state.rivalPortrait
-    if image then
-        local iw, ih = image:getDimensions()
-        g.setColor(1, 1, 1)
-        g.draw(image, faceX, y, 0, size / iw, size / ih)
-    else
-        local initial = BattleHUD.displayText(state.rivalName):match(CHAR) or "?"
+    drawName(font, name, x + w / 2, y + size + 14, w - 16)
+    drawFramedPortrait(image, faceX, y, size, active and { 1, 0.67, 0.34 })
+    if not image then
+        local initial = BattleHUD.displayText(name):match(CHAR) or "?"
         oneLine(font, initial, faceX, y + (size - font:getHeight()) / 2, size, "center", Skin.cream)
     end
 end
@@ -332,21 +359,22 @@ function BattleHUD:drawVersus(pudu, portraits, rivalName, rivalColor, w, h, prog
         end
     end
 
-    local badgeW, badgeH = 79 + burst * 10, 39 + burst * 5
-    g.setColor(0.95, 0.69, 0.37)
-    g.polygon("fill", cx - badgeW, cy, cx - 46, cy - badgeH, cx + 46, cy - badgeH,
-        cx + badgeW, cy, cx + 46, cy + badgeH, cx - 46, cy + badgeH)
-    g.setColor(0.13, 0.065, 0.065)
-    g.polygon("fill", cx - badgeW + 6, cy, cx - 44, cy - badgeH + 4, cx + 44, cy - badgeH + 4,
-        cx + badgeW - 6, cy, cx + 44, cy + badgeH - 4, cx - 44, cy + badgeH - 4)
-    label(title, "VS", cx - badgeW, cy - title:getHeight() / 2, badgeW * 2, "center", Skin.cream)
+    local badgeW, badgeH = 158 + burst * 20, 78 + burst * 10
+    Skin.wood(g, cx - badgeW / 2, cy - badgeH / 2, badgeW, badgeH)
+    Skin.pin(g, cx - badgeW / 2 + 14, cy)
+    Skin.pin(g, cx + badgeW / 2 - 14, cy)
+    label(title, "VS", cx - badgeW / 2, cy - title:getHeight() / 2, badgeW, "center", Skin.cream)
 
-    local nameY, nameW = h * 0.82, w * 0.36
+    local nameY, nameH = h * 0.80, names:getHeight() + 18
     for _, name in ipairs({ { "Pudú", w * 0.215, heroColor }, { rivalName, w * 0.785, color } }) do
+        local nameW = clamp(names:getWidth(BattleHUD.displayText(name[1])) + 76, 160, w * 0.36)
         local x = math.floor(name[2] - nameW / 2)
-        oneLine(names, name[1], x, nameY, nameW, "center", Skin.cream)
+        Skin.wood(g, x, nameY, nameW, nameH)
+        Skin.sprig(g, x + 13, nameY + nameH * 0.63, -0.24, 0.65)
+        Skin.pin(g, x + nameW - 14, nameY + nameH / 2)
+        drawName(names, name[1], x + nameW / 2, nameY + 7 + names:getHeight() / 2, nameW - 62)
         g.setColor(name[3])
-        g.rectangle("fill", name[2] - 26, nameY + names:getHeight() + 5, 52, 2)
+        g.rectangle("fill", name[2] - 15, nameY + nameH - 6, 30, 1)
     end
     g.setColor(1, 0.93, 0.75, burst * 0.23)
     g.rectangle("fill", 0, 0, w, h)
@@ -391,10 +419,7 @@ function BattleHUD:drawRivalStageBar(state, ex, ey, w)
         local px = clamp(ex - pills.width / 2, 12, w - pills.width - 12)
         local py = y + 20 + (i - 1) * 24
         for _, pill in ipairs(pills) do
-            g.setColor(0.19, 0.12, 0.075)
-            g.rectangle("fill", px, py, pill.width, 20, 7)
-            g.setColor(pill.color)
-            g.rectangle("line", px + 0.5, py + 0.5, pill.width - 1, 19, 7)
+            Skin.wood(g, px, py, pill.width, 20)
             label(f, pill.text, px, py + (20 - f:getHeight()) / 2, pill.width, "center", pill.color)
             px = px + pill.width + 6
         end
@@ -445,19 +470,25 @@ function BattleHUD:drawBattleStrip(state, w, h)
     local leftW, gap = 196, 10
     local x, y, width = battleStrip(w, h)
     Skin.wood(g, x, y, leftW, 78)
-    local portrait = state.portraits[state.mood or "happy"]
+    local portrait = state.puduPortrait or state.portraits[state.mood or "happy"]
     local portraitX, portraitY = x + 40, y + 38
+    local portraitRadius = 24
     g.setColor(0.14, 0.09, 0.05)
     g.circle("fill", portraitX, portraitY + 1, 29)
     g.setColor(0.73, 0.52, 0.29)
     g.circle("fill", portraitX, portraitY, 27)
     g.setColor(0.19, 0.26, 0.13)
-    g.circle("fill", portraitX, portraitY, 24)
+    g.circle("fill", portraitX, portraitY, portraitRadius)
     if portrait then
         local pw, ph = portrait:getDimensions()
-        local scale = 43 / math.max(pw, ph)
+        local scale = state.puduPortrait and (2 * portraitRadius) / math.min(pw, ph) or 43 / math.max(pw, ph)
+        g.stencil(function()
+            g.circle("fill", portraitX, portraitY, portraitRadius)
+        end, "replace", 1)
+        g.setStencilTest("equal", 1)
         g.setColor(1, 1, 1)
         g.draw(portrait, portraitX, portraitY, 0, scale, scale, pw / 2, ph / 2)
+        g.setStencilTest()
     end
     Skin.sprig(g, x + 29, y + 65, math.pi + 0.62, 0.78)
     Skin.pin(g, x + 181, y + 17)
@@ -505,32 +536,151 @@ function BattleHUD:drawBattleStrip(state, w, h)
     end
     g.pop()
     self.hits[#self.hits + 1] = { action = "prompt", x = fieldX, y = fieldY, w = fieldW, h = fieldH }
-    self:_button("conjure", "Conjurar", rightX + rightW - 141, fieldY, 128, fieldH, BattleHUD.canSubmit(self.input), "spell")
+    self:_button("conjure", "Conjurar", rightX + rightW - 141, fieldY, 128, fieldH, BattleHUD.canSubmit(self.input), true)
 end
 
-function BattleHUD:drawVictoryOrDefeat(state, w, h)
-    local won = state.battlePhase == "victory"
-    if not won and state.battlePhase ~= "defeat" then return end
+function BattleHUD:drawVictory(state, w, h)
+    self.hits = {}
+    self.pointerX, self.pointerY = state.pointerX, state.pointerY
+    local f = self.fonts
+    local age = state.victoryElapsed
+    local arrival = easeSlide(age / BattleHUD.VICTORY_ENTRANCE)
+
+    g.setColor(0.09, 0.05, 0.04, 0.68 * arrival)
+    g.rectangle("fill", 0, 0, w, h)
+
+    local panelW, panelH = 760, 368
+    local x = math.floor((w - panelW) / 2)
+    local y = math.floor((h - panelH) / 2 + (1 - arrival) * 54)
+    local sparkAge = clamp((age - 0.08) / 1.35, 0, 1)
+    if sparkAge > 0 and sparkAge < 1 then
+        local spread = easeSlide(sparkAge)
+        local color = { 1, 0.80, 0.42, spread * (1 - sparkAge) }
+        for i = 1, 18 do
+            local angle = i * math.pi / 9
+            local sx = w / 2 + math.cos(angle) * (panelW / 2 + 36 + spread * (28 + i % 3 * 12))
+            local sy = y + panelH / 2 + math.sin(angle) * (panelH / 2 + 30 + spread * 40)
+            Skin.spark(g, sx, sy, (4 + i % 4) * (1 - sparkAge), color)
+        end
+    end
+
+    Skin.wood(g, x, y, panelW, panelH)
+    Skin.pin(g, x + 14, y + 14)
+    Skin.pin(g, x + panelW - 14, y + 14)
+    Skin.pin(g, x + 14, y + panelH - 14)
+    Skin.pin(g, x + panelW - 14, y + panelH - 14)
+
+    local faceSize = math.floor(244 + 24 * arrival)
+    local faceCenterX, faceCenterY = x + 162, y + panelH / 2
+    drawFramedPortrait(state.puduPortrait or state.portraits.happy,
+        faceCenterX - faceSize / 2, faceCenterY - faceSize / 2, faceSize)
+    Skin.spark(g, faceCenterX + faceSize / 2 - 8, faceCenterY - faceSize / 2 + 12,
+        6 + 2 * math.sin(age * 5))
+
+    local textX, textW = x + 332, panelW - 362
+    local title = state.campaignComplete and "¡Aventura completada!" or "¡Victoria!"
+    drawName(f.victoryTitle or f.versus or f.title, title, textX + textW / 2, y + 64, textW)
+    oneLine(f.story or f.heading, state.rivalName, textX, y + 102, textW, "center", Skin.gold)
+
+    if state.lastPrompt then
+        Skin.paper(g, textX, y + 142, textW, 61)
+        label(f.small, "Último hechizo", textX + 12, y + 149, textW - 24, "center", Skin.ink)
+        oneLine(f.body, state.lastPrompt, textX + 12, y + 174, textW - 24, "center", Skin.ink)
+    end
+    local _, lines = f.body:getWrap(BattleHUD.displayText(state.speech), textW - 24)
+    for i = 1, math.min(2, #lines) do
+        local line = i == 2 and #lines > 2 and fit(lines[i] .. "...", f.body, textW - 24) or lines[i]
+        label(f.body, line, textX + 12, y + 219 + (i - 1) * f.body:getHeight(), textW - 24, "center", Skin.muted)
+    end
+
+    if state.score then
+        label(f.heading, ("Puntaje final  %d pts"):format(state.totalScore), textX, y + 256, textW, "center", Skin.gold)
+        local detail = ("Flechas %d  |  Orbes %d  |  Prompts %d"):format(
+            state.score.arrowPoints, state.score.osuPoints, state.score.promptPoints)
+        oneLine(f.body, detail, textX, y + 280, textW, "center", Skin.cream)
+    end
+
+    local buttonW = 148
+    self:_button("map", "Aceptar", textX + (textW - buttonW) / 2, y + 314, buttonW, 38, true, true)
+end
+
+function BattleHUD:drawDefeat(state, w, h)
     local f = self.fonts
     local x, y, width = battleStrip(w, h)
     local panelX, panelW = x + 206, width - 206
     local heading = f.story or f.heading
     Skin.wood(g, panelX, y, panelW, 78)
-    local title = won and "¡Victoria!" or "El Pudú necesita un respiro"
-    if state.campaignComplete then title = "¡Aventura completada!" end
     local textX, textW = panelX + 16, panelW - 296
-    oneLine(heading, title, textX, y + 6, textW, "left", Skin.cream)
-    if state.lastPrompt then
-        oneLine(f.body, state.lastPrompt, textX, y + 31, textW, "left", Skin.cream)
-    end
+    oneLine(heading, "El Pudú necesita un respiro", textX, y + 6, textW, "left", Skin.cream)
+    local summary = state.totalScore and ("Puntaje final  %d pts"):format(state.totalScore) or state.lastPrompt
+    if summary then oneLine(f.body, summary, textX, y + 31, textW, "left", Skin.gold) end
     local _, lines = f.small:getWrap(BattleHUD.displayText(state.speech), textW)
-    local speechY = y + (state.lastPrompt and 48 or 36)
+    local speechY = y + (summary and 48 or 36)
     for i = 1, math.min(2, #lines) do
         local line = i == 2 and #lines > 2 and fit(lines[i] .. "...", f.small, textW) or lines[i]
         label(f.small, line, textX, speechY + (i - 1) * f.small:getHeight(), textW, "left", Skin.muted)
     end
-    self:_button("map", "Volver al mapa", x + width - 271, y + 21, 133, 36, true, "wood")
-    self:_button("retry", won and "Revancha" or "Reintentar", x + width - 130, y + 21, 115, 36, true, "spell")
+    self:_button("map", "Volver al mapa", x + width - 271, y + 21, 133, 36, true)
+    self:_button("retry", "Reintentar", x + width - 130, y + 21, 115, 36, true, true)
+end
+
+function BattleHUD.scorePageCount(entries)
+    return math.max(1, math.ceil(entries / SCORE_ROWS))
+end
+
+function BattleHUD:drawScores(history, page, w, h, saveFailed)
+    self.hits = {}
+    local f = self.fonts
+    g.setColor(0.12, 0.07, 0.04, 0.76)
+    g.rectangle("fill", 0, 0, w, h)
+    local panelW, panelH = math.min(820, w - 48), 420
+    local x, y = math.floor((w - panelW) / 2), math.floor((h - panelH) / 2)
+    Skin.wood(g, x, y, panelW, panelH)
+    Skin.pin(g, x + 14, y + 14)
+    label(f.story or f.title, "Puntajes de batalla", x + 27, y + 18, panelW - 170, "left", Skin.cream)
+    self:_button("close_scores", "Cerrar [Esc]", x + panelW - 124, y + 14, 106, 34, true)
+
+    local boardX, boardY, boardW = x + 20, y + 62, panelW - 40
+    Skin.paper(g, boardX, boardY, boardW, 292)
+    local function column(text, font, rowY, start, width, align, color)
+        oneLine(font, text, boardX + boardW * start, rowY, boardW * width, align, color or Skin.ink)
+    end
+    local headerY = boardY + 13
+    column("Rival y resultado", f.heading, headerY, 0.025, 0.29, "left")
+    column("Flechas", f.heading, headerY, 0.33, 0.14, "center")
+    column("Orbes", f.heading, headerY, 0.47, 0.14, "center")
+    column("Mejor racha", f.small, headerY + 3, 0.61, 0.10, "center")
+    column("Prompts", f.heading, headerY, 0.71, 0.13, "center")
+    column("Total", f.heading, headerY, 0.84, 0.135, "center")
+
+    if #history == 0 then
+        label(f.body, "Tus batallas terminadas aparecerán aquí.", boardX, boardY + 130, boardW, "center", Skin.ink)
+    end
+    local last = #history - (page - 1) * SCORE_ROWS
+    for row = 1, math.min(SCORE_ROWS, last) do
+        local entry = history[last - row + 1]
+        local rowY = boardY + 41 + (row - 1) * 40
+        g.setColor(0.36, 0.22, 0.12, 0.24)
+        g.line(boardX + 16, rowY, boardX + boardW - 16, rowY)
+        column(entry.rival, f.body, rowY + 3, 0.025, 0.29, "left")
+        column(entry.won and "Victoria" or "Derrota", f.small, rowY + 20, 0.025, 0.29, "left",
+            entry.won and { 0.24, 0.36, 0.15 } or { 0.50, 0.24, 0.17 })
+        column(("%d pts / %d ac."):format(entry.arrowPoints, entry.arrowHits), f.body, rowY + 11, 0.33, 0.14, "center")
+        column(("%d pts / %d ac."):format(entry.osuPoints, entry.osuHits), f.body, rowY + 11, 0.47, 0.14, "center")
+        column(("x%d"):format(entry.bestCombo), f.body, rowY + 11, 0.61, 0.10, "center")
+        column(("%d pts"):format(entry.promptPoints), f.body, rowY + 11, 0.71, 0.13, "center")
+        column(("%d pts"):format(Scores.total(entry)), f.heading, rowY + 10, 0.84, 0.135, "center")
+    end
+
+    local pages = BattleHUD.scorePageCount(#history)
+    if pages > 1 then
+        self:_button("score_newer", "Más recientes", x + 20, y + 371, 122, 31, page > 1)
+        self:_button("score_older", "Más antiguos", x + panelW - 142, y + 371, 122, 31, page < pages)
+        label(f.small, ("Página %d de %d"):format(page, pages), x + 146, y + 364, panelW - 292, "center", Skin.cream)
+    end
+    if saveFailed then
+        label(f.small, "Hay puntajes pendientes de guardar.", x + 146, y + 384, panelW - 292, "center", Skin.gold)
+    end
 end
 
 return BattleHUD

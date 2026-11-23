@@ -21,7 +21,7 @@ end
 -- 1. Four Explorable Biomes (Diagonal Overworld u = 0..118)
 --------------------------------------------------------------------------------
 
-Encounters.BIOME_ORDER = { "desierto", "costa", "bosque", "chiloe" }
+Encounters.BIOME_ORDER = { "desierto", "costa", "montana", "chiloe" }
 
 Encounters.BIOMES = {
   desierto = {
@@ -35,7 +35,6 @@ Encounters.BIOMES = {
     floorTile = "desert_floor",
     pathTile = "stone_floor",
     stageDefault = "mirador",
-    overworldTrack = "overworld_desierto",
     accentColor = { 0.94, 0.64, 0.28 },
     stages = { "mirador", "vereda" },
   },
@@ -50,39 +49,36 @@ Encounters.BIOMES = {
     floorTile = "coast_floor",
     pathTile = "stone_floor",
     stageDefault = "muelle",
-    overworldTrack = "overworld_costa",
     accentColor = { 0.28, 0.76, 0.88 },
     stages = { "muelle", "pantano" },
   },
-  bosque = {
-    id = "bosque",
+  montana = {
+    id = "montana",
     order = 3,
-    name = "Bosque Valdiviano",
-    shortName = "Bosque Valdiviano",
+    name = "Cordillera de los Andes",
+    shortName = "Montaña",
     uStart = 52,
     uEnd = 92,
     spawnU = 56.0,
-    floorTile = "grass_floor",
+    floorTile = "mountain_floor",
     pathTile = "stone_floor",
-    stageDefault = "bosque",
-    overworldTrack = "overworld_bosque",
-    accentColor = { 0.34, 0.78, 0.42 },
-    stages = { "plaza", "bosque" },
+    stageDefault = "montana",
+    accentColor = { 0.56, 0.72, 0.94 },
+    stages = { "montana" },
   },
   chiloe = {
     id = "chiloe",
     order = 4,
-    name = "Altos de Chiloé",
+    name = "Bosque de Chiloé",
     shortName = "Chiloé",
     uStart = 92,
     uEnd = 118,
     spawnU = 104.0,
     floorTile = "grass_floor",
     pathTile = "stone_floor",
-    stageDefault = "chiloe",
-    overworldTrack = "overworld_chiloe",
-    accentColor = { 0.56, 0.72, 0.94 },
-    stages = { "chiloe" },
+    stageDefault = "bosque",
+    accentColor = { 0.34, 0.78, 0.42 },
+    stages = { "plaza", "bosque" },
   },
 }
 
@@ -97,7 +93,7 @@ Encounters.STAGE_THEME_ORDER = {
   "vereda",
   "muelle",
   "pantano",
-  "chiloe",
+  "montana",
   "esquina",
   "oficina",
 }
@@ -106,7 +102,7 @@ Encounters.STAGE_THEMES = {
   plaza = {
     id = "plaza",
     name = "Plaza Valdiviana",
-    biome = "bosque",
+    biome = "chiloe",
     floorTile = "grass_floor",
     pathTile = "stone_floor",
     skyTop = { 0.22, 0.54, 0.88 },
@@ -125,8 +121,8 @@ Encounters.STAGE_THEMES = {
   },
   bosque = {
     id = "bosque",
-    name = "Claro del Bosque Valdiviano",
-    biome = "bosque",
+    name = "Claro del Bosque de Chiloé",
+    biome = "chiloe",
     floorTile = "grass_floor",
     pathTile = "stone_floor",
     skyTop = { 0.14, 0.38, 0.56 },
@@ -223,10 +219,10 @@ Encounters.STAGE_THEMES = {
     sunEnergy = 1.08,
     props = { "lily_pad", "log_dam", "mossy_log", "valdivian_fern", "pincoya_shrine" },
   },
-  chiloe = {
-    id = "chiloe",
-    name = "Ladera de Chiloé",
-    biome = "chiloe",
+  montana = {
+    id = "montana",
+    name = "Ladera de la Cordillera",
+    biome = "montana",
     floorTile = "mountain_floor",
     pathTile = "stone_floor",
     skyTop = { 0.12, 0.22, 0.43 },
@@ -241,7 +237,7 @@ Encounters.STAGE_THEMES = {
     sunColor = { 0.86, 0.92, 1.00 },
     sunDir = normalizeVec3(-0.42, -0.64, 0.64),
     sunEnergy = 1.12,
-    props = { "lantern_post", "pincoya_shrine", "coast_lighthouse" },
+    props = { "lantern_post", "mountain_crystal", "rock_monolith" },
   },
   esquina = {
     id = "esquina",
@@ -292,7 +288,7 @@ Encounters.STAGE_THEMES = {
 Encounters.LIST = {
   {
     id = "pila_de_ropa",
-    name = "Fardo",
+    name = "Vertedero de telas",
     subtitle = "Montaña de Prendas de Atacama",
     biome = "desierto",
     stage = "vereda",
@@ -325,7 +321,7 @@ Encounters.LIST = {
   },
   {
     id = "mancha",
-    name = "La Mancha",
+    name = "Derrame de petróleo",
     subtitle = "Derrame del Puerto",
     biome = "costa",
     stage = "muelle",
@@ -355,47 +351,15 @@ Encounters.LIST = {
     },
   },
   {
-    id = "brasa",
-    name = "Brasa",
-    subtitle = "Ascua del Claro Valdiviano",
-    biome = "bosque",
-    stage = "bosque",
+    id = "tempano",
+    name = "Deshielo glaciar",
+    subtitle = "Guardián de la Nieve de los Andes",
+    biome = "montana",
+    stage = "montana",
     category = "desafio",
-    u = 73.0,
+    u = 71.0,
     v = 0.2,
     maxHp = 120,
-    track = "battle_brasa",
-    music = "battle_brasa",
-    scale = 2.55,
-    offsetX = 0,
-    offsetY = 0,
-    directionalPoses = { idle = "brasa_reposo", charge = "brasa_carga", attack = "brasa_ataque" },
-    color = { 0.88, 0.56, 0.24 },
-    weaknesses = { "lluvia", "agua", "manguera", "rocio", "regadera", "extintor", "aguacero" },
-    situation = "Un ascua presumida chamuscó el claro valdiviano y ahuyentó a los chucaos.",
-    introLine = "¡Solo me queda una hectárea más que quemar! ¿Y justo ahora apareces, pudú?",
-    semiHintLine = "Cuando el cielo se pone gris, mis llamas se hacen chiquititas.",
-    defeatLine = "¡Fsss! Hasta aquí llegó el fogón. Mira esos brotes entre las cenizas.",
-    restorationLine = "Volvieron a crecer árboles en el claro valdiviano.",
-    moodLabel = "AL ROJO",
-    tauntLines = {
-      "¡Con un puro bostezo te tuesto la marraqueta!",
-      "Pisa con cuidado. Las cenizas todavía hacen cosquillas.",
-      "¿Sentiste ese calorcito? Recién estoy prendiendo.",
-      "Hoy el único que da sombra es mi humo.",
-    },
-  },
-  {
-    id = "tempano",
-    name = "Témpano",
-    subtitle = "Guardián de la Nieve de Chiloé",
-    biome = "chiloe",
-    stage = "chiloe",
-    category = "desafio",
-    finalBoss = true,
-    u = 112.0,
-    v = 0.4,
-    maxHp = 220,
     track = "battle_tempano",
     music = "battle_tempano",
     scale = 2.65,
@@ -404,17 +368,49 @@ Encounters.LIST = {
     directionalPoses = { idle = "tempano_original", charge = "tempano_alternativo", attack = "tempano_ataque" },
     color = { 0.50, 0.68, 0.92 },
     weaknesses = { "calor", "sol", "secador", "fogata", "vapor", "estufa", "fuego" },
-    situation = "Un gigante de hielo se tragó los copos de los altos de Chiloé y bloquea la última subida.",
+    situation = "Un gigante de hielo se tragó los copos de la cordillera y bloquea el paso de montaña.",
     introLine = "Guardé hasta el último copo en mi panza. ¡La nieve se queda conmigo!",
     semiHintLine = "Solo de pensar en una tarde de verano ya me gotean los pies.",
-    defeatLine = "¡Me dio un sofocón! Ahí van tus copos. ¡Que nieve en todo Chiloé!",
-    restorationLine = "La nieve volvió a cubrir los altos de Chiloé.",
+    defeatLine = "¡Me dio un sofocón! Ahí van tus copos. ¡Que vuelva a nevar en la cordillera!",
+    restorationLine = "La nieve volvió a cubrir la cordillera.",
     moodLabel = "HELADO",
     tauntLines = {
       "¡Hice una bola de nieve tan grande que terminé viviendo adentro!",
       "¡A mí ni el crujido de mis rodillas me asusta!",
       "Este copo tiene mi nombre. Ese otro también.",
       "Si vas a subir, más te vale traer calcetines gruesos.",
+    },
+  },
+  {
+    id = "brasa",
+    name = "Incendio forestal",
+    subtitle = "Ascua del Bosque de Chiloé",
+    biome = "chiloe",
+    stage = "bosque",
+    category = "desafio",
+    finalBoss = true,
+    u = 112.0,
+    v = 0.4,
+    maxHp = 220,
+    track = "battle_brasa",
+    music = "battle_brasa",
+    scale = 2.55,
+    offsetX = 0,
+    offsetY = 0,
+    directionalPoses = { idle = "brasa_reposo", charge = "brasa_carga", attack = "brasa_ataque" },
+    color = { 0.88, 0.56, 0.24 },
+    weaknesses = { "lluvia", "agua", "manguera", "rocio", "regadera", "extintor", "aguacero" },
+    situation = "Un ascua presumida chamuscó un claro del bosque de Chiloé y ahuyentó a los chucaos.",
+    introLine = "¡Me queda una pura hectárea por quemar!",
+    semiHintLine = "Cuando el cielo se pone gris, mis llamas se hacen chiquititas.",
+    defeatLine = "¡Fsss! Hasta aquí llegó el fogón. Mira esos brotes entre las cenizas.",
+    restorationLine = "Volvieron a crecer árboles en el bosque de Chiloé.",
+    moodLabel = "AL ROJO",
+    tauntLines = {
+      "¡Con un puro bostezo te tuesto la marraqueta!",
+      "Pisa con cuidado. Las cenizas todavía hacen cosquillas.",
+      "¿Sentiste ese calorcito? Recién estoy prendiendo.",
+      "Hoy el único que da sombra es mi humo.",
     },
   },
 }
@@ -458,10 +454,10 @@ local qaBattles = {
     id = "mimo_muro",
     name = "Mimo del Muro Invisible",
     subtitle = "Artista Callejero Obstinado",
-    biome = "bosque",
+    biome = "chiloe",
     stage = "plaza",
     category = "persona",
-    u = 64.0,
+    u = 104.0,
     v = -2.0,
     maxHp = 110,
     track = "battle_pila_ropa",
@@ -641,7 +637,8 @@ function Encounters.getTheme(stageId)
 end
 
 function Encounters.getBiome(biomeId)
-  if biomeId == "ciudad" then biomeId = "chiloe" end
+  if biomeId == "ciudad" or biomeId == "bosque" then biomeId = "chiloe" end
+  if biomeId == "montaña" then biomeId = "montana" end
   return Encounters.BIOMES[biomeId] or Encounters.BIOMES.desierto
 end
 
@@ -886,8 +883,10 @@ function Encounters.applyOverrides(overrides)
         enc.v = entry.v
         touched = true
       end
-      if type(entry.stage) == "string" and Encounters.STAGE_THEMES[entry.stage] then
-        enc.stage = entry.stage
+      -- Older stage overrides named the mountain arena "chiloe".
+      local stage = entry.stage == "chiloe" and "montana" or entry.stage
+      if type(stage) == "string" and Encounters.STAGE_THEMES[stage] then
+        enc.stage = stage
         touched = true
       end
       if type(entry.track) == "string" and entry.track ~= "" then

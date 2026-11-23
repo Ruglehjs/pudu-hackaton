@@ -185,7 +185,7 @@ local function advance(seconds)
     for _ = 1, math.ceil(seconds / 0.05) do love.update(0.05) end
 end
 local function restart()
-    love.keypressed("6", "6", false)
+    upvalue(love.keypressed, "enterBattleArenaImmediate")(6, false, 0)
     advance(1)
     assert(game.battlePhase == "player_turn" and game.battle.speech == Encounters.getByIndex(6).introLine)
 end
@@ -206,7 +206,8 @@ local function cast(text, expectedReaction)
     assert(game.battlePhase == "ritual")
     if expectedReaction then assert(game.enemyReaction == expectedReaction) end
     assert(game.battle.enemyHp == request.encounter.hp)
-    for _, item in ipairs(ritual.sequence) do love.keypressed(item.direction, item.direction, false) end
+    playBatch(ritual)
+    love.keypressed("return", "return", false)
     advance(1.10)
     if game.battlePhase == "enemy_counter" then advance(1.15) end
 end
@@ -227,19 +228,28 @@ cast("silla")
 cast("pintura", "scared")
 assert(game.battle.nonCritMissCount == 0 and not game.battle.pendingSemiHint)
 assert(game.battlePhase == "victory")
+assert(game.battle.victoryAt and game.elapsed - game.battle.victoryAt < 1)
 assert(game.defeatedMap.mimo_muro)
 assert(game.battleFX.defeatFinale.reaction == game.battle.result.enemy_reaction)
 state.battlePhase, state.lastPrompt = "victory", "pintura"
-hud:drawTopBar(state, 1280)
-hud:drawVictoryOrDefeat(state, 1280, 720)
-for _, hit in ipairs(hud.hits) do
-    if hit.action == "retry" then love.mousepressed(hit.x + hit.w / 2, hit.y + hit.h / 2, 1) end
-end
-assert(game.battlePhase == "versus" and not hud.promptOpen)
-advance(1.25)
-assert(game.battlePhase == "battle_enter" and not hud.promptOpen)
-advance(1)
-assert(game.battlePhase == "player_turn" and game.battle.turn == 1 and game.battle.hp == 100)
+state.rivalName, state.victoryElapsed = Encounters.getByIndex(6).name, 0.05
+hud:drawVictory(state, 1280, 720)
+local mapEntering = hud.hits[1]
+state.victoryElapsed = BattleHUD.VICTORY_ENTRANCE
+printed = {}
+hud:drawVictory(state, 1280, 720)
+local map = hud.hits[1]
+assert(#hud.hits == 1 and map.y < mapEntering.y)
+assert(printed[#printed] == "Aceptar")
+assert(hud:hitTest(map.x + map.w / 2, map.y + map.h / 2) == "map")
+love.keypressed("f3", "f3", false)
+assert(not game.scorePage)
+love.mousepressed(map.x + map.w / 2, map.y + map.h / 2, 1)
+assert(game.transitionState == "to_explore" and not hud.promptOpen)
+game.stage = { snapCameraToChunk = nothing, updateOverworldNPCs = nothing }
+advance(0.75)
+assert(game.mode == "explore" and not game.battle and game.defeatedMap.mimo_muro)
+game.stage = nil
 
 restart()
 game.cli.mock = false
@@ -252,7 +262,9 @@ advance(0.05)
 assert(not ritual.readyToUnleash, "un sprite atrasado no puede liberar otro hechizo")
 game.spriteOut:push({ kind = "sprite_ready", uid = online.uid, ok = false })
 advance(0.05)
-assert(ritual.readyToUnleash, "un fallo de sprite permite invocar con el fallback")
+assert(ritual:canReleaseBonus(), "un fallo de sprite permite invocar con el fallback")
+love.keypressed("return", "return", false)
+assert(ritual.readyToUnleash)
 
 restart()
 local lost = submit("lápiz")
@@ -286,4 +298,61 @@ osuRitual:update(0.65, nil, 346, 658, 134, audio)
 assert(osuRitual.waveCount == 2 and #osuRitual.sequence == 6 and osuRitual.cursor == 1)
 osuRitual:draw(1280, 720, 346, 658, fonts)
 
-print("OK: ritual, Osu!, oleadas extra, sprites tardíos, timeout, carriles, UTF-8, anti-tofu y semi-pista de fase 04.")
+local Scores = require("battle_scores")
+local scored = SpellRitual.new()
+scored:start("prueba de puntos", nil, true)
+scored:setAiReady({}, false)
+scored:update(0.40)
+playBatch(scored)
+assert(scored.arrowPoints == 40 and scored:canReleaseBonus() and not scored.readyToUnleash)
+local target = scored.osuTargets[1]
+assert(scored:onMousePressed(target.x, target.y, 1, audio))
+local firstPoints = scored.osuPoints
+assert(firstPoints > 0 and scored.bestOsuCombo == 1)
+local left, _, top = scored:_getOsuBounds(1280, 720)
+scored.osuTargets[1] = { kind = "circle", x = left, y = top, radius = 26, age = 1.4, life = 2 }
+assert(scored:onMousePressed(left, top, 1, audio))
+assert(scored.osuPoints - firstPoints > firstPoints and scored.bestOsuCombo == 2)
+playBatch(scored)
+assert(scored.arrowPoints == 60)
+scored:update(3.5)
+assert(scored.readyToUnleash, "las flechas extra son opcionales")
+
+local score = Scores.new()
+local mimed = Encounters.getByIndex(6)
+local generic = Judge.standaloneLuaEvaluate("silla", mimed)
+local precise = Judge.standaloneLuaEvaluate("pintura", mimed)
+local genericDamage, genericPoints = Scores.attack(generic, scored:getMultiplier(), 100)
+local preciseDamage, precisePoints, bonus = Scores.attack(precise, scored:getMultiplier(), 100)
+assert(preciseDamage > genericDamage and precisePoints > genericPoints and bonus > 0)
+assert(select(2, Scores.attack(precise, scored:getMultiplier(), 1)) == 4)
+Scores.addTurn(score, scored, precisePoints)
+assert(score.arrowHits == 6 and score.osuHits == 2 and score.bestCombo == 2)
+assert(Scores.total(score) == 60 + scored.osuPoints + precisePoints)
+
+local files, failWrite = {}, false
+local fs = {
+    getInfo = function(name) return files[name] ~= nil end,
+    read = function(name) return files[name] end,
+    write = function(name, data)
+        files[name] = failWrite and data:sub(1, 12) or data
+        return not failWrite
+    end,
+}
+local history = Scores.load(fs)
+assert(#history.entries == 0)
+assert(Scores.record(fs, history, score, mimed.name, true))
+failWrite = true
+assert(not Scores.record(fs, history, score, mimed.name, false))
+assert(#Scores.load(fs).entries == 1)
+assert(not Scores.record(fs, history, score, mimed.name, false))
+assert(#Scores.load(fs).entries == 1, "un segundo fallo tampoco pisa la última copia válida")
+failWrite = false
+assert(Scores.record(fs, history, score, mimed.name, true))
+history = Scores.load(fs)
+assert(#history.entries == 4 and not history.entries[2].won and history.entries[4].won)
+assert(Scores.total(history.entries[4]) == Scores.total(score))
+hud:drawScores(history.entries, 1, 1280, 720)
+assert(hud:hitTest(hud.hits[1].x + 10, hud.hits[1].y + 10) == "close_scores")
+
+print("OK: ritual, Osu!, puntaje persistente, timeout, carriles, UTF-8 y semi-pista de fase 04.")

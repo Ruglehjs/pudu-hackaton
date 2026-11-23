@@ -54,8 +54,8 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(ai.fallback_battle_evaluate("nube de lluvia", "nino_helado")["enemy_reaction"], "crying")
 
     def test_boss_counter_uses_the_same_floor_online_and_offline(self):
-        local = ai.fallback_battle_evaluate("calor", "tempano")
-        online = ai.sanitize_battle_result({**local, "enemy_counter_damage": 5}, "calor", "tempano")
+        local = ai.fallback_battle_evaluate("lluvia", "brasa")
+        online = ai.sanitize_battle_result({**local, "enemy_counter_damage": 5}, "lluvia", "brasa")
         self.assertEqual(local["enemy_counter_damage"], 20)
         self.assertEqual(online["enemy_counter_damage"], local["enemy_counter_damage"])
 
@@ -133,6 +133,24 @@ class JudgeTests(unittest.TestCase):
         good = ai.sanitize_battle_result({"enemy_speech": "á" * 100}, "árbol", "mimo_muro")
         self.assertEqual(good["enemy_speech"], "á" * 69 + "...")
         self.check_schema(ai.sanitize_battle_result("garbage", "cuchara", None))
+
+    def test_profanity_in_battle_text_falls_back_to_clean_lines(self):
+        encounter = "semaforo_rebelde"
+        prompt = "¡Pintura, WEÓN!"
+        local = ai.fallback_battle_evaluate(prompt, encounter)
+        self.assertTrue(local["is_critical"])
+        self.assertEqual(local["summon_name"], ai.RULES["neutral_summon_name"])
+
+        raw = {"summon_name": "Pintura QL", "enemy_speech": "¡WEÓNA!", "narrator_text": "¡CONCHA, DE TU MADRE!",
+               "enemy_counter_line": "¡CON\u0303O!", "anticipation_line": "x" * 46 + " mierda",
+               "enemy_counter_name": "¡Chucha!", "status_tag": "WEÁ", "comedy_badge": "¡CTM!"}
+        online = ai.sanitize_battle_result(raw, prompt, encounter)
+        self.check_schema(online)
+        for key in raw:
+            self.assertEqual(online[key], local[key], key)
+
+        clean = ai.sanitize_battle_result({"enemy_speech": "¡Un cono y una cacatúa!"}, prompt, encounter)
+        self.assertEqual(clean["enemy_speech"], "¡Un cono y una cacatúa!")
 
     def test_stage_one_and_speculation_order(self):
         client = Mock(provider="gemini_api", text_model="gemini-2.5-flash")

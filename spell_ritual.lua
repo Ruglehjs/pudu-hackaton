@@ -8,11 +8,16 @@ local MAX_SEQUENCE_LEN = 10
 local WAVE_PAUSE = 0.55
 local OSU_MAX_TARGETS = 3
 local OSU_CIRCLE_RADIUS = 26
+local OSU_APPROACH_SCALE = 2.25
+local OSU_RING_EXTENT = math.ceil(OSU_CIRCLE_RADIUS * OSU_APPROACH_SCALE + 2)
 local OSU_CIRCLE_LIFE = 2.15
 local OSU_SLIDER_WAIT = 2.10
 local OSU_SLIDER_DURATION = 0.92
 local OSU_FOLLOW_RADIUS = 50
 local MAX_TOTAL_MULTIPLIER = 2.00
+local BONUS_DURATION = 3.4
+local MAX_OSU_TARGETS_PER_RITUAL = 7
+local POWER_GAP, INFO_GAP, INFO_HEIGHT = 8, 20, 23
 
 local DIRECTIONS = { "up", "down", "left", "right" }
 local KEYS = { w = "up", s = "down", a = "left", d = "right" }
@@ -65,7 +70,7 @@ function SpellRitual.new()
     return setmetatable({ active = false }, SpellRitual)
 end
 
-function SpellRitual:start(promptText, themeColorHex)
+function SpellRitual:start(promptText, themeColorHex, bonusEnabled)
     self.promptText = promptText
     self.theme = colorFromHex(themeColorHex)
     self.active, self.readyToUnleash, self.complete = true, false, false
@@ -75,6 +80,8 @@ function SpellRitual:start(promptText, themeColorHex)
     self.cursor, self.powerBonus, self.arrowBonus, self.osuBonus = 1, 1, 0, 0
     self.orbEnergy, self.misses = 0, 0
     self.arrowHits, self.waveCount = 0, 1
+    self.arrowPoints, self.osuPoints, self.bestOsuCombo = 0, 0, 0
+    self.bonusEnabled, self.bonusDeadline = bonusEnabled, nil
     self.nextWaveAt = nil
     self.lastDirection = nil
     self.sequence, self.sparkles = {}, {}
@@ -133,6 +140,14 @@ end
 function SpellRitual:_canUnleashNow()
     return self.elapsed >= SAFETY_TIMEOUT
         or (self.aiDecisionReady and (not self.needsLiveSprite or self.spriteReady))
+end
+
+function SpellRitual:canReleaseBonus()
+    return self.active and not self.readyToUnleash and self.bonusDeadline ~= nil and self:_canUnleashNow()
+end
+
+function SpellRitual:_bonusEnded()
+    return self.bonusDeadline and self.elapsed >= self.bonusDeadline and not self.activeSlider
 end
 
 function SpellRitual:_triggerUnleash()
@@ -202,23 +217,19 @@ end
 
 function SpellRitual:_getOsuBounds(w, h)
     local L = self:_getTileLayout(w, h)
-    local minX = math.max(240, w * 0.34)
-    local maxX = math.min(w - 220, w * 0.61)
-    local minY = math.max(268, L.panelY + L.h + 62)
-    local maxY = math.max(minY + 60, h - 148)
+    local minX = w * 0.39
+    local maxX = math.min(w * 0.61, w * 0.72 - 88 - OSU_RING_EXTENT)
+    local minY = L.panelY + L.h + POWER_GAP + INFO_GAP + INFO_HEIGHT + OSU_RING_EXTENT + 5
+    local maxY = h - 90 - OSU_RING_EXTENT
     return minX, maxX, minY, maxY
 end
 
 function SpellRitual:_spawnOsuTarget()
     if #self.osuTargets >= OSU_MAX_TARGETS then return end
+    if self.bonusEnabled and self.osuNextNumber > MAX_OSU_TARGETS_PER_RITUAL then return end
     local w, h = self.lastViewportW or 1280, self.lastViewportH or 720
     local minX, maxX, minY, maxY = self:_getOsuBounds(w, h)
     if maxX <= minX + 40 or maxY <= minY + 40 then return end
-
-    local num = self.osuNextNumber
-    self.osuNextNumber = num + 1
-    local color = OSU_COLORS[(num - 1) % #OSU_COLORS + 1]
-    local wantSlider = (num % 3 == 0) and (self.activeSlider == nil)
 
     -- Pick a start point spaced away from existing targets
     local x1, y1
@@ -227,7 +238,7 @@ function SpellRitual:_spawnOsuTarget()
         local cy = minY + math.random() * (maxY - minY)
         local clear = true
         for _, other in ipairs(self.osuTargets) do
-            if dist2(cx, cy, other.x, other.y) < 76 * 76 then
+            if dist2(cx, cy, other.x, other.y) < (2 * OSU_RING_EXTENT) ^ 2 then
                 clear = false
                 break
             end
@@ -237,11 +248,12 @@ function SpellRitual:_spawnOsuTarget()
             break
         end
     end
-    if not x1 then
-        x1 = minX + math.random() * (maxX - minX)
-        y1 = minY + math.random() * (maxY - minY)
-    end
+    if not x1 then return end
 
+    local num = self.osuNextNumber
+    self.osuNextNumber = num + 1
+    local color = OSU_COLORS[(num - 1) % #OSU_COLORS + 1]
+    local wantSlider = (num % 3 == 0) and (self.activeSlider == nil)
     if wantSlider then
         local spanX = (x1 > (minX + maxX) * 0.5) and -(95 + math.random() * 55) or (95 + math.random() * 55)
         local spanY = (y1 > (minY + maxY) * 0.5) and -(45 + math.random() * 45) or (45 + math.random() * 45)
@@ -270,6 +282,8 @@ end
 function SpellRitual:_awardOsuHit(x, y, color, bonusAdd, label, audio, comboStep)
     self.osuHits = (self.osuHits or 0) + 1
     self.osuCombo = (self.osuCombo or 0) + (comboStep or 1)
+    self.bestOsuCombo = math.max(self.bestOsuCombo, self.osuCombo)
+    self.osuPoints = self.osuPoints + math.floor(bonusAdd * 500 + 0.5) + 5 * math.min(5, self.osuCombo - 1)
     self.osuBonus = math.min(0.40, (self.osuBonus or 0) + bonusAdd)
     self:_recomputePower()
     self:_spawnOsuEffect(x, y, color, label)
@@ -280,7 +294,9 @@ function SpellRitual:_awardOsuHit(x, y, color, bonusAdd, label, audio, comboStep
 end
 
 function SpellRitual:onMousePressed(x, y, button, audio)
-    if button ~= 1 or not self.active or self.readyToUnleash then return false end
+    if button ~= 1 or not self.active or self.readyToUnleash or self:_bonusEnded() or self.activeSlider then
+        return false
+    end
     self.mouseX, self.mouseY = x, y
     for i = 1, #self.osuTargets do
         local target = self.osuTargets[i]
@@ -331,13 +347,20 @@ function SpellRitual:onMouseReleased(x, y, button, audio)
     end
     if s.slideT >= 0.55 then
         self:_awardOsuHit(bx, by, s.color, 0.04, "¡DESLIZ +4%!", audio, 1)
+    else
+        self.osuCombo = 0
     end
     return true
 end
 
 function SpellRitual:onKeyPressed(key, audio)
+    if (key == "return" or key == "kpenter") and self:canReleaseBonus() then
+        self:_triggerUnleash()
+        return true
+    end
     local direction = KEYS[key] or key
     if not self.active or self.readyToUnleash or not GLYPHS[direction] then return false end
+    if self:_bonusEnded() then return true end
     local item = self.sequence[self.cursor]
     if not item then return true end
 
@@ -354,6 +377,7 @@ function SpellRitual:onKeyPressed(key, audio)
     self.cursor = index + 1
     self.lastDirection = direction
     self.arrowHits = (self.arrowHits or 0) + 1
+    self.arrowPoints = self.arrowPoints + 10
     self.arrowBonus = math.min(self.arrowHits, 8) * 0.08 + math.max(0, self.arrowHits - 8) * 0.04
     self:_recomputePower()
     self:_burst(index, 18, color)
@@ -367,7 +391,10 @@ function SpellRitual:onKeyPressed(key, audio)
         audio:play("orb_gain", 0.35)
     end
     if self.cursor > #self.sequence then
-        if self:_canUnleashNow() then
+        if self.bonusEnabled then
+            self.bonusDeadline = self.bonusDeadline or self.elapsed + BONUS_DURATION
+            if #self.sequence < MAX_SEQUENCE_LEN then self:_extend() end
+        elseif self:_canUnleashNow() then
             self:_triggerUnleash()
         elseif #self.sequence < MAX_SEQUENCE_LEN then
             self:_extend()
@@ -401,7 +428,7 @@ function SpellRitual:update(dt, _, puduX, puduY, orbLift, audio)
         if pt.age >= pt.life then table.remove(self.cursorTrail, i) end
     end
 
-    if not self.readyToUnleash then
+    if not self.readyToUnleash and not self:_bonusEnded() then
         -- Spawn Osu! targets continuously while ritual is active
         local waitingForLive = self.needsLiveSprite and not self.spriteReady
         if self.elapsed >= self.osuNextSpawnAt then
@@ -442,6 +469,7 @@ function SpellRitual:update(dt, _, puduX, puduY, orbLift, audio)
                 target.age = target.age + dt
                 if target.age >= target.life then
                     table.remove(self.osuTargets, i)
+                    self.osuCombo = 0
                 end
             end
         end
@@ -455,7 +483,8 @@ function SpellRitual:update(dt, _, puduX, puduY, orbLift, audio)
     if self.readyToUnleash then
         self.climax = math.max(0, self.climax - dt)
         if self.climax == 0 then self.complete, self.active = true, false end
-    elseif self.cursor > #self.sequence and self:_canUnleashNow() then
+    elseif self:_canUnleashNow() and (self:_bonusEnded()
+        or (not self.bonusEnabled and self.cursor > #self.sequence)) then
         self:_triggerUnleash()
     end
 end
@@ -580,7 +609,7 @@ local function drawOsuTargets(g, targets, fonts)
             local t = math.min(1, target.age / target.life)
             local fade = t > 0.85 and (1 - (t - 0.85) / 0.15) or math.min(1, target.age / 0.14)
             local r = target.radius
-            local approachR = r * (2.25 - 1.25 * t)
+            local approachR = r * (OSU_APPROACH_SCALE - (OSU_APPROACH_SCALE - 1) * t)
 
             -- Approach ring (classic Osu! shrinking ring)
             paint(g, c, 0.82 * fade)
@@ -588,11 +617,11 @@ local function drawOsuTargets(g, targets, fonts)
             g.circle("line", target.x, target.y, approachR)
 
             -- Target body
-            g.setColor(0.03, 0.06, 0.15, 0.84 * fade)
+            g.setColor(0.21, 0.12, 0.075, 0.92 * fade)
             g.circle("fill", target.x, target.y, r)
             paint(g, c, 0.28 * fade)
             g.circle("fill", target.x, target.y, r - 4)
-            g.setColor(1, 1, 1, 0.92 * fade)
+            paint(g, Skin.cream, 0.92 * fade)
             g.setLineWidth(2.4)
             g.circle("line", target.x, target.y, r)
             g.setLineWidth(1)
@@ -614,7 +643,7 @@ local function drawOsuTargets(g, targets, fonts)
             paint(g, c, 0.34 * fade)
             g.setLineWidth(r * 1.45)
             g.line(pts)
-            g.setColor(0.03, 0.06, 0.15, 0.78 * fade)
+            g.setColor(0.21, 0.12, 0.075, 0.92 * fade)
             g.setLineWidth(r * 1.10)
             g.line(pts)
             paint(g, c, 0.70 * fade)
@@ -623,7 +652,7 @@ local function drawOsuTargets(g, targets, fonts)
             g.setLineWidth(1)
 
             -- End cap
-            g.setColor(0.04, 0.08, 0.18, 0.88 * fade)
+            g.setColor(0.21, 0.12, 0.075, 0.92 * fade)
             g.circle("fill", target.x2, target.y2, r * 0.78)
             paint(g, GOLD, 0.85 * fade)
             g.setLineWidth(2)
@@ -635,11 +664,11 @@ local function drawOsuTargets(g, targets, fonts)
                 paint(g, c, 0.84 * fade)
                 g.setLineWidth(2.6)
                 g.circle("line", target.x, target.y, approachR)
-                g.setColor(0.03, 0.06, 0.15, 0.88 * fade)
+                g.setColor(0.21, 0.12, 0.075, 0.92 * fade)
                 g.circle("fill", target.x, target.y, r)
                 paint(g, c, 0.34 * fade)
                 g.circle("fill", target.x, target.y, r - 4)
-                g.setColor(1, 1, 1, 0.95 * fade)
+                paint(g, Skin.cream, 0.95 * fade)
                 g.setLineWidth(2.4)
                 g.circle("line", target.x, target.y, r)
                 g.setLineWidth(1)
@@ -759,6 +788,8 @@ function SpellRitual:draw(w, h, puduX, puduY, fonts, beatSync, orbLift)
         status = "¡Invocando!"
     elseif self.needsLiveSprite and not self.spriteReady then
         status = "La invocación toma forma..."
+    elseif self:canReleaseBonus() then
+        status = "Bonus del ritual"
     elseif self.cursor > #self.sequence then
         status = "La magia está lista"
     else
@@ -771,7 +802,7 @@ function SpellRitual:draw(w, h, puduX, puduY, fonts, beatSync, orbLift)
     g.setColor(Skin.cream)
     centered(g, fonts.body, status, L.centerX + 3, L.statusY + (L.statusH - fonts.body:getHeight()) / 2 - 1)
 
-    local barW, barY = 156, L.panelY + L.h + 8
+    local barW, barY = 156, L.panelY + L.h + POWER_GAP
     local barX = L.centerX - barW / 2 - 20
     g.setColor(0.19, 0.11, 0.06, 0.96)
     g.rectangle("fill", barX, barY, barW, 12, 5)
@@ -781,30 +812,39 @@ function SpellRitual:draw(w, h, puduX, puduY, fonts, beatSync, orbLift)
         paint(g, theme)
         g.rectangle("fill", barX + 2, barY + 2, (barW - 4) * self.orbEnergy, 8, 3)
     end
-    g.setColor(Skin.cream)
     g.setFont(fonts.small)
     local powerText = ("+%d%%"):format(math.floor((self.powerBonus - 1) * 100 + 0.5))
+    powerText = powerText .. (" | %d pts"):format(self.arrowPoints + self.osuPoints)
     if (self.osuCombo or 0) >= 2 then
-        powerText = powerText .. (" | COMBO x%d"):format(self.osuCombo)
+        powerText = powerText .. (" | Racha x%d"):format(self.osuCombo)
     end
-    g.print(powerText, barX + barW + 8, barY - 2)
-    if self.overchargeBannerTimer > 0 and not self.readyToUnleash then
+    local pointsX = barX + barW + 6
+    Skin.wood(g, pointsX, barY - 4, fonts.small:getWidth(powerText) + 16, 20)
+    g.setColor(Skin.cream)
+    g.print(powerText, pointsX + 8, barY - 2)
+    if self:canReleaseBonus() then
+        local help = "Desata el hechizo con [Enter]"
+        local width = fonts.small:getWidth(help) + 22
+        Skin.paper(g, L.centerX - width / 2, barY + INFO_GAP - 2, width, INFO_HEIGHT - 1)
+        g.setColor(Skin.ink)
+        centered(g, fonts.small, help, L.centerX, barY + 22)
+    elseif self.overchargeBannerTimer > 0 and not self.readyToUnleash and not self:_bonusEnded() then
         local bonus = self.overchargeBannerText or "¡BONUS! +2 flechas"
         local bw = fonts.small:getWidth(bonus) + 22
         local bx = h < 630 and L.x + L.w - bw or L.centerX - bw / 2
-        Skin.wood(g, bx, barY + 20, bw, 23)
+        Skin.wood(g, bx, barY + INFO_GAP, bw, INFO_HEIGHT)
         g.setColor(Skin.gold)
         centered(g, fonts.small, bonus, bx + bw / 2, barY + 24)
-    elseif not self.readyToUnleash then
+    elseif not self.readyToUnleash and not self:_bonusEnded() then
         local help = "Flechas/WASD + Clic y arrastra orbes"
         local helpW = fonts.small:getWidth(help) + 22
-        Skin.paper(g, L.centerX - helpW / 2, barY + 18, helpW, 22)
+        Skin.paper(g, L.centerX - helpW / 2, barY + INFO_GAP - 2, helpW, INFO_HEIGHT - 1)
         g.setColor(Skin.ink)
         centered(g, fonts.small, help, L.centerX, barY + 22)
     end
 
     -- Draw Osu! targets, world bursts, and cursor trail
-    if not self.readyToUnleash then
+    if not self.readyToUnleash and not self:_bonusEnded() then
         drawOsuTargets(g, self.osuTargets, fonts)
     end
     drawWorldEffects(g, self.sparkles, L)

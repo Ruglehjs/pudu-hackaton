@@ -52,13 +52,20 @@ for _, enc in ipairs(Encounters.SELECTABLE) do
 end
 local campaign = {
     { "desierto", "pila_de_ropa" }, { "costa", "mancha" },
-    { "bosque", "brasa" }, { "chiloe", "tempano" },
+    { "montana", "tempano" }, { "chiloe", "brasa" },
 }
 local StageRenderer = require("stage_renderer")
 assert(#Encounters.LIST == #campaign)
+assert(#Encounters.BIOME_ORDER == #campaign)
+assert(Encounters.getBiome("bosque") == Encounters.getBiome("chiloe"))
+assert(Encounters.getBiome("ciudad") == Encounters.getBiome("chiloe"))
+assert(Encounters.getBiome("montaña") == Encounters.getBiome("montana"))
 local greatestRivalHp, lastU = 0, 0
 for i, enc in ipairs(Encounters.LIST) do
     assert(enc.biome == campaign[i][1] and enc.id == campaign[i][2])
+    assert(Encounters.BIOME_ORDER[i] == enc.biome and Encounters.getByIndex(i) == enc)
+    assert(Encounters.getTheme(enc.stage).biome == enc.biome)
+    assert((enc.finalBoss == true) == (i == #campaign))
     assert(StageRenderer.getBiomeAt(enc.u) == enc.biome)
     assert(enc.restorationLine and enc.directionalPoses.idle and enc.directionalPoses.charge
         and enc.directionalPoses.attack)
@@ -72,11 +79,21 @@ for u = 0, 116.5, 0.25 do
 end
 local boss = Encounters.LIST[#campaign]
 assert(boss.finalBoss and boss.maxHp > greatestRivalHp)
-local bossVerdict = judge("calor", boss)
+local bossVerdict = judge("lluvia", boss)
 assert(bossVerdict.is_critical)
 assert(bossVerdict.enemy_counter_damage > judge("silla", Encounters.LIST[1]).enemy_counter_damage)
 bossVerdict.enemy_counter_damage = 5
-assert(Judge.ensureResultCoherence(bossVerdict, "calor", boss).enemy_counter_damage == 20)
+assert(Judge.ensureResultCoherence(bossVerdict, "lluvia", boss).enemy_counter_damage == 20)
+local stage = StageRenderer.new()
+stage:buildOverworldDecor(Encounters.LIST)
+local charredTrees = 0
+for _, prop in ipairs(stage.overworldDecor) do
+    if prop.kind == "charred_tree" then
+        assert(prop.hiddenAfter == boss.id and StageRenderer.getBiomeAt(prop.u) == boss.biome)
+        charredTrees = charredTrees + 1
+    end
+end
+assert(charredTrees > 0)
 for _, state in ipairs(rules.states) do
     local r = judge(state.words[1])
     assert(r.adds_stage_state == state.id and r.combo_triggered == "none", state.id)
@@ -130,6 +147,22 @@ local remote = check(Judge.ensureResultCoherence({
 }, "silla", {}))
 assert(remote.combo_triggered == "none" and remote.damage_to_enemy == 56 and remote.enemy_counter_damage == 5)
 assert(remote.narrator_text == "dañado?" and remote.enemy_speech:sub(-3) == "...")
+
+local profanePrompt = "¡Pintura, WEÓN!"
+local semaphore = {id = "semaforo_rebelde"}
+local localText = judge(profanePrompt, semaphore)
+assert(localText.is_critical and localText.summon_name == rules.neutral_summon_name)
+local profaneText = {
+    summon_name = "Pintura QL", enemy_speech = "¡WEÓNA!", narrator_text = "¡CONCHA, DE TU MADRE!",
+    enemy_counter_line = "¡CON\204\131O!", anticipation_line = ("x"):rep(46) .. " mierda",
+    enemy_counter_name = "¡Chucha!", status_tag = "WEÁ", comedy_badge = "¡CTM!",
+}
+local clean = check(Judge.ensureResultCoherence({approved = true,
+    enemy_speech = "¡Un cono y una cacatúa!"}, profanePrompt, semaphore))
+assert(clean.enemy_speech == "¡Un cono y una cacatúa!")
+profaneText.approved = true
+local filtered = check(Judge.ensureResultCoherence(profaneText, profanePrompt, semaphore))
+for key in pairs(profaneText) do assert(filtered[key] == localText[key], key) end
 
 -- Pump the actual workers. A refused connection must reply on the original
 -- request id, skip the connection on the next prompt, then retry after cooldown.
