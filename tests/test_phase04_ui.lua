@@ -65,7 +65,7 @@ end
 
 local ritual = SpellRitual.new()
 ritual:start("nube de lluvia")
-assert(#ritual.sequence == 4)
+assert(#ritual.sequence == 6)
 local layout = ritual:_getTileLayout(1280, 720)
 assert(layout.panelY >= 126 and layout.statusY >= 56)
 assert(layout.panelY - layout.statusY - layout.statusH >= 42)
@@ -79,22 +79,16 @@ ritual:onKeyPressed(wasd[first], audio)
 assert(ritual.cursor == 2 and ritual:getLastDirection() == first)
 near(ritual:getMultiplier(), 1.08)
 playBatch(ritual)
-assert(#ritual.sequence == 6 and ritual.sequence[5].bonus and ritual.sequence[6].bonus)
-assert(ritual.overchargeBannerTimer > 0)
-near(ritual:getMultiplier(), 1.32)
-local words = 0
-for _, item in ipairs(ritual.sparkles) do
-    if item.kind == "word" then words = words + 1 end
-end
-assert(words == 1)
-ritual:setAiReady({ ritual_theme_color = "#123456" }, true)
-playBatch(ritual)
 assert(#ritual.sequence == 8 and ritual.sequence[7].bonus and ritual.sequence[8].bonus)
-playBatch(ritual)
-assert(#ritual.sequence == 10 and ritual.sequence[9].bonus and ritual.sequence[10].bonus)
-playBatch(ritual)
-assert(ritual.cursor == 11 and not ritual.readyToUnleash)
-near(ritual:getMultiplier(), 1 + 8 * 0.08 + 2 * 0.04)
+assert(ritual.overchargeBannerTimer > 0)
+near(ritual:getMultiplier(), 1.48)
+ritual:setAiReady({ ritual_theme_color = "#123456" }, true)
+for length = 10, 18, 2 do
+    playBatch(ritual)
+    assert(#ritual.sequence == length and ritual.cursor == length - 1)
+    assert(ritual.sequence[length - 1].bonus and ritual.sequence[length].bonus)
+end
+assert(ritual.arrowHits == 16 and not ritual:onKeyPressed("return", audio))
 for i = 3, #ritual.sequence do
     local direction = ritual.sequence[i].direction
     assert(direction ~= ritual.sequence[i - 1].direction or direction ~= ritual.sequence[i - 2].direction)
@@ -102,11 +96,16 @@ end
 for _, size in ipairs({ { 1280, 720 }, { 960, 540 } }) do
     local extended = ritual:_getTileLayout(size[1], size[2])
     assert(extended.x >= 12 and extended.x + extended.w < size[1] * 0.58)
+    assert(extended.rowStep + extended.firstY + extended.tile / 2 < extended.panelY + extended.h)
+    ritual:draw(size[1], size[2], 346, 658, fonts)
 end
-ritual.elapsed = 12.1
-assert(not ritual:_canUnleashNow())
+playBatch(ritual)
+assert(ritual.cursor == 19 and ritual.arrowPoints == 180)
+near(ritual:getMultiplier(), 2)
+ritual:update(13)
+assert(#ritual.sequence == 18 and not ritual.readyToUnleash)
 ritual:setSpriteReady()
-ritual:update(0.01, nil, 346, 658)
+ritual:update(0.01, 346, 658)
 assert(ritual.readyToUnleash and not ritual:isComplete())
 local lights = {}
 ritual:collectLights(lights)
@@ -115,7 +114,7 @@ ritual:update(0.30)
 assert(ritual:isComplete())
 
 ritual:start("prueba sin respuesta")
-for _ = 1, 4 do playBatch(ritual) end
+for _ = 1, 7 do playBatch(ritual) end
 ritual:update(11.99)
 assert(not ritual.readyToUnleash)
 ritual:update(0.02)
@@ -125,7 +124,7 @@ ritual:setAiReady({}, false)
 ritual:update(30)
 assert(ritual.cursor == 1 and not ritual.readyToUnleash)
 playBatch(ritual)
-assert(#ritual.sequence == 4 and ritual.readyToUnleash)
+assert(#ritual.sequence == 6 and ritual.readyToUnleash)
 ritual:cancel()
 assert(not ritual:isComplete() and not ritual:onKeyPressed("w", audio))
 
@@ -212,7 +211,6 @@ local function cast(text, expectedReaction)
     if expectedReaction then assert(game.enemyReaction == expectedReaction) end
     assert(game.battle.enemyHp == request.encounter.hp)
     playBatch(ritual)
-    love.keypressed("return", "return", false)
     advance(1.10)
     if game.battlePhase == "enemy_counter" then advance(1.15) end
 end
@@ -225,7 +223,7 @@ assert(game.battle.nonCritMissCount == 1 and game.battle.speech ~= hint)
 cast("lápiz")
 assert(game.battlePhase == "player_turn" and game.battle.nonCritMissCount == 0)
 assert(not game.battle.pendingSemiHint and game.battle.speech == hint)
-assert(game.battle.enemyHp == 30)
+assert(game.battle.enemyHp == 22)
 local hintBubble = game.battleFX.speech.enemy
 assert(hintBubble.text == hint and hintBubble.duration == 5.2 and hintBubble.age < 0.4)
 restart()
@@ -262,7 +260,13 @@ local online = submit("pepino")
 answer(online, "gemini", Judge.standaloneLuaEvaluate("pepino", online.encounter), true)
 local spriteRequest = game.spriteIn:pop()
 assert(spriteRequest.uid == online.uid and spriteRequest.original_prompt == "pepino")
-for _ = 1, 4 do playBatch(ritual) end
+love.mousepressed(500, 420, 1)
+local direction = ritual.sequence[1].direction
+love.keypressed(direction, direction, true)
+assert(ritual.cursor == 1 and ritual.arrowPoints == 0)
+love.keypressed(direction, direction, false)
+assert(ritual.cursor == 2 and ritual.arrowPoints == 10)
+for _ = 1, 7 do playBatch(ritual) end
 game.spriteOut:push({ kind = "sprite_ready", uid = online.uid - 1, ok = false })
 advance(0.05)
 assert(not ritual.readyToUnleash, "un sprite atrasado no puede liberar otro hechizo")
@@ -297,7 +301,7 @@ assert(revealFX:hasSummonArrived() and releaseSounds == 1)
 
 restart()
 local lost = submit("lápiz")
-for _ = 1, 4 do playBatch(ritual) end
+for _ = 1, 7 do playBatch(ritual) end
 advance(12.05)
 assert(game.battle.decision and game.battle.decision.source == "lua")
 answer(lost, "gemini", Judge.standaloneLuaEvaluate("pintura", lost.encounter))
@@ -309,43 +313,16 @@ game.cli.mock = true
 cast("calcetín", "laughing")
 assert(game.battle.nonCritMissCount == 1 and game.battle.enemyHp == 90 and game.battle.hp < 100)
 
--- Osu! mouse targets (hit circle + slider) & extra arrow waves while waiting for live sprite
-local osuRitual = SpellRitual.new()
-osuRitual:start("ornitorrinco dj")
-osuRitual:setAiReady({ ritual_theme_color = "#44DDAA" }, true)
-osuRitual:update(0.40, nil, 346, 658, 134, audio)
-assert(#osuRitual.osuTargets >= 1, "debe aparecer un objetivo Osu durante el ritual")
-local firstTarget = osuRitual.osuTargets[1]
-assert(osuRitual:onMousePressed(firstTarget.x, firstTarget.y, 1, audio))
-assert(osuRitual.osuHits == 1 and osuRitual:getMultiplier() > 1.0)
-osuRitual:onMouseMoved(500, 420)
-assert(#osuRitual.cursorTrail == 1)
--- Finish all 10 arrows while sprite is still pending -> extra wave of 6 arrows spawns after pause
-for _ = 1, 4 do playBatch(osuRitual) end
-assert(osuRitual.cursor == 11 and not osuRitual.readyToUnleash)
-osuRitual:update(0.65, nil, 346, 658, 134, audio)
-assert(osuRitual.waveCount == 2 and #osuRitual.sequence == 6 and osuRitual.cursor == 1)
-osuRitual:draw(1280, 720, 346, 658, fonts)
-
 local Scores = require("battle_scores")
 local scored = SpellRitual.new()
-scored:start("prueba de puntos", nil, true)
-scored:setAiReady({}, false)
-scored:update(0.40)
+scored:start("prueba de puntos")
+scored:setAiReady({}, true)
 playBatch(scored)
-assert(scored.arrowPoints == 40 and scored:canReleaseBonus() and not scored.readyToUnleash)
-local target = scored.osuTargets[1]
-assert(scored:onMousePressed(target.x, target.y, 1, audio))
-local firstPoints = scored.osuPoints
-assert(firstPoints > 0 and scored.bestOsuCombo == 1)
-local left, _, top = scored:_getOsuBounds(1280, 720)
-scored.osuTargets[1] = { kind = "circle", x = left, y = top, radius = 26, age = 1.4, life = 2 }
-assert(scored:onMousePressed(left, top, 1, audio))
-assert(scored.osuPoints - firstPoints > firstPoints and scored.bestOsuCombo == 2)
+scored:setSpriteReady()
+scored:update(1)
+assert(not scored.readyToUnleash and #scored.sequence == 8)
 playBatch(scored)
-assert(scored.arrowPoints == 60)
-scored:update(3.5)
-assert(scored.readyToUnleash, "las flechas extra son opcionales")
+assert(scored.readyToUnleash and scored.arrowPoints == 80)
 
 local score = Scores.new()
 local mimed = Encounters.getByIndex(6)
@@ -356,8 +333,8 @@ local preciseDamage, precisePoints, bonus = Scores.attack(precise, scored:getMul
 assert(preciseDamage > genericDamage and precisePoints > genericPoints and bonus > 0)
 assert(select(2, Scores.attack(precise, scored:getMultiplier(), 1)) == 4)
 Scores.addTurn(score, scored, precisePoints)
-assert(score.arrowHits == 6 and score.osuHits == 2 and score.bestCombo == 2)
-assert(Scores.total(score) == 60 + scored.osuPoints + precisePoints)
+assert(score.arrowHits == 8)
+assert(Scores.total(score) == 80 + precisePoints)
 
 local files, failWrite = {}, false
 local fs = {
@@ -384,4 +361,14 @@ assert(Scores.total(history.entries[4]) == Scores.total(score))
 hud:drawScores(history.entries, 1, 1280, 720)
 assert(hud:hitTest(hud.hits[1].x + 10, hud.hits[1].y + 10) == "close_scores")
 
-print("OK: ritual, Osu!, puntaje persistente, timeout, carriles, UTF-8 y semi-pista de fase 04.")
+files = {
+    ["battle_scores_a.json"] = '[{"rival":"Mimo","won":true,"arrowPoints":40,"arrowHits":4,"osuPoints":25,"osuHits":1,"bestCombo":1,"promptPoints":90}]',
+}
+history = Scores.load(fs)
+assert(#history.entries == 1 and Scores.total(history.entries[1]) == 155)
+assert(Scores.record(fs, history, score, mimed.name, true))
+history = Scores.load(fs)
+assert(#history.entries == 2 and Scores.total(history.entries[1]) == 155)
+assert(history.entries[2].osuPoints == nil)
+
+print("OK: ritual de hasta 18 flechas, puntaje persistente, timeout, carriles, UTF-8 y semi-pista de fase 04.")

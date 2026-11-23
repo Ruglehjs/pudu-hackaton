@@ -517,7 +517,7 @@ local function submitPrompt(prompt, preview, automated)
     Game.hud:closePrompt(true)
     Game.battlePhase = "ritual"
     Game.enemyReaction = Game.cli.forceReaction or "idle"
-    Game.ritual:start(prompt, nil, not automated)
+    Game.ritual:start(prompt)
     if Game.audio then Game.audio:play("sfx_prompt_submit", 0.68) end
     b.nextAutoArrowAt = Game.demo and 0.12 or 0.26
     local props = {}
@@ -613,7 +613,7 @@ local function applySummonImpactEffects(enc, anchors, ex, ey)
     b.damage = b.impact.damage_to_enemy
     BattleScores.addTurn(b.score, Game.ritual, b.promptPoints)
     local reward = ("+%d pts de ritual  |  +%d pts de prompt"):format(
-        Game.ritual.arrowPoints + Game.ritual.osuPoints, b.promptPoints)
+        Game.ritual.arrowPoints, b.promptPoints)
     if b.precisionBonus > 0 then
         reward = reward .. ("  |  +%d%% de daño por precisión"):format(b.precisionBonus)
     end
@@ -1182,7 +1182,7 @@ local function updateBattle(dt, realDt)
             if arrow then ritual:onKeyPressed(arrow.direction, Game.audio) end
             b.nextAutoArrowAt = b.nextAutoArrowAt + (Game.demo and 0.055 or 0.17)
         end
-        ritual:update(realDt, Game.beatSync, anchors.puduX, anchors.puduY, getOrbLift(anchors, h), Game.audio)
+        ritual:update(realDt, anchors.puduX, anchors.puduY, getOrbLift(anchors, h))
         if ritual.readyToUnleash and not b.decision then
             local fallback = Judge.standaloneLuaEvaluate(b.prompt, b.request)
             acceptDecision({ uid = b.uid, result = fallback, source = "lua", latency_ms = math.floor(ritual.elapsed * 1000) })
@@ -1776,16 +1776,7 @@ function love.mousepressed(x, y, button)
     if Game.battlePhase == "portal" then return end
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
     if Game.battlePhase == "versus" then return end
-    if Game.battlePhase == "ritual" and Game.ritual:onMousePressed(x, y, button, Game.audio) then return end
     routeHudAction(Game.hud:hitTest(x, y))
-end
-
-function love.mousemoved(x, y)
-    if Game.screen then return end
-    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
-    if Game.battlePhase == "ritual" then
-        Game.ritual:onMouseMoved(x, y)
-    end
 end
 
 function love.wheelmoved(_, y)
@@ -1794,15 +1785,6 @@ function love.wheelmoved(_, y)
         routeHudAction(y < 0 and "score_older" or "score_newer")
     elseif Game.mode == "explore" and Game.transitionState == "none" and Game.transitionPreview == nil then
         Game.stage:adjustExploreZoom(y)
-    end
-end
-
-function love.mousereleased(x, y, button)
-    if button ~= 1 then return end
-    if Game.screen then return end
-    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
-    if Game.battlePhase == "ritual" then
-        Game.ritual:onMouseReleased(x, y, button, Game.audio)
     end
 end
 

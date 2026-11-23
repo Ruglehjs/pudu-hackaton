@@ -463,7 +463,7 @@ end
 
 local BUSY_TEXT = {
     battle_enter = "Entrando a la arena...",
-    ritual = "Cargando el hechizo...",
+    ritual = "Completa la secuencia con flechas o WASD",
     summon = "El Pudú suelta el hechizo.",
     enemy_counter = "Turno del rival...",
 }
@@ -607,8 +607,7 @@ function BattleHUD:drawVictory(state, w, h)
 
     if state.score then
         label(f.heading, ("Puntaje final  %d pts"):format(state.totalScore), textX, y + 256, textW, "center", Skin.gold)
-        local detail = ("Flechas %d  |  Orbes %d  |  Prompts %d"):format(
-            state.score.arrowPoints, state.score.osuPoints, state.score.promptPoints)
+        local detail = ("Flechas %d  |  Prompts %d"):format(state.score.arrowPoints, state.score.promptPoints)
         oneLine(f.body, detail, textX, y + 280, textW, "center", Skin.cream)
     end
 
@@ -659,12 +658,14 @@ function BattleHUD:drawScores(history, page, w, h, saveFailed)
         oneLine(font, text, boardX + boardW * start, rowY, boardW * width, align, color or Skin.ink)
     end
     local headerY = boardY + 13
-    column("Rival y resultado", f.heading, headerY, 0.025, 0.29, "left")
-    column("Flechas", f.heading, headerY, 0.33, 0.14, "center")
-    column("Orbes", f.heading, headerY, 0.47, 0.14, "center")
-    column("Mejor racha", f.small, headerY + 3, 0.61, 0.10, "center")
-    column("Prompts", f.heading, headerY, 0.71, 0.13, "center")
-    column("Total", f.heading, headerY, 0.84, 0.135, "center")
+    local rivalX, rivalW = 0.025, 0.36
+    local arrowsX, arrowsW = 0.39, 0.22
+    local promptX, promptW = 0.61, 0.18
+    local totalX, totalW = 0.79, 0.185
+    column("Rival y resultado", f.heading, headerY, rivalX, rivalW, "left")
+    column("Flechas", f.heading, headerY, arrowsX, arrowsW, "center")
+    column("Prompts", f.heading, headerY, promptX, promptW, "center")
+    column("Total", f.heading, headerY, totalX, totalW, "center")
 
     if #history == 0 then
         label(f.body, "Tus batallas terminadas aparecerán aquí.", boardX, boardY + 130, boardW, "center", Skin.ink)
@@ -675,14 +676,12 @@ function BattleHUD:drawScores(history, page, w, h, saveFailed)
         local rowY = boardY + 41 + (row - 1) * 40
         g.setColor(0.36, 0.22, 0.12, 0.24)
         g.line(boardX + 16, rowY, boardX + boardW - 16, rowY)
-        column(entry.rival, f.body, rowY + 3, 0.025, 0.29, "left")
-        column(entry.won and "Victoria" or "Derrota", f.small, rowY + 20, 0.025, 0.29, "left",
+        column(entry.rival, f.body, rowY + 3, rivalX, rivalW, "left")
+        column(entry.won and "Victoria" or "Derrota", f.small, rowY + 20, rivalX, rivalW, "left",
             entry.won and { 0.24, 0.36, 0.15 } or { 0.50, 0.24, 0.17 })
-        column(("%d pts / %d ac."):format(entry.arrowPoints, entry.arrowHits), f.body, rowY + 11, 0.33, 0.14, "center")
-        column(("%d pts / %d ac."):format(entry.osuPoints, entry.osuHits), f.body, rowY + 11, 0.47, 0.14, "center")
-        column(("x%d"):format(entry.bestCombo), f.body, rowY + 11, 0.61, 0.10, "center")
-        column(("%d pts"):format(entry.promptPoints), f.body, rowY + 11, 0.71, 0.13, "center")
-        column(("%d pts"):format(Scores.total(entry)), f.heading, rowY + 10, 0.84, 0.135, "center")
+        column(("%d pts / %d ac."):format(entry.arrowPoints, entry.arrowHits), f.body, rowY + 11, arrowsX, arrowsW, "center")
+        column(("%d pts"):format(entry.promptPoints), f.body, rowY + 11, promptX, promptW, "center")
+        column(("%d pts"):format(Scores.total(entry)), f.heading, rowY + 10, totalX, totalW, "center")
     end
 
     local pages = BattleHUD.scorePageCount(#history)
