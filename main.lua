@@ -190,12 +190,17 @@ end
 local ALERT_DURATION = 0.40
 local TO_BATTLE_DURATION = 1.05
 local TO_EXPLORE_DURATION = 0.72
+local VERSUS_DURATION = 1.22
+local VERSUS_IMPACT_AT = 0.36
 local BATTLE_ENTER_DURATION = 0.88
+local COUNTER_ATTACK_TIME = 0.44
 local BATTLE_ENTER_SLIDE_PX = 320.0
 local ENCOUNTER_TRIGGER_DIST = 1.75
 local ENCOUNTER_SHORTCUT_DIST = 4.0
 local WALK_SPEED = 6.2
-local PUDU_WALK_FRAME_DISTANCE = 36.0
+local WALK_ACCELERATION = 32.0
+local WALK_BRAKING = 42.0
+local WALK_FRAME_DISTANCE = 0.58
 
 -- Wizard hat head-anchor offsets per Pudú facing row (0..7) in 64px base units
 -- Rows: 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
@@ -230,8 +235,10 @@ local Game = {
     puduU = 3.8,
     puduV = 0.0,
     puduFacingRow = 3, -- 3 = NE (diagonal up-right)
-    puduWalkT = 0.0,
-    puduMoving = false,
+    puduWalkT = 1.0,
+    puduVelocityU = 0.0,
+    puduVelocityV = 0.0,
+    puduWalkWeight = 0.0,
 
     -- Battle Arena & Dash-in State
     battlePhase = "player_turn",
@@ -284,6 +291,7 @@ end
 
 local function loadFonts()
     local fontPath = "assets/fonts/PTSans.ttc"
+    local storyPath = "assets/fonts/CormorantGaramond-SemiBold.ttf"
     local hasFont = love.filesystem.getInfo(fontPath) ~= nil
     local function mk(size)
         if hasFont then
@@ -292,6 +300,11 @@ local function loadFonts()
         end
         return love.graphics.newFont(size)
     end
+    local story
+    if love.filesystem.getInfo(storyPath) then
+        local ok, font = pcall(love.graphics.newFont, storyPath, 23)
+        if ok then story = font end
+    end
     return {
         title = mk(26),
         heading = mk(17),
@@ -299,6 +312,9 @@ local function loadFonts()
         small = mk(12),
         combo = mk(28),
         damage = mk(20),
+        story = story,
+        versus = mk(56),
+        versusName = mk(32),
     }
 end
 
@@ -410,22 +426,37 @@ local function setSpeech(b, text, duration)
     Game.battleFX:setSpeechBubble("enemy", text, duration or 4.0, SPEECH_STYLE[Game.enemyReaction])
 end
 
-local function enemyFrame(enc, animate)
+local function rivalIsAttacking(phase, battle)
+    return phase == "enemy_counter" and battle.phaseTimer <= COUNTER_ATTACK_TIME
+end
+
+local function enemyFrame(enc, facingRow, animate)
     local pair = Game.assets.encounters[enc.id]
     if not pair or not pair.diff then return nil, nil, 68, 148 end
+    if pair.frameW then
+        local phase = Game.battlePhase
+        local poseName = "idle"
+        if phase == "enemy_counter" then
+            poseName = rivalIsAttacking(phase, Game.battle) and "attack" or "charge"
+        elseif phase == "ritual" or phase == "summon" then
+            poseName = "charge"
+        end
+        local pose = pair.poses and pair.poses[poseName] or pair
+        return pose, pose.quads[facingRow][1], pose.frameW, pose.frameH, pair.companion
+    end
     local row = pair.isSheet and pair.quads and (pair.quads[enc.sheetRow or 1] or pair.quads[0])
     if row and #row > 0 then
         local time = Game.battle.actorTime or 0
         local quad = row[animate and (math.floor(time * 5) % #row + 1) or 1]
         local _, _, w, h = quad:getViewport()
-        return pair, quad, w, h
+        return pair, quad, w, h, pair.companion
     end
     local w, h = pair.diff:getDimensions()
-    return pair, nil, w, h
+    return pair, nil, w, h, pair.companion
 end
 
 local function syncBattleFX(enc, anchors, w, h)
-    local _, _, fw, fh = enemyFrame(enc, false)
+    local _, _, fw, fh = enemyFrame(enc, anchors.enemyFacingRow, false)
     local enemyH = anchors.enemyScaleH * (enc.scale or 2.55) / 2.55
     local ex, ey = anchors.enemyX + (enc.offsetX or 0), anchors.enemyY + (enc.offsetY or 0)
     Game.battleFX:setViewport(w, h)
@@ -555,6 +586,7 @@ local function applySummonImpactEffects(enc, anchors, ex, ey)
     b.reaction = res.enemy_reaction
     Game.enemyReaction = Game.cli.forceReaction or b.reaction
     b.damage = b.impact.damage_to_enemy
+    if b.damage > 0 then b.rivalHitTimer = 0.46 end
     b.enemyHp = math.max(0, b.enemyHp - b.damage)
     b.hp = clamp(b.hp + b.impact.heal_pudu - res.damage_to_pudu, 0, 100)
     b.mood = res.pudu_reaction == "shocked" and "shocked" or (res.pudu_reaction == "angry" and "angry" or "happy")
@@ -670,10 +702,9 @@ end
 -- Overworld Navigation & Battle Entry Helpers
 --------------------------------------------------------------------------------
 
--- Map screen-space input direction (dx, dy) to the 8 Pudu facing rows:
--- 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW
-local function screenDirToFacingRow(dx, dy)
-    return math.floor(math.atan2(dx, dy) * 4 / math.pi + 0.5) % 8
+local function stopPuduMovement()
+    Game.puduVelocityU, Game.puduVelocityV = 0.0, 0.0
+    Game.puduWalkWeight = 0.0
 end
 
 local function findSafeSpotNearEncounter(enc, offsetU)
@@ -720,6 +751,11 @@ local function campaignWins()
     return wins
 end
 
+local function startVersus()
+    Game.battlePhase = "versus"
+    Game.battle.versusTime = 0
+end
+
 local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
     local targetIdx = clamp(math.floor(tonumber(idx) or Game.encounterIndex or 1), 1, Encounters.count())
     Game.encounterIndex = targetIdx
@@ -731,10 +767,12 @@ local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
         enterPlayerTurn()
         Game.battleEnterT = 1.0
         Game.puduAnimMode = "battle_idle"
-    else
+    elseif initialEnterT ~= nil then
         Game.battlePhase = "battle_enter"
-        Game.battleEnterT = clamp(initialEnterT or 0.0, 0.0, 0.99)
+        Game.battleEnterT = clamp(initialEnterT, 0.0, 0.99)
         Game.puduAnimMode = "battle_enter"
+    else
+        startVersus()
     end
 
     Game.enemyReaction = (Game.cli and Game.cli.forceReaction) or "idle"
@@ -766,6 +804,7 @@ local function triggerEncounterTransition(idx)
     local enc = Encounters.getByIndex(idx)
     if not enc then return end
 
+    stopPuduMovement()
     Game.encounterIndex = idx
     Game.alertEncounterIdx = idx
     Game.transitionState = "alert"
@@ -805,17 +844,21 @@ local function updateTransition(dt)
         if p >= 1.0 then
             Game.transitionState = "none"
             Game.transitionTimer = 0.0
+            startVersus()
         end
     elseif Game.transitionState == "to_explore" then
         Game.transitionTimer = Game.transitionTimer + dt
         local p = Game.transitionTimer / TO_EXPLORE_DURATION
         if p >= 0.50 and not Game.transitionSwitched then
+            local enc = Encounters.getByIndex(Game.encounterIndex)
+            if Game.battlePhase == "victory" and Game.defeatedMap[enc.id] and enc.restorationLine then
+                showToast(enc.restorationLine, 5.0)
+            end
             Game.mode = "explore"
             Game.battle = nil
             love.keyboard.setTextInput(false)
             Game.alertEncounterIdx = nil
             Game.transitionSwitched = true
-            local enc = Encounters.getByIndex(Game.encounterIndex)
             if distanceSquaredToEncounter(enc) < 2.4 ^ 2
                 or (not Game.qaExplore and enc == nextOverworldEncounter() and Game.puduU >= enc.u) then
                 Game.puduU, Game.puduV = findSafeSpotNearEncounter(enc, -2.6)
@@ -861,7 +904,6 @@ local function updateExplore(dt)
         Game.encounterCooldown = math.max(0.0, Game.encounterCooldown - dt)
     end
 
-    Game.puduMoving = false
     -- Pause walk input while calm room-snapped camera pans between rooms (R7)
     local panning = Game.stage:isCameraPanning()
     if panning and not Game.wasCameraPanning and Game.audio then
@@ -869,7 +911,6 @@ local function updateExplore(dt)
     end
     Game.wasCameraPanning = panning
     if panning then
-        Game.puduWalkT = 0.0
         Game.lastStepBucket = nil
         Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
         return
@@ -883,47 +924,68 @@ local function updateExplore(dt)
 
     local nextEncounter = nextOverworldEncounter()
     local gateU = nextEncounter and not Game.qaExplore and nextEncounter.u
-    if dx ~= 0 or dy ~= 0 then
-        local startU, startV = Game.puduU, Game.puduV
-        local du, dv = StageRenderer.screenVecToIso(dx, dy, WALK_SPEED)
-        local candU = Game.puduU + du * dt
-        local candV = Game.puduV + dv * dt
-        if gateU and du > 0 then candU = math.min(candU, gateU) end
+    local targetU, targetV = StageRenderer.screenVecToIso(dx, dy, WALK_SPEED)
+    local velocityU, velocityV = Game.puduVelocityU, Game.puduVelocityV
+    local changeU, changeV = targetU - velocityU, targetV - velocityV
+    local change = math.sqrt(changeU * changeU + changeV * changeV)
+    local hasInput = dx ~= 0 or dy ~= 0
+    local acceleration = hasInput and WALK_ACCELERATION or WALK_BRAKING
+    local rampTime = math.min(dt, change / acceleration)
+    local ramp = change > 0 and math.min(1.0, dt * acceleration / change) or 1.0
+    Game.puduVelocityU = velocityU + changeU * ramp
+    Game.puduVelocityV = velocityV + changeV * ramp
 
-        -- Separate-axis sliding collision check
-        if StageRenderer.isWalkable(candU, candV) then
-            Game.puduU, Game.puduV = candU, candV
-        elseif StageRenderer.isWalkable(candU, Game.puduV) then
-            Game.puduU = candU
-        elseif StageRenderer.isWalkable(Game.puduU, candV) then
-            Game.puduV = candV
-        end
+    -- Integrate the ramp and then any time spent at the target speed this frame.
+    local moveU = Game.puduVelocityU * dt - changeU * ramp * rampTime * 0.5
+    local moveV = Game.puduVelocityV * dt - changeV * ramp * rampTime * 0.5
+    local startU, startV = Game.puduU, Game.puduV
+    local candU, candV = startU + moveU, startV + moveV
+    if gateU and moveU > 0 and candU >= gateU then
+        candU = math.max(startU, gateU)
+        Game.puduVelocityU = 0.0
+    end
 
-        local movedU, movedV = Game.puduU - startU, Game.puduV - startV
-        local screenX = movedU * StageRenderer.ISO_UX + movedV * StageRenderer.ISO_VX
-        local screenY = movedU * StageRenderer.ISO_UY + movedV * StageRenderer.ISO_VY
-        local distance = math.sqrt(screenX * screenX + screenY * screenY)
-        Game.puduMoving = distance > 1e-5
-        Game.puduFacingRow = Game.puduMoving and screenDirToFacingRow(screenX, screenY)
-            or screenDirToFacingRow(dx, dy)
-        if Game.puduMoving then
-            Game.puduWalkT = (Game.puduWalkT + distance / PUDU_WALK_FRAME_DISTANCE) % 4
-            local bucket = math.floor(Game.puduWalkT)
-            if bucket ~= Game.lastStepBucket then
-                Game.lastStepBucket = bucket
-                if (bucket == 1 or bucket == 3) and Game.audio then
-                    local biomeId = StageRenderer.getBiomeAt(Game.puduU)
-                    Game.audio:play(Audio.getBiomeStepSfx(biomeId), 0.26, 0.08)
-                end
-            end
+    -- Cancel momentum on blocked axes while allowing the other axis to slide.
+    if (candU ~= startU or candV ~= startV) and not StageRenderer.isWalkable(candU, candV) then
+        if candU ~= startU and StageRenderer.isWalkable(candU, startV) then
+            candV, Game.puduVelocityV = startV, 0.0
+        elseif candV ~= startV and StageRenderer.isWalkable(startU, candV) then
+            candU, Game.puduVelocityU = startU, 0.0
+        else
+            candU, candV = startU, startV
+            Game.puduVelocityU, Game.puduVelocityV = 0.0, 0.0
         end
     end
-    if not Game.puduMoving then
-        Game.puduWalkT = 0.0
+
+    Game.puduU, Game.puduV = candU, candV
+    local movedU, movedV = candU - startU, candV - startV
+    local distance = math.sqrt(movedU * movedU + movedV * movedV)
+    Game.puduWalkWeight = dt > 0 and math.min(1.0, distance / (dt * WALK_SPEED)) or 0.0
+    if distance > 1e-5 then
+        local screenX = movedU * StageRenderer.ISO_UX + movedV * StageRenderer.ISO_VX
+        local screenY = movedU * StageRenderer.ISO_UY + movedV * StageRenderer.ISO_VY
+        Game.puduFacingRow = StageRenderer.screenDirToFacingRow(screenX, screenY)
+        Game.puduWalkT = (Game.puduWalkT + distance / WALK_FRAME_DISTANCE) % 4
+        local bucket = math.floor(Game.puduWalkT)
+        if bucket ~= Game.lastStepBucket then
+            Game.lastStepBucket = bucket
+            if (bucket == 1 or bucket == 3) and Game.audio then
+                local biomeId = StageRenderer.getBiomeAt(Game.puduU)
+                Game.audio:play(Audio.getBiomeStepSfx(biomeId), 0.26, 0.08)
+            end
+        end
+    else
         Game.lastStepBucket = nil
+        if hasInput then
+            Game.puduFacingRow = StageRenderer.screenDirToFacingRow(dx, dy)
+        end
     end
 
     Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
+    if Game.stage:isCameraPanning() then
+        Game.lastStepBucket = nil
+        stopPuduMovement()
+    end
     syncExploreBiomeMusic(false)
 
     -- Crossing the next rival's position starts combat even if the player takes a side path.
@@ -949,7 +1011,21 @@ local function updateBattle(dt, realDt)
     local fx = Game.battleFX
     local w, h = love.graphics.getDimensions()
     local enc = Encounters.getByIndex(Game.encounterIndex)
-    local anchors = StageRenderer.getBattleAnchors(w, h)
+    if phase == "versus" then
+        local before = b.versusTime
+        b.versusTime = before + dt
+        local impactTime = VERSUS_DURATION * VERSUS_IMPACT_AT
+        if before < impactTime and b.versusTime >= impactTime then
+            Game.audio:play("parry_clash", 0.92)
+        end
+        if b.versusTime >= VERSUS_DURATION then
+            Game.battlePhase, Game.battleEnterT = "battle_enter", 0
+            Game.puduAnimMode = "battle_enter"
+        end
+        return
+    end
+    if b.rivalHitTimer then b.rivalHitTimer = math.max(0, b.rivalHitTimer - dt) end
+    local anchors = StageRenderer.getBattleAnchors(w, h, enc)
     local ex, ey = syncBattleFX(enc, anchors, w, h)
     if not fx:isHitStopped() then b.actorTime = (b.actorTime or 0) + dt end
     fx:update(dt)
@@ -972,7 +1048,7 @@ local function updateBattle(dt, realDt)
             if arrow then ritual:onKeyPressed(arrow.direction, Game.audio) end
             b.nextAutoArrowAt = b.nextAutoArrowAt + (Game.demo and 0.055 or 0.17)
         end
-        ritual:update(realDt, Game.beatSync, anchors.puduX, anchors.puduY, getOrbLift(anchors, h))
+        ritual:update(realDt, Game.beatSync, anchors.puduX, anchors.puduY, getOrbLift(anchors, h), Game.audio)
         if ritual.readyToUnleash and not b.decision then
             local fallback = Judge.standaloneLuaEvaluate(b.prompt, b.request)
             acceptDecision({ uid = b.uid, result = fallback, source = "lua", latency_ms = math.floor(ritual.elapsed * 1000) })
@@ -1049,6 +1125,18 @@ local function drawBattleDashDust(x, y, enterT, time)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function drawBattleContactShadow(x, y, rx, ry, opacity)
+    love.graphics.setShader()
+    love.graphics.setColor(0.03, 0.04, 0.08, opacity)
+    local radial = Game.assets.lightRadial
+    if radial then
+        local iw, ih = radial:getDimensions()
+        love.graphics.draw(radial, x, y, 0, rx * 2.8 / iw, ry * 2.8 / ih, iw * 0.5, ih * 0.5)
+    else
+        love.graphics.ellipse("fill", x, y, rx, ry)
+    end
+end
+
 local function drawPuduSprite(x, y, targetH, pose, litShader)
     local assets = Game.assets
     if not assets then return end
@@ -1070,9 +1158,8 @@ local function drawPuduSprite(x, y, targetH, pose, litShader)
     -- Contact shadow on ground shrinks gently as Pudú hops into the air
     local airFrac = clamp(-jumpY / 24.0, 0.0, 1.0)
     local shScale = 1.0 - airFrac * 0.30
-    love.graphics.setShader()
-    love.graphics.setColor(0.03, 0.04, 0.08, 0.36 * (1.0 - airFrac * 0.28))
-    love.graphics.ellipse("fill", px, py + 4, targetH * 0.31 * shScale, targetH * 0.105 * shScale)
+    drawBattleContactShadow(px, py + 4, targetH * 0.31 * shScale, targetH * 0.105 * shScale,
+        0.50 * (1.0 - airFrac * 0.28))
 
     -- Subtle comic motion dust during battle_enter trot (zero music notes!)
     if Game.battlePhase == "battle_enter" then
@@ -1161,7 +1248,7 @@ local function drawPuduSprite(x, y, targetH, pose, litShader)
     end
 end
 
-local function drawEnemySprite(enc, x, y, targetH, groove, litShader, defeat)
+local function drawEnemySprite(enc, x, y, targetH, facingRow, groove, litShader, defeat)
     if not enc or not Game.assets then return end
     local g = groove or {}
     local d = defeat or {}
@@ -1178,11 +1265,9 @@ local function drawEnemySprite(enc, x, y, targetH, groove, litShader, defeat)
     -- Soft contact shadow beneath rival feet
     local airFrac = clamp(-dy / 22.0, 0.0, 1.0)
     local shScale = 1.0 - airFrac * 0.25
-    love.graphics.setShader()
-    love.graphics.setColor(0.03, 0.04, 0.08, 0.36 * (1.0 - airFrac * 0.25) * alpha)
-    love.graphics.ellipse("fill", ex, ey + 4, 46 * shScale, 15 * shScale)
+    drawBattleContactShadow(ex, ey + 4, 46 * shScale, 15 * shScale, 0.50 * (1.0 - airFrac * 0.25) * alpha)
 
-    local encPair, quad, fw, fh = enemyFrame(enc, not defeat)
+    local encPair, quad, fw, fh, companion = enemyFrame(enc, facingRow, not defeat)
     if encPair then
         local scaleFactor = (enc.scale or 2.55) / 2.55
         local sc = (targetH * scaleFactor) / math.max(1, fh)
@@ -1194,14 +1279,21 @@ local function drawEnemySprite(enc, x, y, targetH, groove, litShader, defeat)
             tilt,
             sc * sxMul,
             sc * syMul,
-            fw * 0.50,
-            fh * 0.92,
+            encPair.originX or fw * 0.50,
+            encPair.originY or fh * 0.92,
             quad,
             d.flashWhite or 0,
             nil,
             litShader,
             true
         )
+        if companion then
+            local side = fw * 0.56 * sc * sxMul
+            local sockScale = sc * 0.72
+            Game.stage:drawSpriteLit(companion, ex + math.cos(tilt) * side, ey + dy + math.sin(tilt) * side,
+                tilt, sockScale * sxMul, sockScale * syMul, companion.originX, companion.originY,
+                companion.quads[facingRow][1], d.flashWhite or 0, nil, litShader, true)
+        end
     else
         local c = enc.color or { 0.88, 0.36, 0.36 }
         love.graphics.push()
@@ -1224,7 +1316,14 @@ local function getHudState(battleEnc)
         toast = Game.toastText, elapsed = Game.elapsed,
     }
     if b then
-        state.context, state.contextColor = battleEnc.name, battleEnc.color
+        local biome = Encounters.getBiome(battleEnc.biome)
+        state.context = battleEnc.biome == "ciudad" and "Ciudad" or biome.shortName
+        state.rivalName = battleEnc.name
+        state.rivalShouts = (b.rivalHitTimer or 0) > 0 or rivalIsAttacking(Game.battlePhase, b)
+        local portraits = Game.assets.rivalPortraits[battleEnc.id]
+        if portraits then
+            state.rivalPortrait = (state.rivalShouts and portraits.shout) or portraits.idle or portraits.shout
+        end
         state.hp, state.enemyHp, state.enemyMaxHp = b.hp, b.enemyHp, battleEnc.maxHp
         state.campaignComplete = battleEnc.finalBoss and Game.battlePhase == "victory"
             and campaignWins() == #Encounters.LIST
@@ -1301,7 +1400,8 @@ function love.load(args)
 
     -- Initial Pudu overworld position & camera snap
     if not Game.cli.biome and (Game.cli.transitionPreview ~= nil
-        or (Game.cli.encounterExplicit and Game.mode == "explore")) then
+        or (Game.cli.encounterExplicit and Game.mode == "explore")
+        or (Game.mode == "battle" and Game.encounterIndex <= #Encounters.LIST)) then
         local enc = Encounters.getByIndex(Game.encounterIndex)
         if enc then
             Game.puduU, Game.puduV = findSafeSpotNearEncounter(enc, -2.0)
@@ -1333,7 +1433,7 @@ function love.load(args)
         end
     elseif Game.mode == "battle" or Game.cli.battleEnterPreview then
         -- If --battle-enter-preview is passed with short --quit-after, seed enterT cleanly near mid-slide
-        local seedT = Game.cli.battleEnterPreview and 0.22 or 0.0
+        local seedT = Game.cli.battleEnterPreview and 0.22 or (Game.cli.demoFinale and 0 or nil)
         enterBattleArenaImmediate(Game.encounterIndex, (Game.demo ~= nil or Game.cli.testRitual ~= nil)
             and not Game.cli.battleEnterPreview, seedT)
     else
@@ -1376,7 +1476,7 @@ function love.update(dt)
         elseif Game.cli.demoFinale then
             local w, h = love.graphics.getDimensions()
             local enc = Encounters.getByIndex(Game.encounterIndex)
-            local ex, ey = syncBattleFX(enc, StageRenderer.getBattleAnchors(w, h), w, h)
+            local ex, ey = syncBattleFX(enc, StageRenderer.getBattleAnchors(w, h, enc), w, h)
             Game.battlePhase, Game.enemyReaction = "victory", Game.cli.demoFinale
             b.enemyHp = 0
             setSpeech(b, enc.defeatLine)
@@ -1431,7 +1531,8 @@ function love.update(dt)
                 Game.screenshotPhaseTime = nil
             end
         end
-        if (phase and (Game.screenshotPhaseTime or 0) >= (phase == "victory" and 0.4 or 0.1))
+        local phaseDelay = phase == "versus" and 0.53 or (phase == "victory" and 0.4 or 0.1)
+        if (phase and (Game.screenshotPhaseTime or 0) >= phaseDelay)
             or (not phase and Game.cliElapsed >= triggerAt) then
             Game.cliScreenshotDone = true
             saveScreenshotTo(Game.cli.screenshot)
@@ -1491,7 +1592,7 @@ local function routeHudAction(action)
         end
     elseif action == "retry" and (Game.battlePhase == "victory" or Game.battlePhase == "defeat") then
         if Game.audio then Game.audio:play("sfx_ui_click", 0.55) end
-        enterBattleArenaImmediate(Game.encounterIndex, false, 0)
+        enterBattleArenaImmediate(Game.encounterIndex, false)
     elseif action == "prompt" and promptAvailable() then
         if not Game.hud.promptOpen and Game.audio then Game.audio:play("sfx_prompt_open", 0.55) end
         Game.hud:openPrompt()
@@ -1503,7 +1604,24 @@ end
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
     if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    if Game.battlePhase == "versus" then return end
+    if Game.battlePhase == "ritual" and Game.ritual:onMousePressed(x, y, button, Game.audio) then return end
     routeHudAction(Game.hud:hitTest(x, y))
+end
+
+function love.mousemoved(x, y)
+    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    if Game.battlePhase == "ritual" then
+        Game.ritual:onMouseMoved(x, y)
+    end
+end
+
+function love.mousereleased(x, y, button)
+    if button ~= 1 then return end
+    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    if Game.battlePhase == "ritual" then
+        Game.ritual:onMouseReleased(x, y, button, Game.audio)
+    end
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -1529,7 +1647,7 @@ function love.keypressed(key, scancode, isrepeat)
         return
     end
 
-    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil then return end
+    if Game.transitionState ~= "none" or Game.transitionPreview ~= nil or Game.battlePhase == "versus" then return end
     if Game.battlePhase == "ritual" and not isrepeat and Game.ritual:onKeyPressed(key, Game.audio) then return end
 
     local b = Game.battle
@@ -1568,11 +1686,19 @@ end
 function love.draw()
     Game.framesDrawn = Game.framesDrawn + 1
     local w, h = love.graphics.getDimensions()
+    if Game.mode == "battle" and Game.battlePhase == "versus" then
+        local enc = Encounters.getByIndex(Game.encounterIndex)
+        Game.hud:drawVersus(Game.assets.puduVersusPortrait or Game.assets.portraits.happy,
+            Game.assets.rivalPortraits[enc.id], enc.name, enc.color, w, h,
+            Game.battle.versusTime / VERSUS_DURATION, VERSUS_IMPACT_AT, not Game.cli.disableShake)
+        Game.lastDrawCalls = love.graphics.getStats().drawcalls or 0
+        return
+    end
     local canvas = ensureWorldCanvas(w, h)
 
     local battleEnc = nil
     local battleTheme = nil
-    local battleAnchors, defeatTransform
+    local battleAnchors, defeatTransform, rivalCard
     local fx = Game.battleFX
     local puduEnterOffX, puduEnterOffY = 0.0, 0.0
     local enemyEnterOffX, enemyEnterOffY = 0.0, 0.0
@@ -1587,15 +1713,13 @@ function love.draw()
         local biomeId = StageRenderer.getBiomeAt(Game.stage.camU)
         local biome = Encounters.getBiome(biomeId)
         local theme = Encounters.getTheme(biome.stageDefault)
-        local lights = Game.stage:collectZoneLights(w, h, Game.elapsed)
+        local lights = Game.stage:collectZoneLights(w, h, Game.elapsed, Game.defeatedMap)
         local litShader = Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights, nil, true)
         local terrainShader = Game.shaders.terrain
             and Game.stage:configureLitShader(theme, w, h, Game.elapsed, lights, Game.shaders.terrain, true)
         local arrival = Game.desertArrival
-        local overPose = arrival or Game.beatSync:getPuduDancePose(
-            Game.puduMoving and "walk" or "overworld_idle",
-            Game.puduFacingRow,
-            Game.puduWalkT
+        local overPose = arrival or Game.beatSync:getOverworldPuduPose(
+            Game.puduFacingRow, Game.puduWalkT, Game.puduWalkWeight
         )
 
         Game.stage:drawOverworld({
@@ -1625,7 +1749,7 @@ function love.draw()
             Game.ritual:collectLights(lights)
         end
         fx:collectLights(lights)
-        for _, light in ipairs(Game.stage:collectBattleLights(battleEnc, w, h, Game.elapsed)) do
+        for _, light in ipairs(Game.stage:collectBattleLights(battleEnc, w, h, Game.elapsed, Game.assets)) do
             lights[#lights + 1] = light
         end
         local litShader = Game.stage:configureLitShader(battleTheme, w, h, Game.elapsed, lights)
@@ -1649,6 +1773,8 @@ function love.draw()
             enterT = (Game.battlePhase == "battle_enter") and Game.battleEnterT or 1.0,
         }
 
+        if Game.battlePhase == "victory" then defeatTransform = fx:getDefeatTransform() end
+
         battleAnchors = Game.stage:drawBattleArena(
             battleEnc,
             Encounters.STAGE_THEMES,
@@ -1661,13 +1787,18 @@ function love.draw()
             enterOffsets
         )
 
-        -- Face 3/4 back-right (row 3 = NE) looking diagonally up-right toward the Rival!
+        local enemyVisible = not defeatTransform or (defeatTransform.alpha >= 0.15 and defeatTransform.dx <= 180)
+        if enemyVisible and (Game.battlePhase ~= "battle_enter" or Game.battleEnterT >= 0.88) then
+            local ex = battleAnchors.enemyX + (battleEnc.offsetX or 0) + enemyEnterOffX
+            rivalCard = Game.hud:layoutRivalPortrait(battleEnc.name, ex, w, h)
+        end
+        fx:setRivalCard(rivalCard)
+
         local b = Game.battle
         if not fx:isHitStopped() then
-            b.puduPose = Game.beatSync:getPuduDancePose(Game.puduAnimMode, 3)
+            b.puduPose = Game.beatSync:getPuduDancePose(Game.puduAnimMode, battleAnchors.puduFacingRow)
             b.enemyGroove = Game.beatSync:getEnemyGroove(Game.enemyReaction)
         end
-        if Game.battlePhase == "victory" then defeatTransform = fx:getDefeatTransform() end
 
         fx:drawBackLayer()
         if Game.battlePhase == "ritual" then
@@ -1682,6 +1813,7 @@ function love.draw()
             battleAnchors.enemyX + enemyEnterOffX,
             battleAnchors.enemyY + enemyEnterOffY,
             battleAnchors.enemyScaleH or 148.0,
+            battleAnchors.enemyFacingRow,
             not defeatTransform and b.enemyGroove or nil,
             litShader,
             defeatTransform
@@ -1731,7 +1863,8 @@ function love.draw()
             Game.defeatedMap,
             w,
             h,
-            Game.fonts.small
+            Game.fonts.small,
+            Game.fonts.story
         )
         if not Game.desertArrival then Game.hud:drawExploreBar(w, h) end
     else
@@ -1740,7 +1873,7 @@ function love.draw()
         local ey = battleAnchors.enemyY + (battleEnc.offsetY or 0) + enemyEnterOffY
         local px, py = battleAnchors.puduX, battleAnchors.puduY
         if phase == "ritual" then
-            Game.hud:drawAnticipation(b.anticipationLine, w, ex, ey)
+            Game.hud:drawAnticipation(b.anticipationLine, w, ex, ey, rivalCard)
             Game.ritual:draw(w, h, px, py, Game.fonts, Game.beatSync, getOrbLift(battleAnchors, h))
         elseif phase ~= "battle_enter" and phase ~= "victory" and phase ~= "defeat" then
             fx:drawFrontParticles(Game.fonts, px, py, ex, ey)
@@ -1748,8 +1881,8 @@ function love.draw()
         else
             fx:drawFrontParticles(Game.fonts)
         end
-        local enemyVisible = not defeatTransform or (defeatTransform.alpha >= 0.15 and defeatTransform.dx <= 180)
-        if enemyVisible and (phase ~= "battle_enter" or Game.battleEnterT >= 0.88) then
+        if rivalCard then
+            Game.hud:drawRivalPortrait(hudState, rivalCard)
             Game.hud:drawRivalStageBar(hudState, ex, ey, w)
         end
         Game.hud:drawBattleStrip(hudState, w, h)

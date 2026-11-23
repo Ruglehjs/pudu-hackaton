@@ -31,6 +31,8 @@ class JudgeTests(unittest.TestCase):
     def test_rivals_have_a_critical_and_a_backfire(self):
         attacks = [
             ("pila_de_ropa", "lavadora", "calcetín"),
+            ("mancha", "esponja", "aceite"), ("brasa", "lluvia", "madera seca"),
+            ("tempano", "calor", "congelador"),
             ("caleuche", "faro", "niebla"),
             ("nino_helado", "nube de lluvia", "paraguas"),
             ("mimo_muro", "balde de pintura", "muro de cemento"),
@@ -52,8 +54,8 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(ai.fallback_battle_evaluate("nube de lluvia", "nino_helado")["enemy_reaction"], "crying")
 
     def test_boss_counter_uses_the_same_floor_online_and_offline(self):
-        local = ai.fallback_battle_evaluate("faro", "caleuche")
-        online = ai.sanitize_battle_result({**local, "enemy_counter_damage": 5}, "faro", "caleuche")
+        local = ai.fallback_battle_evaluate("calor", "tempano")
+        online = ai.sanitize_battle_result({**local, "enemy_counter_damage": 5}, "calor", "tempano")
         self.assertEqual(local["enemy_counter_damage"], 20)
         self.assertEqual(online["enemy_counter_damage"], local["enemy_counter_damage"])
 
@@ -184,6 +186,49 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(requests, [("gemini-2.5-flash", {"thinkingBudget": 0}),
                                     ("gemini-3.5-flash-lite", {"thinkingLevel": "MINIMAL"})])
         self.assertEqual(client.text_model, "gemini-3.5-flash-lite")
+
+    def test_decisions_api_rejects_unusable_prompt_before_sprite_generation(self):
+        client = Mock(provider="vertex_ai", text_model="gemini-3.5-flash-lite",
+                      decision_model="gemini-decision-1", decisions_enabled=True)
+        client.decide_prompt_usable.return_value = (False, "Rechazado por Decisions API.", 0.05)
+        sprites = Mock()
+        bridge = ai.Bridge(client, sprites)
+        resp = bridge.battle({"prompt": "romper el juego ahora", "encounter_id": "mimo_muro"})
+        self.assertEqual(resp["source"], "decision_api")
+        self.assertFalse(resp["result"]["approved"])
+        self.assertEqual(resp["result"]["damage_to_enemy"], 0)
+        self.check_schema(resp["result"])
+        sprites.maybe_start_speculative_sprite.assert_not_called()
+        client.judge.assert_not_called()
+
+    def test_decisions_api_rest_and_vertex_fallback(self):
+        client = ai.GoogleClient(mock=True)
+        client.api_key = "unit-test-key"
+        client.pool = Mock()
+        client.pool.post.return_value = {
+            "answers": {"is_usable": {"type": "noul", "noul": 0.92, "confidence": 0.84}}
+        }
+        source, answers = client.decide("ornitorrinco dj", {"is_usable": {"type": "noul", "instructions": "ok?"}})
+        self.assertEqual(source, "decisions_api")
+        self.assertAlmostEqual(answers["is_usable"]["noul"], 0.92)
+        self.assertEqual(client.pool.post.call_args.args[:2], ("generativelanguage.googleapis.com", "/v1beta/decisions"))
+
+        # Vertex-only calibrated fallback
+        vclient = ai.GoogleClient(mock=True)
+        vclient.project, vclient.credentials = "project-test", Mock(valid=True)
+        vclient.pool = Mock()
+        vclient.pool.post.return_value = {
+            "candidates": [{"content": {"parts": [{"text": '{"is_usable": 0.12}'}]}}]
+        }
+        vsource, vanswers = vclient.decide("bad", {"is_usable": {"type": "noul", "instructions": "ok?"}})
+        self.assertEqual(vsource, "vertex_decision")
+        self.assertAlmostEqual(vanswers["is_usable"]["noul"], 0.12)
+
+    def test_default_models_are_fast_current_generation(self):
+        client = ai.GoogleClient(mock=True)
+        self.assertEqual(client.text_model, "gemini-3.5-flash-lite")
+        self.assertEqual(client.sprite_model, "gemini-3.1-flash-lite-image")
+        self.assertEqual(client.decision_model, "gemini-decision-1")
 
     def test_http_json_envelope_and_mock_server(self):
         client = ai.GoogleClient(mock=True)

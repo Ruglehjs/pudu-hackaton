@@ -48,9 +48,9 @@ Todos los campos son opcionales; solo sobreescribe los que necesites.
 | `overworld_costa` | Exploración Valparaíso | `assets/audio/bgm_overworld_costa.wav` |
 | `overworld_bosque` | Exploración Bosque Valdiviano | `assets/audio/bgm_overworld_bosque.wav` |
 | `overworld_chiloe` | Exploración Chiloé | `assets/audio/bgm_overworld_chiloe.wav` |
-| `battle_pila_ropa` | Batalla Pila de Ropa | `assets/audio/bgm_battle_pila_ropa.wav` |
-| `battle_gaviota` | Batalla Gaviota Mafiosa | `assets/audio/bgm_battle_gaviota.wav` |
-| `battle_puma` | Batalla Puma Dramático | `assets/audio/bgm_battle_puma.wav` |
-| `battle_caleuche` | Batalla El Caleuche (Jefe Final) | `assets/audio/bgm_battle_caleuche.wav` |
+| `battle_fardo` | Batalla Fardo (Atacama) | `assets/audio/bgm_battle_pila_ropa.wav` |
+| `battle_mancha` | Batalla La Mancha (Valparaíso) | `assets/audio/bgm_battle_gaviota.wav` |
+| `battle_brasa` | Batalla Brasa (Bosque Valdiviano) | `assets/audio/bgm_battle_puma.wav` |
+| `battle_tempano` | Batalla Témpano (Jefe Final — Chiloé) | `assets/audio/bgm_battle_caleuche.wav` |
 | `victory` | Fanfarria de victoria | `assets/audio/bgm_victory.wav` |
 | `defeat` | Jingle de derrota | `assets/audio/bgm_defeat.wav` |

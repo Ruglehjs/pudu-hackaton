@@ -55,7 +55,7 @@ local function applyImageSettings(img, path, repeatWrap, filterMode)
   return img
 end
 
-function AssetLoader.loadImageRaw(path, repeatWrap, filterMode)
+function AssetLoader.loadImageRaw(path, repeatWrap, filterMode, settings)
   if type(path) ~= "string" or path == "" then
     return nil
   end
@@ -73,7 +73,7 @@ function AssetLoader.loadImageRaw(path, repeatWrap, filterMode)
       if okRead and type(bytes) == "string" and #bytes > 0 then
         local okData, fileData = pcall(love.filesystem.newFileData, bytes, relPath)
         if okData and fileData then
-          local okImg, loaded = pcall(love.graphics.newImage, fileData)
+          local okImg, loaded = pcall(love.graphics.newImage, fileData, settings)
           if okImg and loaded then
             img = loaded
           end
@@ -86,7 +86,7 @@ function AssetLoader.loadImageRaw(path, repeatWrap, filterMode)
   if not img then
     local okInfo, info = pcall(love.filesystem.getInfo, relPath)
     if okInfo and info then
-      local okImg, loaded = pcall(love.graphics.newImage, relPath)
+      local okImg, loaded = pcall(love.graphics.newImage, relPath, settings)
       if okImg and loaded then
         img = loaded
       end
@@ -1100,6 +1100,42 @@ local function makeGagTile(pattern)
   return {diff=newPixelImage(data, false), isPlaceholder=true}
 end
 
+local groundScenery = {
+  discarded_shirt = {
+    "....r...r.../..rrrrrrrr../.lrrrrdddrr./llrrrrdd..rr/.l.rrldd..../...rrlddd.../...lrrrrd.../....lrrr....",
+    { r={0.64,0.28,0.25}, l={0.84,0.47,0.34}, d={0.38,0.17,0.20} },
+  },
+  discarded_jeans = {
+    "...bbbllll../..bbbbbbbd../.dlllbbbdb../.dbbbbbbdd../ddbb..dbbb./dbb....dbb./.bl.....dld/.........dd",
+    { b={0.28,0.44,0.56}, l={0.50,0.62,0.67}, d={0.16,0.26,0.36} },
+  },
+  discarded_scarf = {
+    "........gll./...dll.lggl./..dgggllgg../.lgg..dgg.../lgg...ddl.../gdd.........",
+    { g={0.36,0.53,0.39}, l={0.69,0.71,0.48}, d={0.22,0.35,0.30} },
+  },
+  shore_shells = {
+    "....ll....../...lrrl...r./..lrddr..ldr/.ldddrr..dr./..rrr....r..",
+    { r={0.73,0.56,0.43}, l={0.89,0.80,0.64}, d={0.52,0.38,0.31} },
+  },
+}
+
+local function makeGroundScenery(pattern, palette)
+  local w, h = 0, 0
+  for row in pattern:gmatch("[^/]+") do
+    w, h = math.max(w, #row), h + 1
+  end
+  local data = love.image.newImageData(w, h)
+  local y = 0
+  for row in pattern:gmatch("[^/]+") do
+    for x = 1, #row do
+      local ink = palette[row:sub(x, x)]
+      if ink then data:setPixel(x - 1, y, ink[1], ink[2], ink[3], 1) end
+    end
+    y = y + 1
+  end
+  return { diff = newPixelImage(data, false), isPlaceholder = true }
+end
+
 local function makeBodoquePlaceholder()
   local w, h = 44, 64
   local data = love.image.newImageData(w, h)
@@ -1123,6 +1159,27 @@ local function makeBodoquePlaceholder()
   fillEllipse(data, w, h, 19, 34, 3, 2, 0.98, 0.57, 0.17)
   applyOutline(data, 0, 0, w, h, 0.19, 0.07, 0.10)
   return { diff = newPixelImage(data, false), isPlaceholder = true }
+end
+
+local BOSS_SPRITE_DIR = "assets/sprites/encounters/bosses/"
+local BOSS_ACTION_POSES = { "charge", "attack" }
+
+local function prepareDirectionalPair(pair, manifest)
+  if not pair or not manifest then return nil end
+  local w, h = pair.diff:getDimensions()
+  local frameW, frameH = manifest.frameWidth, manifest.frameHeight
+  local rows = #manifest.directionRows
+  if w ~= frameW or h ~= frameH * rows then return nil end
+
+  if pair.norm then
+    local nw, nh = pair.norm:getDimensions()
+    if nw ~= w or nh ~= h then pair.norm = nil end
+  end
+  pair.quads = AssetLoader.buildQuads(pair.diff, 1, rows)
+  pair.isSheet = true
+  pair.frameW, pair.frameH = frameW, frameH
+  pair.originX, pair.originY = frameW * manifest.origin.x, frameH * manifest.origin.y
+  return pair
 end
 
 function AssetLoader.loadAll(encountersList)
@@ -1151,12 +1208,29 @@ function AssetLoader.loadAll(encountersList)
     return AssetLoader.loadSpritePair(basePath, repeatWrap)
   end
 
+  local function loadBattlePortrait(name)
+    local settings = { mipmaps = true }
+    local img = AssetLoader.loadImageRaw("assets/custom/" .. name .. ".png", false, "nearest", settings)
+    if img then
+      customCount = customCount + 1
+    else
+      img = AssetLoader.loadImageRaw("assets/ui/portraits/battle/" .. name .. ".png", false, "nearest", settings)
+    end
+    if img then
+      if img:getMipmapCount() > 1 then img:setMipmapFilter("nearest") end
+      realCount = realCount + 1
+    end
+    return img
+  end
+
   local assets = {
     tiles = {},
     portraits = {},
+    rivalPortraits = {},
     encounters = {},
     gags = {},
     props = {},
+    battleArenas = {},
   }
 
   -- 1. Hero Pudú 8-direction sheet (6 cols x 8 rows) + quads
@@ -1195,10 +1269,35 @@ function AssetLoader.loadAll(encountersList)
     assets.tiles[name] = trackPair(tile)
   end
 
+  -- Each painted arena is optional. The renderer can still build the stage from tiles.
+  local arenaDir = "assets/arenas/"
+  local foregrounds = {
+    mirador = "vereda",
+    plaza = "bosque",
+    pantano = "chiloe",
+  }
+  local arenaStages = { "vereda", "muelle", "bosque", "chiloe", "mirador", "plaza", "pantano", "esquina", "oficina" }
+  for _, stage in ipairs(arenaStages) do
+    local background = loadDropIn(stage .. "_arena", arenaDir .. stage .. "_arena", false)
+    if background then
+      local foreground = loadDropIn(stage .. "_foreground", arenaDir .. stage .. "_foreground", false)
+      assets.battleArenas[stage] = {
+        background = trackPair(background),
+        foreground = foreground and trackPair(foreground),
+      }
+    end
+  end
+  for stage, source in pairs(foregrounds) do
+    local arena, sourceArena = assets.battleArenas[stage], assets.battleArenas[source]
+    if arena and sourceArena and not arena.foreground then
+      arena.foreground = sourceArena.foreground
+    end
+  end
+
   -- Scenery is independent of the battle summon catalog.
   local scenery = {
     "ancient_tree", "apacheta_sundial", "araucaria_tree", "biome_arch", "calafate_bush", "caleuche_ship",
-    "coast_lighthouse", "copihue", "debris_pile", "desert_cactus", "lantern_post",
+    "coast_lighthouse", "copihue", "debris_pile", "desert_cactus", "dock_barrels", "lantern_post",
     "lily_pad", "moai_relic", "mossy_boulder", "mossy_log", "mountain_crystal",
     "orb_shrine", "pincoya_shrine", "quena_monolith", "rewe_totem", "rock_monolith",
     "stone_pedestal", "textile_bale", "valdivian_fern", "valdivian_shrub",
@@ -1208,8 +1307,13 @@ function AssetLoader.loadAll(encountersList)
     local pair = loadDropIn(name, "assets/sprites/props/" .. name, false)
     if pair then assets.scenery[name] = trackPair(pair) end
   end
+  for name, art in pairs(groundScenery) do
+    local pair = loadDropIn(name, "assets/sprites/props/" .. name, false)
+    assets.scenery[name] = trackPair(pair or makeGroundScenery(art[1], art[2]))
+  end
 
-  local bodoque = loadDropIn("bodoque", "assets/sprites/npcs/bodoque", false)
+  local bodoque = loadDropIn("bodoque", "assets/sprites/npcs/bodoque_completo", false)
+    or AssetLoader.loadSpritePair("assets/sprites/npcs/bodoque", false)
   assets.bodoque = trackPair(bodoque or makeBodoquePlaceholder())
 
   -- 4. Radial soft light halo (linear filter)
@@ -1234,16 +1338,62 @@ function AssetLoader.loadAll(encountersList)
     end
     assets.portraits[mood] = img
   end
+  assets.puduVersusPortrait = loadBattlePortrait("pudu_vs")
 
-  -- 6. Encounters (priority: assets/custom/<id> -> enc.spritePath/enc.sprite -> assets/sprites/encounters/<id> -> placeholder)
+  -- 6. Encounters: canonical custom override, directional art, legacy sprite, or placeholder.
   if type(encountersList) == "table" then
+    local manifest, manifestText
+    if love.filesystem.getInfo(BOSS_SPRITE_DIR .. "sprites.json", "file") then
+      manifestText = love.filesystem.read(BOSS_SPRITE_DIR .. "sprites.json")
+    end
+    if manifestText then
+      local ok, decoded = pcall(require("json").decode, manifestText)
+      if ok and type(decoded) == "table" and type(decoded.poses) == "table"
+        and type(decoded.directionRows) == "table" and #decoded.directionRows == 8
+        and type(decoded.frameWidth) == "number" and type(decoded.frameHeight) == "number"
+        and type(decoded.origin) == "table" and type(decoded.origin.x) == "number"
+        and type(decoded.origin.y) == "number" then
+        manifest = decoded
+      end
+    end
+
+    local function loadBossPose(name)
+      local pose = manifest and manifest.poses[name]
+      if type(pose) ~= "table" or type(pose.image) ~= "string" then return nil end
+      local stem = pose.image:gsub("%.png$", "")
+      local custom = AssetLoader.loadSpritePair("assets/custom/" .. stem, false)
+      if prepareDirectionalPair(custom, manifest) then
+        custom.isCustom = true
+        return custom
+      end
+      return prepareDirectionalPair(AssetLoader.loadSpritePair(BOSS_SPRITE_DIR .. stem, false), manifest)
+    end
+
     for i, enc in ipairs(encountersList) do
       local id = enc and enc.id
       if type(id) == "string" and id ~= "" then
+        assets.rivalPortraits[id] = {
+          idle = loadBattlePortrait(id .. "_idle"),
+          shout = loadBattlePortrait(id .. "_shout"),
+        }
         local pair = AssetLoader.loadSpritePair("assets/custom/" .. id, false, "nearest")
         if pair then
           pair.isCustom = true
-        else
+          if enc.directionalPoses then prepareDirectionalPair(pair, manifest) end
+        elseif enc.directionalPoses then
+          local idle = loadBossPose(enc.directionalPoses.idle)
+          if idle then
+            pair = {}
+            for key, value in pairs(idle) do pair[key] = value end
+            pair.poses = { idle = idle }
+            for _, phase in ipairs(BOSS_ACTION_POSES) do
+              local pose = loadBossPose(enc.directionalPoses[phase])
+              if pose then pair.poses[phase] = trackPair(pose) end
+            end
+          end
+        end
+
+        if not pair then
           local configuredPath = enc.spritePath or enc.sprite
           if type(configuredPath) == "string" and configuredPath ~= "" then
             pair = AssetLoader.loadSpritePair(configuredPath, false, "nearest")
@@ -1259,7 +1409,7 @@ function AssetLoader.loadAll(encountersList)
 
         if not pair then
           pair = AssetLoader.makeEncounterPlaceholder(id, i, enc.color)
-        elseif enc.isSheet then
+        elseif enc.isSheet and not pair.isSheet then
           local cols = enc.sheetCols or 4
           local rows = enc.sheetRows or 2
           local iw, ih = pair.diff:getDimensions()
@@ -1267,6 +1417,11 @@ function AssetLoader.loadAll(encountersList)
             pair.quads = AssetLoader.buildQuads(pair.diff, cols, rows)
             pair.isSheet = true
           end
+        end
+
+        if enc.companionPose then
+          local companion = loadBossPose(enc.companionPose)
+          if companion then pair.companion = trackPair(companion) end
         end
 
         assets.encounters[id] = trackPair(pair)

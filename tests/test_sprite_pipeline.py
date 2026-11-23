@@ -171,6 +171,25 @@ class LiveSpriteTests(unittest.TestCase):
         self.assertTrue(new_pipeline.get_sprite(payload)["ok"])
         self.assertEqual(generator.call_count, 2)
 
+    def test_decision_api_sprite_quality_gate_retries_and_rejects_bad_assets(self):
+        generator = Mock(side_effect=[self.image, self.image])
+        validator = Mock(side_effect=[(False, "imagen borrosa"), (True, "")])
+        pipeline = sprites.SpritePipeline(generator, self.cache, self.hero, validate_sprite=validator)
+        self.addCleanup(pipeline.close)
+        res = pipeline.get_sprite({"name": "tostadora cosmica"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(generator.call_count, 2)
+        self.assertEqual(validator.call_count, 2)
+
+        bad_gen = Mock(side_effect=[self.image, self.image])
+        always_reject = Mock(return_value=(False, "rechazado"))
+        bad_pipe = sprites.SpritePipeline(bad_gen, self.cache, self.hero, validate_sprite=always_reject)
+        self.addCleanup(bad_pipe.close)
+        bad_res = bad_pipe.get_sprite({"name": "artefacto roto"})
+        self.assertFalse(bad_res["ok"])
+        self.assertEqual(bad_gen.call_count, 2)
+        self.assertFalse(bad_pipe.get_sprite({"name": "artefacto roto"}, allow_generate=False)["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

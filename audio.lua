@@ -45,6 +45,34 @@ Audio.TRACK_META = {
     },
 
     -- 4 Campaign Battle Themes (distinct 8-bit/GBA identity per rival)
+    battle_fardo = {
+        path = "assets/audio/bgm_battle_pila_ropa.wav",
+        bpm = 138.0,
+        beats = 64,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_mancha = {
+        path = "assets/audio/bgm_battle_gaviota.wav",
+        bpm = 132.0,
+        beats = 64,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_brasa = {
+        path = "assets/audio/bgm_battle_puma.wav",
+        bpm = 142.0,
+        beats = 64,
+        beatOffset = 0.0,
+        loop = true,
+    },
+    battle_tempano = {
+        path = "assets/audio/bgm_battle_caleuche.wav",
+        bpm = 148.0,
+        beats = 64,
+        beatOffset = 0.0,
+        loop = true,
+    },
     battle_pila_ropa = {
         path = "assets/audio/bgm_battle_pila_ropa.wav",
         bpm = 138.0,

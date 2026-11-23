@@ -186,8 +186,9 @@ def _atomic_write(path, data):
 
 
 class SpritePipeline:
-    def __init__(self, generate_image=None, cache_dir=None, hero_path=None):
+    def __init__(self, generate_image=None, cache_dir=None, hero_path=None, validate_sprite=None):
         self.generate_image = generate_image
+        self.validate_sprite = validate_sprite
         self.cache_dir = Path(cache_dir) if cache_dir else ROOT / "cache" / "sprites"
         self.hero_path = Path(hero_path) if hero_path else ROOT / "assets" / "sprites" / "pudu_hero.png"
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="pudu-sprite")
@@ -251,18 +252,39 @@ class SpritePipeline:
             pass  # Read-only installs retain the RAM cache.
 
     def _generate(self, source, description, purple, dim):
-        instruction = (
-            "Draw a single 16-bit HD-2D RPG pixel-art sprite facing right, fully visible "
-            "in side view with a strong silhouette. Use only the art style of the reference. "
-            "Solid pure magenta #FF00FF background, no ground shadows, text, border or scenery. "
-            f"Subject: {description}"
+        ref = _reference(self.hero_path)
+        attempts = (
+            (
+                "Draw a single 16-bit HD-2D RPG pixel-art sprite facing right, fully visible "
+                "in side view with a strong silhouette. Use only the art style of the reference. "
+                "Solid pure magenta #FF00FF background, no ground shadows, text, border or scenery. "
+                f"Subject: {description}"
+            ),
+            (
+                "Simple, centered 16-bit RPG pixel-art icon of ONE single object facing right, "
+                "bold dark outline, vivid colors, solid flat magenta #FF00FF background, "
+                f"zero text, zero frame, zero scenery. Object: {description}"
+            ),
         )
-        raw = self.generate_image(instruction, _reference(self.hero_path))
-        if not isinstance(raw, bytes) or not 0 < len(raw) <= 16 * 1024 * 1024:
-            raise ValueError("El proveedor devolvió una imagen inválida.")
-        pair = _prepare_sprite(raw, purple, dim)
-        self._store(self._variant(source, purple, dim), pair)
-        return raw
+        max_tries = 2 if self.validate_sprite is not None else 1
+        last_error = None
+        for attempt_idx in range(max_tries):
+            raw = self.generate_image(attempts[attempt_idx], ref)
+            if not isinstance(raw, bytes) or not 0 < len(raw) <= 16 * 1024 * 1024:
+                last_error = ValueError("El proveedor devolvió una imagen inválida.")
+                continue
+            pair = _prepare_sprite(raw, purple, dim)
+            if self.validate_sprite is not None:
+                try:
+                    ok, reason = self.validate_sprite(pair.diffuse, description)
+                except Exception:
+                    ok, reason = True, ""
+                if not ok:
+                    last_error = ValueError(reason or "Asset rechazado por Decisions API.")
+                    continue
+            self._store(self._variant(source, purple, dim), pair)
+            return raw
+        raise last_error or ValueError("Asset rechazado por control de calidad.")
 
     def _job(self, source, description, purple, dim):
         with self.lock:

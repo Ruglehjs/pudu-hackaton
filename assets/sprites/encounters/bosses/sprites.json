@@ -1,0 +1,72 @@
+{
+  "frameWidth": 80,
+  "frameHeight": 80,
+  "origin": {
+    "x": 0.5,
+    "y": 0.875
+  },
+  "directionRows": [
+    "S",
+    "SE",
+    "E",
+    "NE",
+    "N",
+    "NO",
+    "O",
+    "SO"
+  ],
+  "poses": {
+    "fardo_reposo": {
+      "image": "fardo_reposo_8dir.png",
+      "normalMap": "fardo_reposo_8dir_n.png"
+    },
+    "fardo_carga": {
+      "image": "fardo_carga_8dir.png",
+      "normalMap": "fardo_carga_8dir_n.png"
+    },
+    "fardo_embestida": {
+      "image": "fardo_embestida_8dir.png",
+      "normalMap": "fardo_embestida_8dir_n.png"
+    },
+    "tempano_original": {
+      "image": "tempano_original_8dir.png",
+      "normalMap": "tempano_original_8dir_n.png"
+    },
+    "tempano_alternativo": {
+      "image": "tempano_alternativo_8dir.png",
+      "normalMap": "tempano_alternativo_8dir_n.png"
+    },
+    "tempano_ataque": {
+      "image": "tempano_ataque_8dir.png",
+      "normalMap": "tempano_ataque_8dir_n.png"
+    },
+    "mancha_reposo": {
+      "image": "mancha_reposo_8dir.png",
+      "normalMap": "mancha_reposo_8dir_n.png"
+    },
+    "mancha_carga": {
+      "image": "mancha_carga_8dir.png",
+      "normalMap": "mancha_carga_8dir_n.png"
+    },
+    "mancha_ataque": {
+      "image": "mancha_ataque_8dir.png",
+      "normalMap": "mancha_ataque_8dir_n.png"
+    },
+    "brasa_reposo": {
+      "image": "brasa_reposo_8dir.png",
+      "normalMap": "brasa_reposo_8dir_n.png"
+    },
+    "brasa_carga": {
+      "image": "brasa_carga_8dir.png",
+      "normalMap": "brasa_carga_8dir_n.png"
+    },
+    "brasa_ataque": {
+      "image": "brasa_ataque_8dir.png",
+      "normalMap": "brasa_ataque_8dir_n.png"
+    },
+    "calcetin_liberado": {
+      "image": "calcetin_liberado_8dir.png",
+      "normalMap": "calcetin_liberado_8dir_n.png"
+    }
+  }
+}

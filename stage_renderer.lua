@@ -1,11 +1,12 @@
 -- stage_renderer.lua
 -- Overworld isometric diagonal (NE / up-right) renderer, 3D irregular terrain,
 -- calm room-snapped camera, biome landmarks/decor (Modo A & Modo B seamless),
--- diagonal minimap, JRPG battle transition, dedicated side-view HD-2D Battle Arena,
+-- geographic minimap, JRPG battle transition, dedicated side-view HD-2D Battle Arena,
 -- 4 lighting presets, dynamic point lights, atmospheric halos/sunbeams, and post-processing.
 -- LÖVE2D 11.5 (LuaJIT) — Zero Unicode tofu (R2), safeSend/hasUniform (R4), zero per-frame GPU allocations.
 
 local Encounters = require("encounters")
+local ChileCoastline = require("chile_coastline")
 
 local StageRenderer = {}
 StageRenderer.__index = StageRenderer
@@ -83,6 +84,7 @@ local RIVER_START, RIVER_END = 79.0, 82.4
 local BAY_START, BAY_END = 27.4, 42.6
 local MARSH_START, MARSH_END = 42.8, 50.8
 local LIGHTHOUSE_U, LIGHTHOUSE_V = 38.5, -8.8
+local MINIMAP_X, MINIMAP_Y, MINIMAP_W, MINIMAP_H = 14, 58, 150, 255
 
 local DESERT_ARRIVAL = {
     startU = 2.7, startV = 0.0, deckHeight = 32,
@@ -124,7 +126,7 @@ StageRenderer.HAT_HEAD_OFFSETS = {
     [7] = { x = -5.0, y = -40.0 },
 }
 
--- Biome visual palette & tile mapping (used for 3D skirts, minimap, and Modo B fallback)
+-- Biome visual palette & tile mapping (used for 3D skirts and Modo B fallback)
 StageRenderer.BIOME_VISUALS = {
     bosque = {
         id = "bosque",
@@ -141,7 +143,6 @@ StageRenderer.BIOME_VISUALS = {
         cliffRight = { 0.19, 0.23, 0.18 },
         cliffLip = { 0.48, 0.72, 0.34 },
         cliffBand = { 0.28, 0.52, 0.23 },
-        miniCol = { 0.24, 0.58, 0.31 },
         hazeCol = { 0.76, 0.92, 0.78 },
     },
     desierto = {
@@ -160,7 +161,6 @@ StageRenderer.BIOME_VISUALS = {
         cliffRight = { 0.50, 0.23, 0.14 },
         cliffLip = { 0.98, 0.72, 0.44 },
         cliffBand = { 0.86, 0.50, 0.28 },
-        miniCol = { 0.84, 0.54, 0.26 },
         hazeCol = { 1.00, 0.82, 0.52 },
     },
     costa = {
@@ -178,7 +178,6 @@ StageRenderer.BIOME_VISUALS = {
         cliffRight = { 0.30, 0.33, 0.40 },
         cliffLip = { 0.78, 0.76, 0.64 },
         cliffBand = { 0.66, 0.76, 0.82 },
-        miniCol = { 0.20, 0.60, 0.78 },
         hazeCol = { 0.82, 0.94, 0.98 },
     },
     chiloe = {
@@ -196,10 +195,56 @@ StageRenderer.BIOME_VISUALS = {
         cliffRight = { 0.27, 0.30, 0.40 },
         cliffLip = { 0.80, 0.84, 0.94 },
         cliffBand = { 0.64, 0.68, 0.80 },
-        miniCol = { 0.42, 0.52, 0.80 },
         hazeCol = { 0.92, 0.80, 0.68 },
     },
 }
+
+local BURNED_FOREST = setmetatable({
+    backdrop = { 0.25, 0.18, 0.14 },
+    floorTile = "mountain_floor",
+    groundTint = { 0.74, 0.55, 0.46 },
+    pathTint = { 0.81, 0.74, 0.67 },
+    alcoveTint = { 0.79, 0.67, 0.60 },
+    cliffTopTint = { 0.78, 0.62, 0.49 },
+    cliffLeft = { 0.35, 0.26, 0.22 },
+    cliffRight = { 0.24, 0.18, 0.16 },
+    cliffLip = { 0.58, 0.42, 0.29 },
+    cliffBand = { 0.38, 0.30, 0.24 },
+    miniCol = { 0.52, 0.35, 0.24 },
+    hazeCol = { 0.85, 0.65, 0.55 },
+}, { __index = StageRenderer.BIOME_VISUALS.bosque })
+
+local SNOWY_CHILOE = setmetatable({
+    backdrop = { 0.48, 0.60, 0.71 },
+    floorTile = "snow",
+    cliffTile = "snow",
+    groundTint = { 0.94, 0.99, 1.00 },
+    pathTint = { 1.16, 1.26, 1.38 },
+    alcoveTint = { 0.96, 1.02, 1.10 },
+    cliffTopTint = { 0.85, 0.93, 1.00 },
+    cliffLeft = { 0.70, 0.81, 0.90 },
+    cliffRight = { 0.44, 0.56, 0.70 },
+    cliffLip = { 0.91, 0.97, 1.00 },
+    cliffBand = { 0.64, 0.75, 0.87 },
+    miniCol = { 0.67, 0.83, 0.96 },
+    hazeCol = { 0.82, 0.93, 1.00 },
+}, { __index = StageRenderer.BIOME_VISUALS.chiloe })
+
+local POLLUTED_COAST = setmetatable({
+    backdrop = { 0.18, 0.11, 0.24 },
+    miniCol = { 0.47, 0.33, 0.56 },
+}, { __index = StageRenderer.BIOME_VISUALS.costa })
+
+local function isBurnedClearing(u)
+    return u >= 64 and u < 86
+end
+
+local function overworldVisuals(biome, u, defeated)
+    if biome == "bosque" and not defeated.brasa and isBurnedClearing(u) then return BURNED_FOREST end
+    if biome == "costa" and not defeated.mancha then return POLLUTED_COAST end
+    if biome == "chiloe" and defeated.tempano then return SNOWY_CHILOE end
+    return StageRenderer.BIOME_VISUALS[biome]
+end
 
 --------------------------------------------------------------------------------
 -- 1B. HD-2D Lighting Presets, Stage Tile Map & Battle Arena Decor
@@ -302,7 +347,7 @@ StageRenderer.THEME_TILES = {
     mirador = { floor = "desert_floor", path = "stone_floor" },
     vereda  = { floor = "desert_floor", path = "stone_floor" },
     muelle  = { floor = "coast_floor",  path = "stone_floor" },
-    chiloe  = { floor = "coast_floor",  path = "stone_floor" },
+    chiloe  = { floor = "mountain_floor", path = "stone_floor" },
     pantano = { floor = "coast_floor",  path = "stone_floor" },
     esquina = { floor = "stone_floor",  path = "mountain_floor" },
     oficina = { floor = "stone_floor",  path = "mountain_floor" },
@@ -415,7 +460,15 @@ StageRenderer.BATTLE_STAGE_DECOR = {
     },
 }
 
-StageRenderer.BATTLE_STAGE_DECOR.chiloe = StageRenderer.BATTLE_STAGE_DECOR.muelle
+StageRenderer.BATTLE_STAGE_DECOR.chiloe = {
+    { kind = "rock_monolith", xFrac = 0.10, yFrac = 0.42, scale = 0.86, biome = "chiloe" },
+    { kind = "rock_monolith", xFrac = 0.91, yFrac = 0.41, scale = 0.86, biome = "chiloe" },
+    { kind = "lantern_post", xFrac = 0.08, yFrac = 0.57, scale = 0.96, biome = "chiloe" },
+    { kind = "lantern_post", xFrac = 0.94, yFrac = 0.58, scale = 0.96, biome = "chiloe" },
+    { kind = "pincoya_shrine", xFrac = 0.50, yFrac = 0.40, scale = 0.70, biome = "chiloe" },
+    { kind = "mossy_boulder", xFrac = 0.04, yFrac = 0.84, scale = 1.10, biome = "chiloe", layer = "fg" },
+    { kind = "mossy_boulder", xFrac = 0.96, yFrac = 0.84, scale = 1.10, biome = "chiloe", layer = "fg" },
+}
 
 -- Default sky palettes when theme is omitted or partial (supports both biome IDs and stage kinds)
 local DEFAULT_SKY_THEMES = {
@@ -891,13 +944,18 @@ function StageRenderer.screenVecToIso(dx, dy, speed)
     return (du / len) * spd, (dv / len) * spd
 end
 
-function StageRenderer.getBattleAnchors(w, h)
+-- 0=S, 1=SE, 2=E, 3=NE, 4=N, 5=NW, 6=W, 7=SW.
+function StageRenderer.screenDirToFacingRow(dx, dy)
+    return floor(math.atan2(dx, dy) * 4 / pi + 0.5) % 8
+end
+
+function StageRenderer.getBattleAnchors(w, h, enc)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     -- Classic Pokémon-style diagonal battle perspective:
     -- Pudú foreground bottom-left (lower hooves tucked cleanly behind bottom strip)
     -- Rival upper-right with generous top/right padding
-    return {
+    local anchors = {
         puduX = sw * 0.27,
         puduY = sh * 0.915,
         enemyX = sw * 0.72,
@@ -905,6 +963,11 @@ function StageRenderer.getBattleAnchors(w, h)
         puduScaleH = 212.0,
         enemyScaleH = 148.0,
     }
+    local dx = anchors.enemyX + (enc and enc.offsetX or 0) - anchors.puduX
+    local dy = anchors.enemyY + (enc and enc.offsetY or 0) - anchors.puduY
+    anchors.puduFacingRow = StageRenderer.screenDirToFacingRow(dx, dy)
+    anchors.enemyFacingRow = (anchors.puduFacingRow + 4) % 8
+    return anchors
 end
 
 function StageRenderer.roomCenter(u)
@@ -1613,7 +1676,19 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
         end
         love.graphics.rectangle("fill", 0, horizonY - 10, sw, 14)
 
-    elseif biomeId == "costa" or biomeId == "chiloe" then
+    elseif biomeId == "chiloe" then
+        for i = 0, 8 do
+            local x = i * sw / 8
+            local peakY = horizonY - 28 - (i * 41 % 72)
+            local r, g, b = tintRGB(0.22, 0.29, 0.40)
+            love.graphics.setColor(r, g, b, 0.82)
+            love.graphics.polygon("fill", x - sw * 0.14, horizonY, x, peakY, x + sw * 0.17, horizonY)
+            r, g, b = tintRGB(0.31, 0.38, 0.49)
+            love.graphics.setColor(r, g, b, 0.86)
+            love.graphics.polygon("fill", x, peakY, x + sw * 0.17, horizonY, x + sw * 0.050, horizonY)
+        end
+
+    elseif biomeId == "costa" then
         -- Far layer: Coastal headlands + layered Valparaiso hills
         local hR, hG, hB = tintRGB(0.24, 0.46, 0.64)
         love.graphics.setColor(hR, hG, hB, 0.88)
@@ -1815,7 +1890,7 @@ local function slopeCorner(elev, side, endHeight, diagonal, pixelScale)
     return (elev - (elev + side + endHeight + diagonal) * 0.25) * pixelScale
 end
 
-function StageRenderer:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z)
+function StageRenderer:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z, polluted)
     local padX = 1.05
     local padY = 0.78
     local tx, ty = cx, cy - halfH - padY
@@ -1839,19 +1914,29 @@ function StageRenderer:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time,
         love.graphics.line(sx1, sy1, sx1 + halfW * 0.34, sy1 + halfH * 0.34)
         love.graphics.setLineWidth(1)
     else
-        -- Deep sparkling Pacific ocean at Valparaiso
+        -- The Pacific changes from dark oil slicks to sparkling blue water.
         local pc = StageRenderer.pathCenterV(u)
         local depthT = clamp(abs(v - pc) / 11.0, 0.0, 1.0)
         local r = lerp(0.13, 0.06, depthT) + wave * 0.02
         local g = lerp(0.50, 0.31, depthT) + wave * 0.03
         local b = lerp(0.70, 0.54, depthT) + wave2 * 0.03
+        if polluted then
+            local slick = 0.5 + 0.5 * sin(u * 1.8 - v * 1.1 + wave * 0.4)
+            r = 0.14 + slick * 0.11
+            g = 0.07 + slick * 0.045
+            b = 0.22 + slick * 0.09
+        end
         love.graphics.setColor(r, g, b, 1.0)
         love.graphics.polygon("fill", tx, ty, rx, ry, bx, by, lx, ly)
 
         -- Sunlit ocean wave crest & gentle whitecap glint
         if (floor(u + v) % 2 == 0) then
             local ox = sin(time * 1.5 + v * 0.6) * 5.0 * z
-            love.graphics.setColor(0.76, 0.95, 1.0, 0.32 + 0.18 * (0.5 + 0.5 * wave))
+            if polluted then
+                love.graphics.setColor(0.68, 0.40, 0.66, 0.32)
+            else
+                love.graphics.setColor(0.76, 0.95, 1.0, 0.32 + 0.18 * (0.5 + 0.5 * wave))
+            end
             love.graphics.setLineWidth(max(1.2, 1.8 * z))
             love.graphics.line(cx - halfW * 0.32 + ox, cy - 2 * z, cx + halfW * 0.24 + ox, cy - 2 * z)
             love.graphics.setLineWidth(1)
@@ -2051,55 +2136,6 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
     end
 end
 
--- Convex 2-wing golden wayfinder chevron on the ground pointing along +u (diagonal NE)
-local function drawWayfinderChevron(stage, u, time, w, h)
-    local pc = StageRenderer.pathCenterV(u)
-    local elev = StageRenderer.getElevation(u, pc)
-    local sx, sy = stage:isoToScreen(u, pc, elev + 0.02, w, h)
-    if sx < -40 or sx > w + 40 or sy < -40 or sy > h + 40 then
-        return
-    end
-
-    -- Tangent vector in screen space pointing forward along the winding path (+u)
-    local pcNext = StageRenderer.pathCenterV(u + 0.9)
-    local nx, ny = stage:isoToScreen(u + 0.9, pcNext, elev + 0.02, w, h)
-    local dirX, dirY = nx - sx, ny - sy
-    local len = sqrt(dirX * dirX + dirY * dirY)
-    if len < 1e-4 then return end
-    dirX, dirY = dirX / len, dirY / len
-    local perpX, perpY = -dirY, dirX
-
-    local z = stage.camZoom or 0.72
-    local pulse = 0.76 + 0.24 * sin(time * 3.2 - u * 0.36)
-    local tipL = 16.5 * z
-    local wingBack = 13.5 * z
-    local wingSpan = 15.5 * z
-    local thick = 5.8 * z
-
-    local tipX, tipY = sx + dirX * tipL, sy + dirY * tipL
-    local innX, innY = sx + dirX * (tipL - thick * 1.45), sy + dirY * (tipL - thick * 1.45)
-    local lOutX, lOutY = sx - dirX * wingBack + perpX * wingSpan, sy - dirY * wingBack + perpY * wingSpan
-    local lInX, lInY = lOutX - dirX * thick * 0.35 - perpX * thick, lOutY - dirY * thick * 0.35 - perpY * thick
-    local rOutX, rOutY = sx - dirX * wingBack - perpX * wingSpan, sy - dirY * wingBack - perpY * wingSpan
-    local rInX, rInY = rOutX - dirX * thick * 0.35 + perpX * thick, rOutY - dirY * thick * 0.35 + perpY * thick
-
-    -- Ground shadow for high contrast on desert sand & pale stone
-    love.graphics.setColor(0.08, 0.06, 0.04, 0.44 * pulse)
-    love.graphics.polygon("fill", tipX, tipY + 2.5, lOutX, lOutY + 2.5, lInX, lInY + 2.5, innX, innY + 2.5)
-    love.graphics.polygon("fill", tipX, tipY + 2.5, rOutX, rOutY + 2.5, rInX, rInY + 2.5, innX, innY + 2.5)
-
-    -- Two convex wing quads forming a crisp golden chevron (ZERO concave polygons, ZERO Unicode!)
-    love.graphics.setColor(0.99, 0.84, 0.28, 0.90 * pulse)
-    love.graphics.polygon("fill", tipX, tipY, lOutX, lOutY, lInX, lInY, innX, innY)
-    love.graphics.polygon("fill", tipX, tipY, rOutX, rOutY, rInX, rInY, innX, innY)
-
-    -- Subtle inner warm white highlight
-    love.graphics.setColor(1.0, 0.97, 0.78, 0.72 * pulse)
-    love.graphics.setLineWidth(1.4)
-    love.graphics.line(lOutX, lOutY, tipX, tipY, rOutX, rOutY)
-    love.graphics.setLineWidth(1)
-end
-
 local function drawRivalBeacon(stage, enc, defeated, time, w, h)
     local elev = StageRenderer.getElevation(enc.u, enc.v)
     local sx, sy = stage:isoToScreen(enc.u, enc.v, elev + 0.02, w, h)
@@ -2132,6 +2168,24 @@ local function drawRivalBeacon(stage, enc, defeated, time, w, h)
     end
 end
 
+function StageRenderer:_getSnowTile()
+    if not self._snowTile then
+        local data = love.image.newImageData(64, 64)
+        data:mapPixel(function(x, y)
+            local a, b = x * (2 * pi / 64), y * (2 * pi / 64)
+            local drift = 0.5 + 0.5 * sin(4 * a + sin(3 * b)) * cos(3 * b - a)
+            local grain = hash2d(x, y)
+            local shade = 0.83 + 0.13 * drift + 0.04 * grain
+            return shade * 0.94, shade * 0.98, shade, 1.0
+        end)
+        local img = love.graphics.newImage(data)
+        img:setFilter("nearest", "nearest")
+        img:setWrap("repeat", "repeat")
+        self._snowTile = { diff = img }
+    end
+    return self._snowTile
+end
+
 function StageRenderer:drawOverworldFloor(ctx)
     ctx = ctx or {}
     local sw = ctx.w or love.graphics.getWidth()
@@ -2139,13 +2193,15 @@ function StageRenderer:drawOverworldFloor(ctx)
     local time = ctx.time or 0.0
     local assets = ctx.assets
     local tiles = assets and assets.tiles or nil
+    local defeated = ctx.defeatedMap or {}
+    local snowTile = defeated.tempano and self:_getSnowTile()
     local z = self.camZoom or 0.72
     local step = StageRenderer.STEP
     local litShader = (ctx.litShader ~= nil and ctx.litShader ~= false and self.useLitShader) and ctx.litShader or nil
     local terrainShader = ctx.terrainShader
     local contact, slope = self._tileContact, self._tileSlope
     local roadPair = tiles and tiles.stone_floor
-    local activeMode, activeGround, activeRoadTint = nil, false, nil
+    local activeMode, activeGround, activeRoadTint, activePollution = nil, false, nil, nil
     if terrainShader then
         safeSend(terrainShader, "specStrength", 0.10)
         safeSend(terrainShader, "roadTexture", roadPair and roadPair.diff or self:_getUnitWhite())
@@ -2176,7 +2232,7 @@ function StageRenderer:drawOverworldFloor(ctx)
 
     -- 1. Seamless biome backdrop fill (guarantees zero black voids anywhere)
     local camBiome = StageRenderer.getBiomeAt(self.camU)
-    local camVis = StageRenderer.BIOME_VISUALS[camBiome] or StageRenderer.BIOME_VISUALS.bosque
+    local camVis = overworldVisuals(camBiome, self.camU, defeated)
     local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
     local st = preset.skyTint or { 1.0, 1.0, 1.0 }
     if litShader then
@@ -2250,7 +2306,12 @@ function StageRenderer:drawOverworldFloor(ctx)
         local prevRowOff = (r - 1) * cols
         local nextRowOff = (r + 1) * cols -- neighbor (u - STEP, v)
         local biomeId = StageRenderer.getBiomeAt(u)
-        local vis = StageRenderer.BIOME_VISUALS[biomeId] or StageRenderer.BIOME_VISUALS.bosque
+        local vis = overworldVisuals(biomeId, u, defeated)
+        local polluted = vis == POLLUTED_COAST
+        if terrainShader and activePollution ~= polluted then
+            safeSend(terrainShader, "waterPollution", polluted and 0.90 or 0.0)
+            activePollution = polluted
+        end
 
         for c = 0, cols - 2 do
             local iv = ivMin + c
@@ -2313,8 +2374,9 @@ function StageRenderer:drawOverworldFloor(ctx)
                             tint = vis.plateauTint
                         end
                         local grade = clamp(0.96 + elev * 0.04, 0.90, 1.08)
+                        local pair = tileKey == "snow" and snowTile or tiles and tiles[tileKey]
                         drawSurface(0, cx, cy, halfW, halfH, u, v, tint[1] * grade, tint[2] * grade, tint[3] * grade,
-                            tiles and tiles[tileKey], vis.pathTint)
+                            pair, vis.pathTint)
                     end
                 elseif isWater then
                     if litShader then
@@ -2322,7 +2384,7 @@ function StageRenderer:drawOverworldFloor(ctx)
                         safeSend(litShader, "specStrength", 0.30)
                         safeSend(litShader, "surfaceBaseY", cy)
                     end
-                    self:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z)
+                    self:_drawWaterTile(cx, cy, halfW, halfH, u, v, terrain, time, z, polluted)
                     if litShader then
                         safeSend(litShader, "specStrength", 0.14)
                     end
@@ -2364,7 +2426,7 @@ function StageRenderer:drawOverworldFloor(ctx)
 
                     -- Subtle elevation brightening so raised terraces read with crisp 3D contrast
                     local elevShade = clamp(0.95 + elev * 0.045, 0.88, 1.08)
-                    local tilePair = tiles and tiles[tileKey] or nil
+                    local tilePair = tileKey == "snow" and snowTile or tiles and tiles[tileKey]
                     local img = tilePair and tilePair.diff or nil
                     local norm = tilePair and tilePair.norm or nil
                     self:_drawTexturedDiamond(img, cx, cy, halfW, halfH, u, v,
@@ -2390,32 +2452,12 @@ function StageRenderer:drawOverworldFloor(ctx)
         love.graphics.setShader()
     end
 
-    -- 4. Golden diagonal wayfinder chevrons along the winding main path (guiding NE travel)
+    -- 4. Pulsing rival beacon rings on the ground
     local encList = ctx.encounters or _encounterAnchors
-    for u = 6.0, 102.0, 5.5 do
-        if abs(u - camU) <= 18.0 then
-            -- Skip directly underneath encounters
-            local nearEnc = false
-            local pc = StageRenderer.pathCenterV(u)
-            for i = 1, #encList do
-                local e = encList[i]
-                if e and abs(u - e.u) < 2.2 and abs(pc - e.v) < 2.4 then
-                    nearEnc = true
-                    break
-                end
-            end
-            if not nearEnc then
-                drawWayfinderChevron(self, u, time, sw, sh)
-            end
-        end
-    end
-
-    -- 5. Pulsing rival beacon rings on the ground
-    local defeatedMap = ctx.defeatedMap or {}
     for i = 1, #encList do
         local enc = encList[i]
         if enc and abs(enc.u - camU) <= 18.0 then
-            local isDef = (defeatedMap[enc.id] == true) or (defeatedMap[i] == true)
+            local isDef = defeated[enc.id] == true or defeated[enc.index or i] == true
             drawRivalBeacon(self, enc, isDef, time, sw, sh)
         end
     end
@@ -2446,7 +2488,7 @@ end
 local SCENERY_HEIGHT = {
     ancient_tree = 245, araucaria_tree = 226, calafate_bush = 29,
     apacheta_sundial = 62, biome_arch = 127, coast_lighthouse = 144,
-    copihue = 37, debris_pile = 34, desert_cactus = 80, lantern_post = 71,
+    charred_tree = 139, copihue = 37, debris_pile = 34, desert_cactus = 80, dock_barrels = 57, lantern_post = 71,
     lily_pad = 25, moai_relic = 67, mossy_boulder = 39, mossy_log = 42,
     mountain_crystal = 58, orb_shrine = 52, pincoya_shrine = 82,
     quena_monolith = 66, rewe_totem = 92, rock_monolith = 105,
@@ -2456,6 +2498,31 @@ local SCENERY_HEIGHT = {
 local FOLIAGE_SWAY = {
     ancient_tree = 0.009, araucaria_tree = 0.012, calafate_bush = 0.023,
     copihue = 0.032, valdivian_fern = 0.050, valdivian_shrub = 0.032,
+}
+local GROUND_SCENERY_HEIGHT = {
+    discarded_shirt = 27, discarded_jeans = 27, discarded_scarf = 20, shore_shells = 15,
+}
+
+local DESERT_CLOTHING = {
+    { "discarded_shirt", 5.2, 2.0, 1.12, -0.14 },
+    { "discarded_scarf", 5.5, -1.2, 0.95, 0.31 },
+    { "discarded_jeans", 7.3, 3.3, 1.13, 0.08 },
+    { "discarded_shirt", 8.7, 3.1, 0.94, 0.24 },
+    { "discarded_scarf", 9.8, 2.2, 1.10, -0.24 },
+    { "discarded_jeans", 10.3, -0.8, 0.91, 0.40 },
+    { "discarded_shirt", 12.5, -0.65, 1.23, -0.34 },
+    { "discarded_jeans", 13.3, -0.85, 0.97, 0.05 },
+    { "discarded_scarf", 15.9, 2.5, 1.02, 0.16 },
+    { "discarded_shirt", 18.0, 2.1, 0.91, 0.44 },
+    { "discarded_jeans", 21.0, 1.1, 0.98, -0.18 },
+    { "discarded_scarf", 23.5, -0.9, 1.03, 0.20 },
+}
+
+local PATH_EDGE_SCENERY = {
+    desierto = { "debris_pile", "mountain_crystal", "desert_cactus" },
+    costa = { "shore_shells", "debris_pile", "shore_shells", "valdivian_shrub" },
+    bosque = { "valdivian_fern", "copihue", "mossy_boulder", "mossy_log" },
+    chiloe = { "calafate_bush", "valdivian_fern", "mossy_boulder", "copihue" },
 }
 
 local function sceneryHeight(prop)
@@ -2485,14 +2552,29 @@ function StageRenderer:buildOverworldDecor(encountersList)
     local decor = {}
 
     local function addProp(kind, u, v, scale, biome, extra)
-        decor[#decor + 1] = {
+        biome = biome or StageRenderer.getBiomeAt(u)
+        local prop = {
             kind = kind,
             u = u,
             v = v,
             scale = scale or 1.0,
-            biome = biome or StageRenderer.getBiomeAt(u),
+            biome = biome,
             extra = extra,
         }
+        if biome == "costa" and kind == "debris_pile" then
+            prop.hiddenAfter = "mancha"
+        elseif biome == "bosque" and isBurnedClearing(u) then
+            if kind == "ancient_tree" or kind == "araucaria_tree" then
+                addProp("charred_tree", u, v, scale, biome)
+                prop.visibleAfter = "brasa"
+            elseif kind == "charred_tree" then
+                prop.hiddenAfter = "brasa"
+            elseif kind == "valdivian_fern" or kind == "copihue" or kind == "valdivian_shrub" then
+                prop.visibleAfter = "brasa"
+            end
+        end
+        decor[#decor + 1] = prop
+        return prop
     end
 
     local borderStyles = { "sandstone", "harbor", "stone" }
@@ -2515,6 +2597,11 @@ function StageRenderer:buildOverworldDecor(encountersList)
     local pierV = StageRenderer.pathCenterV(pierU)
     addProp("lantern_post", pierU, pierV - 2.75, 1.0, "costa")
     addProp("lantern_post", pierU, pierV + 2.75, 1.0, "costa")
+    addProp("dock_barrels", 29.8, StageRenderer.pathCenterV(29.8) + 1.32, 1.0, "costa")
+    addProp("dock_barrels", 38.9, StageRenderer.pathCenterV(38.9) - 1.95, 1.0, "costa")
+    addProp("dock_barrels", 41.3, StageRenderer.pathCenterV(41.3) + 1.95, 0.83, "costa")
+    addProp("debris_pile", 32.2, StageRenderer.pathCenterV(32.2) - 1.42, 1.2, "costa")
+    addProp("debris_pile", 35.5, StageRenderer.pathCenterV(35.5) + 2.1, 1.12, "costa")
 
     for _, u in ipairs({ 95.5, 102.0, 107.0, 110.5, 114.5 }) do
         local pc = StageRenderer.pathCenterV(u)
@@ -2523,6 +2610,11 @@ function StageRenderer:buildOverworldDecor(encountersList)
     end
     addProp("coast_lighthouse", 109.0, -6.7, 1.32, "chiloe")
     addProp("pincoya_shrine", 115.6, 4.5, 1.12, "chiloe")
+    for _, u in ipairs({ 96.8, 100.7, 105.6, 112.4 }) do
+        local pc = StageRenderer.pathCenterV(u)
+        addProp("calafate_bush", u, pc + 2.95, 1.25, "chiloe")
+        addProp("valdivian_fern", u + 0.6, pc + 3.20, 0.88, "chiloe")
+    end
 
     addProp("ancient_tree", 54.8, StageRenderer.pathCenterV(54.8) - 5.0, 1.10, "bosque")
     addProp("araucaria_tree", 58.5, StageRenderer.pathCenterV(58.5) - 5.7, 1.18, "bosque")
@@ -2530,6 +2622,12 @@ function StageRenderer:buildOverworldDecor(encountersList)
     addProp("araucaria_tree", 71.5, StageRenderer.pathCenterV(71.5) - 5.4, 1.23, "bosque")
     addProp("ancient_tree", 90.0, StageRenderer.pathCenterV(90.0) - 5.4, 1.22, "bosque")
     addProp("araucaria_tree", 58.0, StageRenderer.pathCenterV(58.0) + 7.8, 0.69, "bosque")
+    for i, u in ipairs({ 66.5, 69.8, 75.2, 77.5, 83.7 }) do
+        local side = i % 2 == 0 and 1 or -1
+        local v = StageRenderer.pathCenterV(u) + side * (4.8 + 0.2 * (i % 3))
+        addProp(i % 2 == 0 and "araucaria_tree" or "ancient_tree", u, v, 1.02 + 0.06 * i, "bosque")
+        addProp("copihue", u - 0.45, v - side * 1.0, 1.05, "bosque")
+    end
     addProp("calafate_bush", 97.0, StageRenderer.pathCenterV(97.0) + 3.8, 1.22, "chiloe")
     addProp("mossy_log", 61.0, StageRenderer.pathCenterV(61.0) + 4.2, 1.20, "bosque")
     addProp("valdivian_fern", 59.4, StageRenderer.pathCenterV(59.4) + 4.6, 1.22, "bosque")
@@ -2550,6 +2648,32 @@ function StageRenderer:buildOverworldDecor(encountersList)
         local pcA = StageRenderer.pathCenterV(alc.u)
         local side = (alc.v >= pcA) and 1.0 or -1.0
         addProp(alc.prop or "stone_pedestal", alc.u, alc.v + side * 1.55, 1.12, alc.biome)
+    end
+
+    for _, item in ipairs(DESERT_CLOTHING) do
+        local kind, u, v, scale, rotation = unpack(item)
+        if StageRenderer.isWalkable(u, v) then
+            local prop = addProp(kind, u, v, scale, "desierto", rotation)
+            prop.hiddenAfter = "pila_de_ropa"
+        end
+    end
+
+    -- Low details frame the route between taller landmarks.
+    for u = 4.6, 115.0, 2.45 do
+        local biome = StageRenderer.getBiomeAt(u)
+        local pool = PATH_EDGE_SCENERY[biome]
+        for side = -1, 1, 2 do
+            local variation = hash2d(u, side * 13)
+            local pu = u + side * 0.6 * variation
+            local pv = StageRenderer.pathCenterV(pu) + side * (2.15 + variation * 1.15)
+            local terrain = StageRenderer.getTerrainType(pu, pv)
+            if (terrain == "ground" or terrain == "marsh")
+                and not isTooCloseToList(pu, pv, encList, 2.5)
+                and not isTooCloseToList(pu, pv, decor, 1.25) then
+                local kind = pool[1 + floor(hash2d(u, side * 7) * #pool)]
+                addProp(kind, pu, pv, 0.64 + variation * 0.42, biome)
+            end
+        end
     end
 
     -- F. Procedural Side Biome Decor with strict walkability & view clearance
@@ -2870,7 +2994,20 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
 
     beginBodyLit()
 
-    if k == "araucaria_tree" then
+    if k == "charred_tree" then
+        local lean = (hash2d(seed, prop.v) - 0.5) * 18 * s
+        love.graphics.setColor(0.09, 0.065, 0.06, aMul)
+        love.graphics.polygon("fill", sx - 10 * s, sy, sx + 8 * s, sy,
+            sx + lean + 2 * s, sy - 102 * s, sx + lean - 5 * s, sy - 96 * s)
+        love.graphics.polygon("fill", sx - 4 * s, sy - 47 * s, sx - 31 * s, sy - 69 * s,
+            sx - 38 * s, sy - 92 * s, sx + 2 * s, sy - 59 * s)
+        love.graphics.polygon("fill", sx + 1 * s, sy - 63 * s, sx + 30 * s, sy - 98 * s,
+            sx + 34 * s, sy - 100 * s, sx + 9 * s, sy - 61 * s)
+        love.graphics.setColor(0.30, 0.14, 0.075, aMul)
+        love.graphics.polygon("fill", sx - 8 * s, sy, sx - 2 * s, sy,
+            sx + lean - 2 * s, sy - 83 * s)
+
+    elseif k == "araucaria_tree" then
         -- Iconic Chilean Araucaria: tall straight bark trunk + radiating tiered umbrella canopy
         love.graphics.setColor(0.34, 0.22, 0.14, aMul)
         love.graphics.rectangle("fill", sx - 5.5 * s, sy - 76 * s, 11 * s, 77 * s)
@@ -2915,6 +3052,24 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
         love.graphics.ellipse("fill", sx - 8 * s, sy - 12 * s, 3.2 * s, 5.2 * s)
         love.graphics.ellipse("fill", sx + 5 * s, sy - 15 * s, 3.2 * s, 5.2 * s)
         love.graphics.ellipse("fill", sx + 1 * s, sy - 8 * s, 3.0 * s, 4.6 * s)
+
+    elseif k == "dock_barrels" then
+        for i = 1, 2 do
+            local x = sx + (i == 1 and -9 or 10) * s
+            local y = sy + (i == 1 and -4 or 1) * s
+            local h = (i == 1 and 37 or 27) * s
+            local r = (i == 1 and 12 or 11) * s
+            love.graphics.setColor(0.36, 0.22, 0.16, aMul)
+            love.graphics.ellipse("fill", x, y - 4 * s, r, 4 * s)
+            love.graphics.rectangle("fill", x - r, y - h, 2 * r, h - 4 * s, 3 * s)
+            love.graphics.setColor(0.64, 0.42, 0.24, aMul)
+            love.graphics.rectangle("fill", x - r * 0.58, y - h, r * 0.78, h - 3 * s)
+            love.graphics.setColor(0.28, 0.33, 0.35, aMul)
+            love.graphics.rectangle("fill", x - r, y - h * 0.74, 2 * r, 3 * s)
+            love.graphics.rectangle("fill", x - r, y - h * 0.27, 2 * r, 3 * s)
+            love.graphics.setColor(0.74, 0.51, 0.30, aMul)
+            love.graphics.ellipse("fill", x, y - h, r, 5 * s)
+        end
 
     elseif k == "mossy_boulder" or k == "rock_monolith" or k == "debris_pile" then
         local isDesert = (prop.biome == "desierto")
@@ -3185,9 +3340,26 @@ local function drawAlertCallout(x, y, timer)
     love.graphics.circle("fill", x, by + 30.5 * bounce, 3.8 * bounce)
 end
 
-local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets, defeated, isAlerted, alertTimer, font, litShader)
+local function rivalFrame(pair, enc, facingRow, time, charging)
+    if pair.frameW and pair.quads then
+        local pose = pair.poses and pair.poses[charging and "charge" or "idle"] or pair
+        return pose, pose.quads[facingRow][1], pose.frameW, pose.frameH
+    end
+    local row = pair.isSheet and pair.quads and (pair.quads[enc.sheetRow or 1] or pair.quads[0])
+    if row and #row > 0 then
+        local quad = row[(floor(time * 5.0) % #row) + 1]
+        local _, _, fw, fh = quad:getViewport()
+        return pair, quad, fw, fh
+    end
+    local fw, fh = pair.diff:getDimensions()
+    return pair, nil, fw, fh
+end
+
+local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets, defeated, isAlerted, alertTimer, facingRow, font, litShader)
     local encPair = assets and assets.encounters and assets.encounters[enc.id]
+    local companion = encPair and encPair.companion
     local targetH = (enc.scale or 2.55) * 38.0 * (z / 0.72)
+    if encPair and encPair.frameW then targetH = targetH * 1.38 end
     if encPair and encPair.isPlaceholder and assets.scenery then
         if enc.id == "caleuche" then
             encPair = assets.scenery.caleuche_ship or encPair
@@ -3205,30 +3377,19 @@ local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets,
     love.graphics.ellipse("fill", sx, sy + 2 * z, 24 * z, 9 * z)
 
     if encPair and encPair.diff then
-        local img = encPair.diff
-        local quad = nil
-        local fw, fh
-        if encPair.isSheet and encPair.quads then
-            local rowIdx = enc.sheetRow or 1
-            local rowTable = encPair.quads[rowIdx] or encPair.quads[0]
-            if rowTable and #rowTable > 0 then
-                local colIdx = (floor(time * 5.0) % #rowTable) + 1
-                quad = rowTable[colIdx]
-                local _, _, qw, qh = quad:getViewport()
-                fw, fh = qw, qh
-            end
-        end
-        if not fw then
-            fw, fh = img:getDimensions()
-        end
+        local pair, quad, fw, fh = rivalFrame(encPair, enc, facingRow, time, isAlerted)
         local sc = targetH / max(1, fh)
         love.graphics.setColor(1, 1, 1, alpha)
-        if stage then
-            stage:drawSpriteLit(encPair, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92, quad, 0.0, nil, litShader, true)
-        elseif quad then
-            love.graphics.draw(img, quad, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92)
-        else
-            love.graphics.draw(img, sx, sy + bob, 0, sc, sc, fw * 0.5, fh * 0.92)
+        stage:drawSpriteLit(pair, sx, sy + bob, 0, sc, sc, pair.originX or fw * 0.5,
+            pair.originY or fh * 0.92, quad, 0, nil, litShader, true)
+        if companion then
+            local sockX, sockY = sx + targetH * 0.53, sy + 4 * z
+            local sockScale = targetH * 0.65 / companion.frameH
+            love.graphics.setColor(0.03, 0.04, 0.08, 0.30 * alpha)
+            love.graphics.ellipse("fill", sockX, sockY, 12 * z, 4 * z)
+            love.graphics.setColor(1, 1, 1, alpha)
+            stage:drawSpriteLit(companion, sockX, sockY + bob * 0.48, 0, sockScale, sockScale,
+                companion.originX, companion.originY, companion.quads[facingRow][1], 0, nil, litShader, true)
         end
     else
         -- Defensive silhouette if assets table was omitted
@@ -3431,21 +3592,37 @@ function StageRenderer:drawOverworld(ctx)
     local vyZ = StageRenderer.ISO_VY * z
     local camU = self.camU
     local camV = self.camV
+    local snowy = StageRenderer.getBiomeAt(camU) == "chiloe" and defeatedMap.tempano
 
     -- Decor props
     local decor = self.overworldDecor
     for i = 1, #decor do
         local prop = decor[i]
-        if abs(prop.u - camU) <= 18.5 and abs(prop.v - camV) <= 18.5 then
+        if not defeatedMap[prop.hiddenAfter] and (not prop.visibleAfter or defeatedMap[prop.visibleAfter])
+            and abs(prop.u - camU) <= 18.5 and abs(prop.v - camV) <= 18.5 then
             local elev = StageRenderer.getElevation(prop.u, prop.v)
             local sx, sy = self:isoToScreen(prop.u, prop.v, elev, sw, sh)
-            local extent = sceneryHeight(prop) * z
+            local groundH = GROUND_SCENERY_HEIGHT[prop.kind]
+            local extent = groundH and groundH * prop.scale * z * 2.5 or sceneryHeight(prop) * z
             if sx >= -extent and sx <= sw + extent and sy >= -32 and sy <= sh + extent then
-                local baseY = baseScreenY + (prop.u - camU) * uyZ + (prop.v - camV) * vyZ
-                -- Flat lily pads stay underneath characters
-                local tie = (prop.kind == "lily_pad") and -1000 or i
-                local sortY = (prop.kind == "lily_pad") and (baseY - 40.0) or baseY
-                pushEntry("prop", sortY, tie, sx, sy, prop, i)
+                if groundH then
+                    local pair = assets and assets.scenery and assets.scenery[prop.kind]
+                    if pair then
+                        local iw, ih = pair.diff:getDimensions()
+                        local scale = groundH * prop.scale * z / ih
+                        love.graphics.setColor(0.17, 0.10, 0.08, 0.24)
+                        love.graphics.ellipse("fill", sx, sy + z, iw * scale * 0.43, ih * scale * 0.29)
+                        love.graphics.setColor(1, 1, 1, 1)
+                        self:drawSpriteLit(pair, sx, sy, prop.extra or 0.0, scale, scale,
+                            iw * 0.5, ih * 0.60, nil, 0, nil, litShader, true)
+                    end
+                else
+                    local baseY = baseScreenY + (prop.u - camU) * uyZ + (prop.v - camV) * vyZ
+                    -- Flat lily pads stay underneath characters.
+                    local tie = prop.kind == "lily_pad" and -1000 or i
+                    local sortY = prop.kind == "lily_pad" and (baseY - 40.0) or baseY
+                    pushEntry("prop", sortY, tie, sx, sy, prop, i)
+                end
             end
         end
     end
@@ -3453,7 +3630,8 @@ function StageRenderer:drawOverworld(ctx)
     -- Encounters
     for i = 1, #encList do
         local enc = encList[i]
-        if enc and abs(enc.u - camU) <= 18.0 then
+        local isDef = enc and (defeatedMap[enc.id] or defeatedMap[enc.index or i])
+        if enc and not (enc.directionalPoses and isDef) and abs(enc.u - camU) <= 18.0 then
             local elev = StageRenderer.getElevation(enc.u, enc.v)
             local sx, sy = self:isoToScreen(enc.u, enc.v, elev, sw, sh)
             if sx >= -120 and sx <= sw + 120 and sy >= -120 and sy <= sh + 150 then
@@ -3510,7 +3688,10 @@ function StageRenderer:drawOverworld(ctx)
             local idx = item.idx
             local isDef = (defeatedMap[enc.id] == true) or (defeatedMap[idx] == true)
             local isAlerted = (ctx.alertEncounterIdx == idx)
-            drawRivalEntity(self, enc, idx, item.sx, item.sy, sw, sh, z, time, assets, isDef, isAlerted, ctx.alertTimer, smallFont, litShader)
+            local dx, dy = puduSx - item.sx, puduSy - item.sy
+            local facingRow = StageRenderer.screenDirToFacingRow(dx, dy)
+            drawRivalEntity(self, enc, idx, item.sx, item.sy, sw, sh, z, time, assets, isDef,
+                isAlerted, ctx.alertTimer, facingRow, smallFont, litShader)
         elseif item.kind == "bodoque" then
             drawBodoque(self, item.data, item.sx, item.sy, z, time, litShader)
         else
@@ -3527,6 +3708,16 @@ function StageRenderer:drawOverworld(ctx)
                 ctx.puduPose,
                 (ctx.puduArrivalLift or 0.0) * z
             )
+        end
+    end
+
+    if snowy then
+        love.graphics.setColor(0.85, 0.95, 1.0, 0.73)
+        for i = 1, 56 do
+            local speed = 19 + 29 * hash2d(i, 1)
+            local x = (hash2d(i, 2) * sw + time * speed * 0.31 + 13 * sin(time + i)) % sw
+            local y = (hash2d(i, 3) * sh + time * speed) % sh
+            love.graphics.circle("fill", x, y, 1.0 + 1.4 * hash2d(i, 4), 6)
         end
     end
 end
@@ -3547,7 +3738,11 @@ function StageRenderer:drawOverworldNPCDialogue(w, h, font)
     local top = floor(headY - boxH - 14 + (1.0 - alpha) * 5)
     local bottom = top + boxH
     -- Keep the card above the sprite and away from the map and HUD.
-    if top < 54 or bottom + 12 > h - 60 or (left < 231 and top < 185) then return end
+    local overlapsMap = left < MINIMAP_X + MINIMAP_W + 8
+        and left + boxW > MINIMAP_X - 4
+        and top < MINIMAP_Y + MINIMAP_H + 8
+        and bottom + 12 > MINIMAP_Y
+    if top < 54 or bottom + 12 > h - 60 or overlapsMap then return end
     local tailX = floor(clamp(x, left + 14, left + boxW - 14))
 
     love.graphics.push("all")
@@ -3568,127 +3763,242 @@ function StageRenderer:drawOverworldNPCDialogue(w, h, font)
 end
 
 --------------------------------------------------------------------------------
--- 9. Diagonal Overworld Minimap (212x122 at x=14, y=58 — ZERO Unicode Tofu)
+-- 9. Geographic Overworld Minimap
 --------------------------------------------------------------------------------
 
--- Vector diagonal NE arrow drawn strictly with 2 convex primitives (shaft + head)
-local function drawVectorNEArrow(cx, cy, size)
-    love.graphics.push()
-    love.graphics.translate(cx, cy)
-    love.graphics.rotate(-pi * 0.25)
-
-    -- Dark outline backing (2 convex parts)
-    love.graphics.setColor(0.03, 0.05, 0.12, 0.92)
-    love.graphics.rectangle("fill", -size * 0.65 - 1.5, -size * 0.20 - 1.5, size * 0.80 + 3.0, size * 0.40 + 3.0)
-    love.graphics.polygon("fill", size * 0.05 - 1.5, -size * 0.58, size * 0.85, 0, size * 0.05 - 1.5, size * 0.58)
-
-    -- Bright gold foreground (2 convex parts)
-    love.graphics.setColor(0.99, 0.85, 0.30, 1.0)
-    love.graphics.rectangle("fill", -size * 0.65, -size * 0.16, size * 0.80, size * 0.32)
-    love.graphics.polygon("fill", size * 0.08, -size * 0.46, size * 0.72, 0, size * 0.08, size * 0.46)
-
-    love.graphics.pop()
+-- Equirectangular projection with standard parallel near the middle of Chile.
+local function projectChile(lon, lat)
+    return 16 + (lon + 76) * 4.65, 28 + (-17 - lat) * 5.55
 end
 
-function StageRenderer:drawOverworldMinimap(puduU, puduV, encountersList, defeatedMap, w, h, font)
-    local x, y = 14, 58
-    local mw, mh = 212, 122
-    local innerX, innerY = x + 8, y + 8
-    local innerW, innerH = mw - 16, mh - 16
+-- Translate the compressed campaign's u axis into a north-to-south itinerary.
+-- Named waypoints mark the geographic references for the four campaign battles.
+local MINIMAP_ROUTE = {
+    {   0, -70.28, -18.47 },
+    {   7, -69.83, -21.38 },
+    {  13, -69.60, -24.40, "Atacama" },
+    {  20, -70.31, -27.37 },
+    {  27, -71.23, -30.49 },
+    {  34, -71.60, -33.05, "Valparaíso" },
+    {  46, -71.68, -35.43 },
+    {  60, -72.10, -37.66 },
+    {  73, -73.24, -39.82, "Valdivia" },
+    {  83, -73.13, -40.72 },
+    {  91, -73.47, -41.72 },
+    {  96, -73.53, -41.84 },
+    { 103, -73.66, -42.20 },
+    { 112, -73.80, -42.68, "Chiloé" },
+    { 118, -73.88, -43.05 },
+}
+local minimapRouteLine = {}
+local minimapStops = {}
+for _, point in ipairs(MINIMAP_ROUTE) do
+    local x, y = projectChile(point[2], point[3])
+    minimapRouteLine[#minimapRouteLine + 1] = x
+    minimapRouteLine[#minimapRouteLine + 1] = y
+    if point[4] then
+        minimapStops[#minimapStops + 1] = { x = x, y = y, name = point[4] }
+    end
+end
 
-    -- Outer frame shadow & dark translucent RPG card
-    love.graphics.setColor(0.02, 0.03, 0.08, 0.62)
-    love.graphics.rectangle("fill", x + 3, y + 4, mw, mh, 8, 8)
-    love.graphics.setColor(0.05, 0.09, 0.19, 0.90)
-    love.graphics.rectangle("fill", x, y, mw, mh, 7, 7)
+local function minimapPoint(u, v)
+    u = clamp(u, MINIMAP_ROUTE[1][1], MINIMAP_ROUTE[#MINIMAP_ROUTE][1])
+    local i = 1
+    while i < #MINIMAP_ROUTE - 1 and u > MINIMAP_ROUTE[i + 1][1] do
+        i = i + 1
+    end
+    local fromU, toU = MINIMAP_ROUTE[i][1], MINIMAP_ROUTE[i + 1][1]
+    local t = (u - fromU) / (toU - fromU)
+    local xIndex = i * 2 - 1
+    local centerV = StageRenderer.pathCenterV(u)
+    local offsetX = clamp(((v or centerV) - centerV) * 0.38, -1.5, 1.5)
+    local x = lerp(minimapRouteLine[xIndex], minimapRouteLine[xIndex + 2], t)
+    local y = lerp(minimapRouteLine[xIndex + 1], minimapRouteLine[xIndex + 3], t)
+    return x + offsetX, y
+end
 
-    -- Map world (u, v) -> minimap pixel (ascending diagonally bottom-left -> top-right!)
-    local function mapPt(u, v)
-        local t = clamp(u / 118.0, 0.0, 1.0)
-        local bx = innerX + 12 + t * (innerW - 24)
-        local by = innerY + innerH - 13 - t * (innerH - 26)
-        local perp = clamp((v or 0.0) / 10.0, -1.0, 1.0)
-        local px = clamp(bx + perp * 11.0, innerX + 4, innerX + innerW - 4)
-        local py = clamp(by + perp * 15.0, innerY + 4, innerY + innerH - 4)
-        return px, py
+local MINIMAP_LAND_COLORS = {
+    { -17, 0.77, 0.52, 0.27 },
+    { -29, 0.71, 0.51, 0.29 },
+    { -34, 0.63, 0.55, 0.32 },
+    { -40, 0.46, 0.54, 0.31 },
+    { -48, 0.38, 0.49, 0.40 },
+    { -56, 0.49, 0.58, 0.51 },
+}
+
+local function minimapLandColor(y)
+    local lat = -17 - (y - 28) / 5.55
+    for i = 2, #MINIMAP_LAND_COLORS do
+        local a, b = MINIMAP_LAND_COLORS[i - 1], MINIMAP_LAND_COLORS[i]
+        if lat >= b[1] then
+            local t = clamp((lat - a[1]) / (b[1] - a[1]), 0, 1)
+            return lerp(a[2], b[2], t), lerp(a[3], b[3], t), lerp(a[4], b[4], t)
+        end
+    end
+    local last = MINIMAP_LAND_COLORS[#MINIMAP_LAND_COLORS]
+    return last[2], last[3], last[4]
+end
+
+local function buildMinimapLand()
+    local vertices, shores = {}, {}
+    for _, ring in ipairs(ChileCoastline) do
+        local outline = {}
+        for i = 1, #ring, 2 do
+            outline[i], outline[i + 1] = projectChile(ring[i], ring[i + 1])
+        end
+        for _, triangle in ipairs(love.math.triangulate(outline)) do
+            for i = 1, 6, 2 do
+                local x, y = triangle[i], triangle[i + 1]
+                local r, g, b = minimapLandColor(y)
+                vertices[#vertices + 1] = { x, y, 0, 0, r, g, b, 1 }
+            end
+        end
+        local n = #outline
+        outline[n + 1], outline[n + 2] = outline[1], outline[2]
+        shores[#shores + 1] = outline
+    end
+    return love.graphics.newMesh(vertices, "triangles", "static"), shores
+end
+
+local function makeMinimapParchment()
+    local mw, mh = MINIMAP_W, MINIMAP_H
+    local paper = love.image.newImageData(mw, mh)
+    local noise = love.math.noise
+    paper:mapPixel(function(x, y)
+        local right, bottom = mw - 1 - x, mh - 1 - y
+        local edge = min(x - 2, right - 2, y - 2, bottom - 2,
+            (x + y - 9) * 0.7, (right + y - 9) * 0.7,
+            (x + bottom - 9) * 0.7, (right + bottom - 9) * 0.7)
+        edge = edge + (noise(x * 0.19, y * 0.21) - 0.5) * 2.2
+        local wear = 1 - clamp(edge / 12, 0, 1)
+        local grain = (hash2d(x, y) - 0.5) * 0.05
+        local stains = (noise(x * 0.041, y * 0.053) - 0.5) * 0.12
+        local shade = grain + stains - wear * wear * 0.23
+        return 0.93 + shade, 0.82 + shade, 0.64 + shade, clamp(edge + 0.5, 0, 1)
+    end)
+    local texture = love.graphics.newImage(paper)
+    texture:setFilter("nearest", "nearest")
+    return texture
+end
+
+local function drawMinimapRoute(g)
+    local spacing, nextDot = 3.0, 0
+    g.setColor(0.34, 0.18, 0.10, 0.88)
+    for i = 1, #minimapRouteLine - 2, 2 do
+        local x, y = minimapRouteLine[i], minimapRouteLine[i + 1]
+        local dx = minimapRouteLine[i + 2] - x
+        local dy = minimapRouteLine[i + 3] - y
+        local length = sqrt(dx * dx + dy * dy)
+        while nextDot < length do
+            local t = nextDot / length
+            g.circle("fill", x + dx * t, y + dy * t, 0.8, 8)
+            nextDot = nextDot + spacing
+        end
+        nextDot = nextDot - length
+    end
+end
+
+local function drawMinimapBase(font, titleFont)
+    local g = love.graphics
+    local mw, mh = MINIMAP_W, MINIMAP_H
+    local labelX = 76
+    local land, shores = buildMinimapLand()
+    g.setColor(1, 1, 1)
+    g.draw(makeMinimapParchment())
+
+    g.setLineWidth(1)
+    g.setLineJoin("bevel")
+    g.setColor(0.39, 0.24, 0.12, 0.43)
+    g.rectangle("line", 7.5, 7.5, mw - 15, mh - 15, 2, 2)
+    g.line(8, 27.5, mw - 8, 27.5)
+
+    -- Engraved swell marks west of the coast.
+    g.setColor(0.31, 0.37, 0.30, 0.40)
+    for _, wave in ipairs({ { 17, 60 }, { 22, 103 }, { 14, 140 }, { 14, 174 } }) do
+        local x, y = wave[1], wave[2]
+        g.line(x, y, x + 3, y - 1, x + 6, y, x + 9, y + 1, x + 12, y)
+        g.line(x + 3, y + 4, x + 6, y + 3, x + 9, y + 4)
     end
 
-    -- 4 biome colored bands ascending diagonally
-    for _, id in ipairs(Encounters.BIOME_ORDER) do
-        local biome = Encounters.getBiome(id)
-        local col = StageRenderer.BIOME_VISUALS[id].miniCol
-        local x0a, y0a = mapPt(biome.uStart, -8.5)
-        local x0b, y0b = mapPt(biome.uStart, 8.5)
-        local x1b, y1b = mapPt(biome.uEnd, 8.5)
-        local x1a, y1a = mapPt(biome.uEnd, -8.5)
-        love.graphics.setColor(col[1], col[2], col[3], 0.42)
-        love.graphics.polygon("fill", x0a, y0a, x1a, y1a, x1b, y1b, x0b, y0b)
+    g.setColor(1, 1, 1)
+    g.draw(land)
+    g.setColor(0.33, 0.25, 0.15, 0.72)
+    for _, shore in ipairs(shores) do
+        g.line(shore)
     end
+    drawMinimapRoute(g)
 
-    -- Subtle river accent band on the minimap
-    local rx0, ry0 = mapPt(RIVER_START, -8.0)
-    local rx1, ry1 = mapPt(RIVER_END, -8.0)
-    local rx2, ry2 = mapPt(RIVER_END, 8.0)
-    local rx3, ry3 = mapPt(RIVER_START, 8.0)
-    love.graphics.setColor(0.20, 0.72, 0.88, 0.55)
-    love.graphics.polygon("fill", rx0, ry0, rx1, ry1, rx2, ry2, rx3, ry3)
+    g.setColor(0.30, 0.16, 0.085)
+    g.setFont(titleFont)
+    g.print("Chile", 13, floor((32 - titleFont:getHeight()) / 2))
+    g.setFont(font)
+    local compassX, compassY = mw - 21, 17
+    g.print("N", compassX - 19, floor(compassY - font:getHeight() / 2))
+    g.circle("line", compassX, compassY, 5)
+    g.line(compassX - 7, compassY, compassX + 7, compassY)
+    g.line(compassX, compassY - 7, compassX, compassY + 7)
+    g.polygon("fill", compassX, compassY - 7, compassX - 2, compassY + 2, compassX + 2, compassY + 2)
 
-    -- Winding S-path line
-    love.graphics.setLineWidth(2.2)
-    love.graphics.setColor(0.98, 0.92, 0.74, 0.88)
-    local prevX, prevY = mapPt(0.0, StageRenderer.pathCenterV(0.0))
-    for u = 3.0, 117.0, 3.0 do
-        local nx, ny = mapPt(u, StageRenderer.pathCenterV(u))
-        love.graphics.line(prevX, prevY, nx, ny)
-        prevX, prevY = nx, ny
+    local textOffsetY = font:getHeight() / 2
+    for _, stop in ipairs(minimapStops) do
+        g.setColor(0.42, 0.28, 0.15, 0.60)
+        g.line(stop.x + 5, stop.y, labelX - 4, stop.y)
+        g.setColor(0.28, 0.17, 0.095)
+        g.print(stop.name, labelX, floor(stop.y - textOffsetY))
     end
-    love.graphics.setLineWidth(1)
+end
 
-    -- Encounter dots (amber/red active, green defeated)
+function StageRenderer:drawOverworldMinimap(puduU, puduV, encountersList, defeatedMap, _w, _h, font, titleFont)
+    local g = love.graphics
+    local f = font or makeFallbackFont()
+    local heading = titleFont or f
+    -- Bake the parchment, coastline and labels. Only the markers move.
+    if self._minimapFont ~= f or self._minimapTitleFont ~= heading then
+        g.push("all")
+        self._minimapBase = g.newCanvas(MINIMAP_W, MINIMAP_H, { dpiscale = 1 })
+        self._minimapBase:renderTo(function()
+            g.origin()
+            g.setShader()
+            g.setBlendMode("alpha")
+            g.clear(0, 0, 0, 0)
+            drawMinimapBase(f, heading)
+        end)
+        self._minimapFont = f
+        self._minimapTitleFont = heading
+        g.pop()
+    end
+    g.push("all")
+    g.translate(MINIMAP_X, MINIMAP_Y)
+    g.setBlendMode("alpha", "premultiplied")
+    g.setColor(0.06, 0.035, 0.018, 0.55)
+    g.draw(self._minimapBase, 2, 3)
+    g.setColor(1, 1, 1)
+    g.draw(self._minimapBase)
+    g.setBlendMode("alpha")
+
     local encList = encountersList or _encounterAnchors
     local defMap = defeatedMap or {}
-    for i = 1, #encList do
-        local enc = encList[i]
-        if enc and enc.u and enc.v then
-            local ex, ey = mapPt(enc.u, enc.v)
-            local isDef = (defMap[enc.id] == true) or (defMap[enc.index or i] == true)
-            if isDef then
-                love.graphics.setColor(0.20, 0.86, 0.52, 0.96)
-                love.graphics.circle("fill", ex, ey, 3.2)
+    for i, enc in ipairs(encList) do
+        if enc.u and enc.v then
+            local ex, ey = minimapPoint(enc.u, enc.v)
+            g.setColor(0.98, 0.86, 0.65)
+            g.circle("fill", ex, ey, 3.9)
+            if defMap[enc.id] == true or defMap[enc.index or i] == true then
+                g.setColor(0.22, 0.37, 0.23)
             else
-                love.graphics.setColor(1.0, 0.84, 0.30, 0.95)
-                love.graphics.circle("fill", ex, ey, 4.4)
-                love.graphics.setColor(0.96, 0.28, 0.22, 1.0)
-                love.graphics.circle("fill", ex, ey, 2.8)
+                g.setColor(0.59, 0.23, 0.13)
             end
+            g.circle("fill", ex, ey, 2.6)
         end
     end
 
-    -- Hero Pudu bright cyan dot with subtle beacon ring
-    local px, py = mapPt(puduU or 3.8, puduV or StageRenderer.pathCenterV(puduU or 3.8))
-    love.graphics.setColor(0.20, 0.94, 1.0, 0.36)
-    love.graphics.circle("fill", px, py, 7.5)
-    love.graphics.setColor(0.18, 0.92, 1.0, 1.0)
-    love.graphics.circle("fill", px, py, 4.2)
-    love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    love.graphics.circle("fill", px, py, 2.0)
+    local px, py = minimapPoint(puduU or 3.8, puduV)
+    g.setColor(1, 0.91, 0.71)
+    g.polygon("fill", px, py - 6.5, px + 6, py, px, py + 6.5, px - 6, py)
+    g.setColor(0.10, 0.37, 0.36)
+    g.polygon("fill", px, py - 4.5, px + 4, py, px, py + 4.5, px - 4, py)
 
-    -- Corner label "MAPA" (pure ASCII) + vector diagonal NE arrow (ZERO Unicode tofu!)
-    local f = font or makeFallbackFont()
-    if f then
-        love.graphics.setFont(f)
-        love.graphics.setColor(0.86, 0.92, 1.0, 0.90)
-        love.graphics.print("MAPA", x + 10, y + 6)
-    end
-    drawVectorNEArrow(x + mw - 19, y + mh - 18, 12)
-
-    -- Clean RPG border
-    love.graphics.setLineWidth(2)
-    love.graphics.setColor(0.70, 0.80, 0.96, 0.88)
-    love.graphics.rectangle("line", x, y, mw, mh, 7, 7)
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(1, 1, 1, 0.14)
-    love.graphics.rectangle("line", x + 3, y + 3, mw - 6, mh - 6, 5, 5)
+    g.pop()
 end
 
 --------------------------------------------------------------------------------
@@ -3798,11 +4108,28 @@ function StageRenderer:drawBattleTransition(progress, w, h)
 end
 
 --------------------------------------------------------------------------------
--- 11. Dedicated Side-View HD-2D Battle Arena (8 Stages + 12-Band Floor + Props)
+-- 11. Side-View HD-2D Battle Arena
 --------------------------------------------------------------------------------
 
 local ARENA_PROP_Z = 1.85
 local ARENA_FG_Z = 1.75
+
+local function battleStageKind(encounter)
+    if type(encounter) == "table" and type(encounter.stage) == "string" then
+        return encounter.stage
+    elseif type(encounter) == "string" and encounter ~= "" then
+        return encounter
+    end
+    return "plaza"
+end
+
+local function battleArenaArt(assets, stageKind)
+    return type(assets) == "table" and assets.battleArenas and assets.battleArenas[stageKind]
+end
+
+local function battleCaleuchePosition(w, h, time, painted)
+    return w * 0.40 + sin(time * 0.28) * 20.0, painted and h * 0.42 or floor(h * 0.36) - 10
+end
 
 local BATTLE_FLOOR_TINTS = {
     plaza   = { 0.96, 1.00, 0.92 },
@@ -3900,7 +4227,7 @@ local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw,
             )
         end
 
-    elseif stageKind == "muelle" or stageKind == "chiloe" then
+    elseif stageKind == "muelle" then
         -- Perspective weathered wooden pier decking planks overlooking the Valparaiso bay
         local deckTopY = horizonY + 14
         local deckH = sh - deckTopY
@@ -4029,52 +4356,14 @@ local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw,
     end
 end
 
-function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAssets, beatPulse, w, h, time, litShader, enterOffsets)
-    local sw = w or love.graphics.getWidth()
-    local sh = h or love.graphics.getHeight()
-    local tNow = time or 0.0
-    local pulse = clamp(beatPulse or 0.0, 0.0, 1.5)
-
-    local stageKind = "plaza"
-    if type(encounter) == "table" and type(encounter.stage) == "string" then
-        stageKind = encounter.stage
-    elseif type(encounter) == "string" and encounter ~= "" then
-        stageKind = encounter
-    end
-
-    local theme = nil
-    if type(stageThemes) == "table" then
-        if type(stageThemes[stageKind]) == "table" then
-            theme = stageThemes[stageKind]
-        elseif stageThemes.skyTop or stageThemes.groundA then
-            theme = stageThemes
-        end
-    end
-
-    local tiles = nil
-    local propSprites = nil
-    if type(propSpritesOrAssets) == "table" then
-        if propSpritesOrAssets.tiles or propSpritesOrAssets.props then
-            tiles = propSpritesOrAssets.tiles
-            propSprites = propSpritesOrAssets.props
-        else
-            propSprites = propSpritesOrAssets
-        end
-    end
-
-    local pal = resolveSkyPalette(theme, stageKind)
-    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
-    local st = preset.skyTint or { 1.0, 1.0, 1.0 }
-    local activeLit = (litShader ~= false) and (litShader or (self.useLitShader and self.shaders and self.shaders.lit)) or nil
-    if not self.useLitShader then
-        activeLit = nil
-    end
-
+local function drawProceduralBattleArena(self, stageKind, theme, assets, pal, preset, sw, sh, tNow, activeLit)
+    local st = preset.skyTint
+    local tiles = type(assets) == "table" and assets.tiles or nil
     -- LAYER 1: Sky & Biome Parallax Horizon (horizonFrac = 0.36 for deep Pokémon diagonal battle plane)
     local horizonFrac = 0.36
     local horizonY = floor(sh * horizonFrac)
     local floorH = sh - horizonY
-    self:drawSkyAndHorizon(theme, sw, sh, tNow, horizonFrac, stageKind, propSpritesOrAssets)
+    self:drawSkyAndHorizon(theme, sw, sh, tNow, horizonFrac, stageKind, assets)
 
     -- LAYER 2: 12-Band Foreshortened Perspective Pixel-Art Floor (normal-mapped when tile.norm exists!)
     local tileSpec = StageRenderer.THEME_TILES[stageKind] or StageRenderer.THEME_TILES.plaza
@@ -4184,21 +4473,53 @@ function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAsse
         if prop.layer ~= "fg" then
             local px = prop.xFrac * sw
             local py = prop.yFrac * sh
-            drawStylizedProp(self, prop, px, py, ARENA_PROP_Z, tNow, propSpritesOrAssets or propSprites, activeLit, 1.0)
+            drawStylizedProp(self, prop, px, py, ARENA_PROP_Z, tNow, assets, activeLit, 1.0)
         end
     end
+end
 
-    -- LAYER 5: Pokémon-Style Sliding Diagonal Battle Pads & Beat-Pulsing Stance Rings
-    local anchors = StageRenderer.getBattleAnchors(sw, sh)
-    local ringPulse = pulse
-    if beatPulse == nil then
-        ringPulse = 0.5 + 0.5 * sin(tNow * 4.2)
+function StageRenderer:drawBattleArena(encounter, stageThemes, assets, beatPulse, w, h, time, litShader, enterOffsets)
+    local sw = w or love.graphics.getWidth()
+    local sh = h or love.graphics.getHeight()
+    local tNow = time or 0.0
+    local stageKind = battleStageKind(encounter)
+    local theme
+    if type(stageThemes) == "table" then
+        if type(stageThemes[stageKind]) == "table" then
+            theme = stageThemes[stageKind]
+        elseif stageThemes.skyTop or stageThemes.groundA then
+            theme = stageThemes
+        end
+    end
+    local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+    local st = preset.skyTint
+    local activeLit = self.useLitShader and litShader ~= false and (litShader or (self.shaders and self.shaders.lit))
+    local art = battleArenaArt(assets, stageKind)
+    local pal
+
+    if art then
+        local iw, ih = art.background.diff:getDimensions()
+        local scale = max(sw / iw, sh / ih)
+        local x, y = (sw - iw * scale) * 0.5, sh - ih * scale
+        if activeLit then
+            -- Leave room for directional light and bloom on the painted highlights.
+            local exposure = preset.id == "dia" and 0.90 or 1.0
+            love.graphics.setColor(exposure, exposure, exposure, 1)
+        else
+            love.graphics.setColor(st[1], st[2], st[3], 1)
+        end
+        self:drawSpriteLit(art.background, x, y, 0, scale, scale, 0, 0, nil, 0, nil, activeLit, false)
+        if stageKind == "muelle" then
+            local shipX, shipY = battleCaleuchePosition(sw, sh, tNow, true)
+            drawHorizonCaleuche(shipX, shipY, 0.50 * sh / 720, tNow, st[1], st[2], st[3],
+                self.lightingPreset == "noche" or self.lightingPreset == "dramatico", assets)
+        end
+    else
+        pal = resolveSkyPalette(theme, stageKind)
+        drawProceduralBattleArena(self, stageKind, theme, assets, pal, preset, sw, sh, tNow, activeLit)
     end
 
-    local pOffX = (enterOffsets and enterOffsets.puduOffX) or 0.0
-    local pOffY = (enterOffsets and enterOffsets.puduOffY) or 0.0
-    local eOffX = (enterOffsets and enterOffsets.enemyOffX) or 0.0
-    local eOffY = (enterOffsets and enterOffsets.enemyOffY) or 0.0
+    local anchors = StageRenderer.getBattleAnchors(sw, sh, type(encounter) == "table" and encounter)
     local enterT = (enterOffsets and enterOffsets.enterT) or 1.0
 
     -- Subtle Pokémon-style dynamic diagonal speed streaks while platforms slide into place
@@ -4212,6 +4533,18 @@ function StageRenderer:drawBattleArena(encounter, stageThemes, propSpritesOrAsse
             love.graphics.rectangle("fill", sx, sy, len, 2.5)
         end
     end
+
+    -- Painted ground uses the moving contact shadows drawn with each combatant.
+    if art then
+        love.graphics.setColor(1, 1, 1, 1)
+        return anchors
+    end
+
+    local ringPulse = beatPulse == nil and (0.5 + 0.5 * sin(tNow * 4.2)) or clamp(beatPulse or 0.0, 0.0, 1.5)
+    local pOffX = (enterOffsets and enterOffsets.puduOffX) or 0.0
+    local pOffY = (enterOffsets and enterOffsets.puduOffY) or 0.0
+    local eOffX = (enterOffsets and enterOffsets.enemyOffX) or 0.0
+    local eOffY = (enterOffsets and enterOffsets.enemyOffY) or 0.0
 
     -- Biome-harmonized battle pad colors (lit softly by preset skyTint)
     local padFillR = clamp(lerp(pal.groundA[1], 0.90, 0.32) * lerp(1.0, st[1], 0.65), 0.10, 0.96)
@@ -4283,16 +4616,31 @@ function StageRenderer:drawBattleArenaForeground(encounter, propSpritesOrAssets,
         litShader = timeOrShader
     end
 
-    local stageKind = "plaza"
-    if type(encounter) == "table" and type(encounter.stage) == "string" then
-        stageKind = encounter.stage
-    elseif type(encounter) == "string" and encounter ~= "" then
-        stageKind = encounter
-    end
+    local stageKind = battleStageKind(encounter)
 
     local activeLit = (litShader ~= false) and (litShader or (self.useLitShader and self.shaders and self.shaders.lit)) or nil
     if not self.useLitShader then
         activeLit = nil
+    end
+
+    local art = battleArenaArt(propSpritesOrAssets, stageKind)
+    if art and art.foreground then
+        local foreground = art.foreground
+        local iw, ih = foreground.diff:getDimensions()
+        local scale = min(sw * 0.20 / iw, sh * 0.24 / ih)
+        local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
+        local tint = preset.skyTint
+        if activeLit then
+            love.graphics.setColor(0.86, 0.86, 0.86, 1)
+        else
+            love.graphics.setColor(tint[1] * 0.86, tint[2] * 0.86, tint[3] * 0.86, 1)
+        end
+        self:drawSpriteLit(foreground, sw * 0.032, sh * 0.96, 0, scale * 0.80, scale * 0.80,
+            iw * 0.5, ih, nil, 0, nil, activeLit, true)
+        self:drawSpriteLit(foreground, sw * 0.973, sh * 0.995, 0, scale, scale,
+            iw * 0.5, ih, nil, 0, nil, activeLit, true)
+        love.graphics.setColor(1, 1, 1, 1)
+        return
     end
 
     local decorList = StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza
@@ -4341,19 +4689,15 @@ function StageRenderer:_finalizeLightCollection()
     return list
 end
 
-function StageRenderer:collectBattleLights(encounter, w, h, time)
+function StageRenderer:collectBattleLights(encounter, w, h, time, assets)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
     local preset = StageRenderer.LIGHTING_PRESETS[self.lightingPreset] or StageRenderer.LIGHTING_PRESETS.dia
     local boost = preset.lanternBoost or 0.6
 
-    local stageKind = "plaza"
-    if type(encounter) == "table" and type(encounter.stage) == "string" then
-        stageKind = encounter.stage
-    elseif type(encounter) == "string" and encounter ~= "" then
-        stageKind = encounter
-    end
+    local stageKind = battleStageKind(encounter)
+    local art = battleArenaArt(assets, stageKind)
 
     self:_resetLightCollection()
 
@@ -4367,8 +4711,8 @@ function StageRenderer:collectBattleLights(encounter, w, h, time)
     end
 
     -- Priority 2: Emissive props in the active stage arena (exact match to ARENA_PROP_Z anchor!)
-    local decorList = StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza
-    for i = 1, #decorList do
+    local decorList = not art and (StageRenderer.BATTLE_STAGE_DECOR[stageKind] or StageRenderer.BATTLE_STAGE_DECOR.plaza)
+    for i = 1, decorList and #decorList or 0 do
         local prop = decorList[i]
         if prop.layer ~= "fg" then
             local px = prop.xFrac * sw
@@ -4448,15 +4792,14 @@ function StageRenderer:collectBattleLights(encounter, w, h, time)
 
     -- Priority 3: Coastal Caleuche spectral stern lantern on horizon in muelle stage
     if stageKind == "muelle" then
-        local shipX = sw * 0.40 + sin(tNow * 0.28) * 20.0
-        local shipY = floor(sh * 0.36) - 18
-        self:_pushLight(shipX - 22, shipY, 135, 0.40, 0.96, 0.88, 0.52 * max(0.45, boost), 0.52, 48)
+        local shipX, shipY = battleCaleuchePosition(sw, sh, tNow, art)
+        self:_pushLight(shipX - 22, shipY - 8, 135, 0.40, 0.96, 0.88, 0.52 * max(0.45, boost), 0.52, 48)
     end
 
     return self:_finalizeLightCollection()
 end
 
-function StageRenderer:collectZoneLights(w, h, time)
+function StageRenderer:collectZoneLights(w, h, time, defeatedMap)
     local sw = w or love.graphics.getWidth()
     local sh = h or love.graphics.getHeight()
     local tNow = time or 0.0
@@ -4464,6 +4807,9 @@ function StageRenderer:collectZoneLights(w, h, time)
     local boost = preset.lanternBoost
     if self.lightingPreset == "dia" then
         boost = lerp(boost, 1.0, smoothstep(88.0, 98.0, self.camU))
+    end
+    if defeatedMap and defeatedMap.tempano and StageRenderer.getBiomeAt(self.camU) == "chiloe" then
+        boost = boost * 0.42
     end
     local z = self.camZoom or 0.72
     local camU = self.camU
@@ -4676,7 +5022,7 @@ function StageRenderer:drawBattlePlaceholderStage(ctx)
         love.graphics.line(sw * 0.24, horizonY + 12, sw * 0.12, sh)
         love.graphics.line(sw * 0.76, horizonY + 12, sw * 0.88, sh)
         love.graphics.setLineWidth(1)
-    elseif stageKind == "muelle" or stageKind == "chiloe" then
+    elseif stageKind == "muelle" then
         love.graphics.setColor(0.58, 0.42, 0.26, 0.94)
         love.graphics.rectangle("fill", 0, horizonY + 18, sw, floorH)
         love.graphics.setColor(0.32, 0.20, 0.10, 0.65)
@@ -4708,7 +5054,7 @@ function StageRenderer:drawBattlePlaceholderStage(ctx)
     if ctx.drawActors ~= false and assets then
         local animCol = (floor(time * 6.0) % 6) + 1
         local puduBob = sin(time * 5.2) * 3.5
-        drawPuduWithHat(self, anchors.puduX, anchors.puduY, 2, animCol, 124.0, puduBob, assets)
+        drawPuduWithHat(self, anchors.puduX, anchors.puduY, anchors.puduFacingRow, animCol, 124.0, puduBob, assets)
 
         if enc then
             local encPair = assets.encounters and assets.encounters[enc.id]
@@ -4717,24 +5063,16 @@ function StageRenderer:drawBattlePlaceholderStage(ctx)
             love.graphics.setColor(0.03, 0.04, 0.08, 0.34)
             love.graphics.ellipse("fill", anchors.enemyX, anchors.enemyY + 4, 42, 14)
             if encPair and encPair.diff then
-                local img = encPair.diff
-                local quad = nil
-                local fw, fh
-                if encPair.isSheet and encPair.quads then
-                    local rowTable = encPair.quads[enc.sheetRow or 1] or encPair.quads[0]
-                    if rowTable and #rowTable > 0 then
-                        quad = rowTable[(floor(time * 5.0) % #rowTable) + 1]
-                        local _, _, qw, qh = quad:getViewport()
-                        fw, fh = qw, qh
-                    end
-                end
-                if not fw then fw, fh = img:getDimensions() end
+                local pair, quad, fw, fh = rivalFrame(encPair, enc, anchors.enemyFacingRow, time)
                 local sc = targetH / max(1, fh)
                 love.graphics.setColor(1, 1, 1, 1)
-                if quad then
-                    love.graphics.draw(img, quad, anchors.enemyX, anchors.enemyY + enemyBob, 0, sc, sc, fw * 0.5, fh * 0.92)
-                else
-                    love.graphics.draw(img, anchors.enemyX, anchors.enemyY + enemyBob, 0, sc, sc, fw * 0.5, fh * 0.92)
+                self:drawSpriteLit(pair, anchors.enemyX, anchors.enemyY + enemyBob, 0, sc, sc,
+                    pair.originX or fw * 0.5, pair.originY or fh * 0.92, quad)
+                local companion = encPair.companion
+                if companion then
+                    local sockScale = targetH * 0.65 / companion.frameH
+                    self:drawSpriteLit(companion, anchors.enemyX + targetH * 0.56, anchors.enemyY + enemyBob,
+                        0, sockScale, sockScale, companion.originX, companion.originY, companion.quads[anchors.enemyFacingRow][1])
                 end
             end
         end

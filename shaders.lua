@@ -64,6 +64,7 @@ extern Image roadNormal;
 extern number hasRoadNormal;
 extern vec3 roadTint;
 extern number terrainMode;
+extern number waterPollution;
 extern number time;
 
 vec3 terrainNormal(vec2 slope) {
@@ -87,6 +88,12 @@ void sampleTerrain(Image ground, vec2 world, vec3 tint, out vec3 albedo, out vec
         albedo = mix(deep, edge, shallow) * (1.0 + swell * 0.045 + ripple * 0.018);
         float foam = smoothstep(0.72, 0.99, shallow) * smoothstep(0.25, 0.92, swell) * breakUp;
         albedo += vec3(0.58, 0.84, 0.83) * (crest * (0.045 + shallow * 0.06) + foam * 0.13);
+        if (!river && waterPollution > 0.0) {
+            float slick = sin(world.x * 1.8 - world.y * 1.1 + bend + swell * 0.4);
+            float iridescence = smoothstep(0.10, 0.94, slick) * (0.48 + 0.52 * shallow);
+            vec3 oil = mix(vec3(0.085, 0.046, 0.15), vec3(0.30, 0.14, 0.31), iridescence);
+            albedo = mix(albedo, oil * (1.0 + swell * 0.10), waterPollution);
+        }
         normal = terrainNormal(vec2(swell * 0.12 + ripple * 0.04, swell * 0.07 - ripple * 0.07));
         return;
     }

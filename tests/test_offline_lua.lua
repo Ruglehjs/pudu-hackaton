@@ -50,12 +50,19 @@ for _, enc in ipairs(Encounters.SELECTABLE) do
     r = judge(rules.rivals[enc.id].backfire[1], enc)
     assert(r.outcome_type == "backfire" and r.damage_to_pudu == 14 and r.enemy_reaction == "laughing", enc.id)
 end
-local campaign = { "desierto", "costa", "bosque", "chiloe" }
+local campaign = {
+    { "desierto", "pila_de_ropa" }, { "costa", "mancha" },
+    { "bosque", "brasa" }, { "chiloe", "tempano" },
+}
 local StageRenderer = require("stage_renderer")
-assert(#Encounters.LIST == #campaign and Encounters.LIST[1].id == "pila_de_ropa")
+assert(#Encounters.LIST == #campaign)
 local greatestRivalHp, lastU = 0, 0
 for i, enc in ipairs(Encounters.LIST) do
-    assert(enc.biome == campaign[i] and StageRenderer.getBiomeAt(enc.u) == enc.biome)
+    assert(enc.biome == campaign[i][1] and enc.id == campaign[i][2])
+    assert(StageRenderer.getBiomeAt(enc.u) == enc.biome)
+    assert(enc.restorationLine and enc.directionalPoses.idle and enc.directionalPoses.charge
+        and enc.directionalPoses.attack)
+    assert((enc.companionPose == "calcetin_liberado") == (i == 1))
     assert(enc.u > lastU and StageRenderer.isWalkable(enc.u, enc.v))
     lastU = enc.u
     if i < #campaign then greatestRivalHp = math.max(greatestRivalHp, enc.maxHp) end
@@ -65,10 +72,11 @@ for u = 0, 116.5, 0.25 do
 end
 local boss = Encounters.LIST[#campaign]
 assert(boss.finalBoss and boss.maxHp > greatestRivalHp)
-local bossVerdict = judge("faro", boss)
+local bossVerdict = judge("calor", boss)
+assert(bossVerdict.is_critical)
 assert(bossVerdict.enemy_counter_damage > judge("silla", Encounters.LIST[1]).enemy_counter_damage)
 bossVerdict.enemy_counter_damage = 5
-assert(Judge.ensureResultCoherence(bossVerdict, "faro", boss).enemy_counter_damage == 20)
+assert(Judge.ensureResultCoherence(bossVerdict, "calor", boss).enemy_counter_damage == 20)
 for _, state in ipairs(rules.states) do
     local r = judge(state.words[1])
     assert(r.adds_stage_state == state.id and r.combo_triggered == "none", state.id)

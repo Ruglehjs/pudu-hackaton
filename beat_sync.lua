@@ -263,7 +263,38 @@ local function evalHatLift(phase, hopHeight, jumpY)
     return clamp((delayedJumpY - jumpY) * 0.36, -2.3, 1.25) - 0.35
 end
 
-local function evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
+function BeatSync:getOverworldPuduPose(facingRow, walkPhase, walkWeight)
+    local t = self.time
+    local breathe = sin(t * 2.75)
+    local sway = sin(t * 1.55)
+    local earPhase = t % 5.2
+    local earFlick = (earPhase > 3.62 and earPhase < 3.76)
+        or (earPhase > 3.89 and earPhase < 4.04)
+    local step, lift, delayedLift = evalStride(walkPhase + 1.0)
+    local settle = walkWeight * walkWeight * (3.0 - 2.0 * walkWeight)
+    local idleTilt, walkTilt = sway * 0.028, step * 0.035
+    local function between(idle, walk)
+        return idle + (walk - idle) * settle
+    end
+
+    local col = earFlick and 2 or 1
+    if walkWeight >= 0.30 then
+        col = walkFrame(walkPhase)
+    end
+    return {
+        row = facingRow,
+        col = col,
+        scaleX = between(1.0 - breathe * 0.024, 1.024 - 0.038 * lift),
+        scaleY = between(1.0 + breathe * 0.042, 0.974 + 0.048 * lift),
+        jumpY = -2.4 * lift * settle,
+        tilt = between(idleTilt, walkTilt),
+        hatOffsetY = between(-0.4 - sin(t * 2.75 - 0.40) * 0.75, (lift - delayedLift) * 1.8 - 0.35),
+        hatTilt = between(idleTilt * 1.3 + sin(t * 1.55 - 0.35) * 0.018,
+            walkTilt + (lift - delayedLift) * 0.060),
+    }
+end
+
+local function evaluatePuduPose(self, animMode, facingDirOverride)
     local p = self.beatPhase
     local bar = self.barBeat
     local bf = self.beatFloat
@@ -286,50 +317,6 @@ local function evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
             stepY = 0.0,
             hatOffsetY = (lift - delayedLift) * 2.8 - 0.7,
             hatTilt = tilt - 0.12 + (lift - delayedLift) * 0.10,
-            noteSparkle = false,
-        }
-    end
-
-    if animMode == "walk" then
-        local row = normalizeRow(facingDirOverride, 3)
-        local walkCycle = walkPhase or t * 8.5
-        local step, lift, delayedLift = evalStride(walkCycle)
-        local tilt = step * 0.028
-
-        return {
-            row = row,
-            col = walkFrame(walkCycle),
-            scaleX = 1.020 - 0.033 * lift,
-            scaleY = 0.980 + 0.038 * lift,
-            jumpY = -1.8 * lift,
-            tilt = tilt,
-            stepX = 0.0,
-            stepY = 0.0,
-            hatOffsetY = (lift - delayedLift) * 1.4 - 0.35,
-            hatTilt = tilt - 0.02 + (lift - delayedLift) * 0.045,
-            noteSparkle = false,
-        }
-    end
-
-    if animMode == "overworld_idle" then
-        local row = normalizeRow(facingDirOverride, 0)
-        local breathe = sin(t * 2.6)
-        local sway = sin(t * 1.3)
-        local tilt = sway * 0.012
-        local hatOffsetY = -0.35 - breathe * 0.45
-        local hatTilt = tilt * 1.2 + sin(t * 1.3 - 0.3) * 0.015
-
-        return {
-            row = row,
-            col = breathe > 0.65 and 2 or 1,
-            scaleX = 1.0 - breathe * 0.018,
-            scaleY = 1.0 + breathe * 0.024,
-            jumpY = 0.0,
-            tilt = tilt,
-            stepX = 0.0,
-            stepY = 0.0,
-            hatOffsetY = hatOffsetY,
-            hatTilt = hatTilt,
             noteSparkle = false,
         }
     end
@@ -447,9 +434,9 @@ local function evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
     }
 end
 
-function BeatSync:getPuduDancePose(mode, facingDirOverride, walkPhase)
+function BeatSync:getPuduDancePose(mode, facingDirOverride)
     local animMode = mode or "battle_idle"
-    local pose = evaluatePuduPose(self, animMode, facingDirOverride, walkPhase)
+    local pose = evaluatePuduPose(self, animMode, facingDirOverride)
     return blendPose(self._puduPose, animMode, pose, PUDU_POSE_FIELDS, self.time, 0.12)
 end
 
