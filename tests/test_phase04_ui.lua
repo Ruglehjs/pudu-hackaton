@@ -49,6 +49,7 @@ love = {
         printf = recordPrint,
         getWidth = function() return 1280 end,
         getHeight = function() return 720 end,
+        getDimensions = function() return 1280, 720 end,
     }, { __index = function() return nothing end }),
 }
 local audio = { play = nothing, playArrowChime = nothing, playTrack = nothing }
@@ -175,6 +176,16 @@ game.mode = "battle"
 game.cli = { mock = true, autoPrompts = {} }
 game.autoPromptIndex = 1
 game.audio, game.hud, game.ritual = audio, hud, ritual
+game.assets = { encounters = {}, gags = {}, props = {} }
+game.battleFX = require("battle_fx").new()
+local victories = {}
+game.album = {
+    isOpen = function() return false end,
+    recordVictory = function(_, id, entry)
+        victories[id] = entry
+        return true
+    end,
+}
 game.battleIn, game.battleOut = channel(), channel()
 game.spriteIn, game.spriteOut = channel(), channel()
 
@@ -217,16 +228,21 @@ cast("lápiz")
 assert(game.battlePhase == "player_turn" and game.battle.nonCritMissCount == 0)
 assert(not game.battle.pendingSemiHint and game.battle.speech == hint)
 assert(game.battle.enemyHp == 30)
-assert(game.battle.speechTimer >= 5.149 and game.battle.speechTimer <= 5.2)
+local hintBubble = game.battleFX.speech.enemy
+assert(hintBubble.text == hint and hintBubble.duration == 5.2 and hintBubble.age < 0.4)
 restart()
 cast("silla")
 cast("pintura", "scared")
 assert(game.battle.nonCritMissCount == 0 and not game.battle.pendingSemiHint)
 assert(game.battlePhase == "victory")
+assert(victories.mimo_muro.prompt == "pintura" and victories.mimo_muro.turns == 2)
+assert(game.battleFX.defeatFinale.reaction == game.battle.result.enemy_reaction)
 state.battlePhase, state.lastPrompt = "victory", "pintura"
 hud:drawTopBar(state, 1280)
 hud:drawVictoryOrDefeat(state, 1280, 720)
-love.mousepressed(740, 190, 1)
+for _, hit in ipairs(hud.hits) do
+    if hit.action == "retry" then love.mousepressed(hit.x + hit.w / 2, hit.y + hit.h / 2, 1) end
+end
 advance(1)
 assert(game.battlePhase == "player_turn" and game.battle.turn == 1 and game.battle.hp == 100)
 

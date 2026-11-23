@@ -177,6 +177,10 @@ function BattleHUD:drawTopBar(state, w)
     drawMusicNoteIcon(right + 12, 21, state.musicOff)
     oneLine(f.body, music, right + 35, 28 - f.body:getHeight() / 2, musicW - 39)
     self.hits[#self.hits + 1] = { action = "music", x = right, y = 11, w = musicW, h = 34 }
+    local album = ("Álbum [J] (%d/%d)"):format(state.albumCount or 0, state.encounterCount or 9)
+    local albumW = f.body:getWidth(album) + 24
+    right = right - albumW - 8
+    self:_button("album", album, right, 11, albumW, 34, true, true)
 
     if state.toast and state.battlePhase ~= "ritual" then
         local left = 14 + chipW + 12
@@ -200,7 +204,7 @@ end
 
 function BattleHUD:drawRivalStageBar(state, ex, ey, w)
     local f = self.fonts.small
-    local x, y = ex - 78, ey + 24
+    local x, y = clamp(ex - 78, 12, w - 168), ey + 52
     drawBar(x, y, 156, 14, state.enemyHp / state.enemyMaxHp, { 0.92, 0.41, 0.36 })
     oneLine(f, ("%d / %d PV"):format(state.enemyHp, state.enemyMaxHp), x, y - 15, 156, "center")
 
@@ -241,29 +245,22 @@ function BattleHUD:drawRivalStageBar(state, ex, ey, w)
     end
 end
 
-function BattleHUD:drawSpeech(text, w, ex, ey, anticipation)
+function BattleHUD:drawAnticipation(text, w, ex)
     text = BattleHUD.displayText(text)
     if text == "" then return end
     local f = self.fonts.body
-    local maxW = math.min(280, w * 0.37)
-    local width = clamp(f:getWidth(text) + 28, 142, maxW)
+    local maxW = math.max(110, math.min(250, w - ex - 78))
+    local width = clamp(f:getWidth(text) + 28, 110, maxW)
     local _, lines = f:getWrap(text, width - 26)
-    local limit = anticipation and 2 or 3
+    local limit = 2
     if #lines > limit then
         lines[limit] = fit(lines[limit] .. "...", f, width - 26)
     end
     local height = math.min(#lines, limit) * f:getHeight() + 16
-    local x = clamp(ex - width / 2, w * 0.58, w - width - 16)
-    local y = math.max(52, ey - 216 - math.max(0, height - 44))
-    local tipX = clamp(ex, x + 17, x + width - 17)
-    g.setColor(0.04, 0.045, 0.09, 0.68)
-    g.rectangle("fill", x + 1, y + 3, width, height, 9)
-    g.polygon("fill", tipX - 10, y + height, tipX + 10, y + height, tipX + 1, y + height + 13)
-    g.setColor(1, 0.94, 0.78)
-    g.rectangle("fill", x, y, width, height, 9)
-    g.polygon("fill", tipX - 8, y + height - 1, tipX + 8, y + height - 1, tipX, y + height + 10)
+    local x, y = w - width - 16, 58
+    drawFFWindow(x, y, width, height)
     for i = 1, math.min(#lines, limit) do
-        label(f, lines[i], x + 13, y + 8 + (i - 1) * f:getHeight(), width - 26, "center", { 0.13, 0.10, 0.11 })
+        label(f, lines[i], x + 13, y + 8 + (i - 1) * f:getHeight(), width - 26, "center", GOLD)
     end
 end
 
@@ -274,10 +271,15 @@ local BUSY_TEXT = {
     enemy_counter = "Turno del rival...",
 }
 
+local function battleStrip(w, h)
+    local width = math.min(860, w - 28)
+    return (w - width) / 2, h - 86, width
+end
+
 function BattleHUD:drawBattleStrip(state, w, h)
     local f = self.fonts
-    local width, leftW, gap = math.min(860, w - 28), 196, 8
-    local x, y = (w - width) / 2, h - 86
+    local leftW, gap = 196, 8
+    local x, y, width = battleStrip(w, h)
     drawFFWindow(x, y, leftW, 78)
     local portrait = state.portraits[state.mood or "happy"]
     g.setColor(0.045, 0.083, 0.18)
@@ -298,8 +300,13 @@ function BattleHUD:drawBattleStrip(state, w, h)
     if state.battlePhase ~= "player_turn" then
         local text = BUSY_TEXT[state.battlePhase]
         if state.arrowsDone then text = "El orbe está cargado." end
-        if state.battlePhase == "summon" and state.summonName then text = state.summonName end
-        oneLine(f.heading, text, rightX + 24, y + (78 - f.heading:getHeight()) / 2, rightW - 48, "center", GOLD)
+        if state.battlePhase == "impact_hold" then
+            oneLine(f.heading, state.summonName, rightX + 24, y + 17, rightW - 48, "center", GOLD)
+            oneLine(f.body, state.narrator, rightX + 24, y + 42, rightW - 48, "center")
+        else
+            if state.battlePhase == "summon" and state.summonName then text = state.summonName end
+            oneLine(f.heading, text, rightX + 24, y + (78 - f.heading:getHeight()) / 2, rightW - 48, "center", GOLD)
+        end
         return
     end
 
@@ -331,18 +338,17 @@ function BattleHUD:drawVictoryOrDefeat(state, w, h)
     local won = state.battlePhase == "victory"
     if not won and state.battlePhase ~= "defeat" then return end
     local f = self.fonts
-    local mw, mh = 470, state.combo and 180 or 156
-    local x, y = (w - mw) / 2, math.max(54, h * 0.095)
-    drawFFWindow(x, y, mw, mh)
-    label(f.title, won and "¡Victoria!" or "El Pudú necesita un respiro", x + 20, y + 12, mw - 40, "center", GOLD)
-    local action = BattleHUD.displayText(state.lastPrompt)
-    oneLine(f.body, action, x + 28, y + 51, mw - 56, "center")
-    oneLine(f.small, state.speech, x + 28, y + 77, mw - 56, "center", MUTED)
-    if state.combo then
-        oneLine(f.body, state.combo, x + 28, y + 98, mw - 56, "center", GOLD)
+    local x, y, width = battleStrip(w, h)
+    local panelX, panelW = x + 204, width - 204
+    drawFFWindow(panelX, y, panelW, 78)
+    oneLine(f.heading, won and "¡Victoria!" or "El Pudú necesita un respiro",
+        panelX + 16, y + 12, panelW - 296, "left", GOLD)
+    if state.lastPrompt then
+        oneLine(f.body, state.lastPrompt, panelX + 16, y + 33, panelW - 296)
     end
-    self:_button("map", "VOLVER AL MAPA", x + 44, y + mh - 50, 178, 35, true)
-    self:_button("retry", won and "REVANCHA" or "REINTENTAR", x + mw - 222, y + mh - 50, 178, 35, true, true)
+    oneLine(f.small, state.speech, panelX + 16, y + (state.lastPrompt and 54 or 42), panelW - 296, "left", MUTED)
+    self:_button("map", "VOLVER AL MAPA", x + width - 271, y + 21, 133, 36, true)
+    self:_button("retry", won and "REVANCHA" or "REINTENTAR", x + width - 130, y + 21, 115, 36, true, true)
 end
 
 return BattleHUD

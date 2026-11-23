@@ -6,8 +6,12 @@ RPG de combate por turnos ambientado en cuatro biomas chilenos. Escribe una invo
 
 Abre **Jugar_Windows.bat**. El lanzador busca LÖVE 11.5 en `tools/love-win64/` o en el PATH. La copia local de la demo incluye el motor.
 
+Si tienes el ZIP portátil, extrae la carpeta completa y ejecuta **PuduFantasy.exe**.
+
 - Camina con WASD o las flechas. Acércate a un rival o pulsa Tab para combatir.
 - En la arena, escribe una idea y pulsa Enter. Puedes pegar con Ctrl+V y corregir con Retroceso.
+- Cuando aparezca el ritual, sigue las flechas con el teclado o con WASD para potenciar el golpe.
+- Pulsa J o el botón Álbum para ver las victorias guardadas y elegir una revancha. Si ya estás escribiendo un prompt, usa Ctrl+J.
 - Esc o Tab te devuelve al mapa. Los rivales vencidos quedan marcados durante la partida.
 - F8 alterna el sonido y F12 guarda una captura. F5 recarga el arte.
 - En combate, F7 cambia la iluminación y Ctrl+1 a Ctrl+9 salta a un rival para pruebas.
@@ -15,8 +19,9 @@ Abre **Jugar_Windows.bat**. El lanzador busca LÖVE 11.5 en `tools/love-win64/` 
 Para entrar directamente en una pelea o reproducir un combo desde PowerShell:
 
 ```powershell
-.\Jugar_Windows.bat --mode=battle --encounter=1
+.\Jugar_Windows.bat --mock --mode=battle --encounter=1
 .\Jugar_Windows.bat --mock --demo-combo=combo_electro
+.\Jugar_Windows.bat --mock --demo-finale=crying
 ```
 
 Los nueve rivales admiten invocaciones libres. El juez local reconoce debilidades, curas, autogoles, ocho estados y seis combos. El modo `--mock` evalúa en Lua. En macOS y Linux puedes usar `./run.sh` con LÖVE 11.5.
