@@ -5,6 +5,8 @@
 -- 4 lighting presets, dynamic point lights, atmospheric halos/sunbeams, and post-processing.
 -- LÖVE2D 11.5 (LuaJIT) — Zero Unicode tofu (R2), safeSend/hasUniform (R4), zero per-frame GPU allocations.
 
+local Encounters = require("encounters")
+
 local StageRenderer = {}
 StageRenderer.__index = StageRenderer
 
@@ -77,14 +79,19 @@ StageRenderer.WORLD_U_MIN = -2.0
 StageRenderer.WORLD_U_MAX = 118.0
 StageRenderer.STEP = 1.5
 
+local RIVER_START, RIVER_END = 79.0, 82.4
+local BAY_START, BAY_END = 27.4, 42.6
+local MARSH_START, MARSH_END = 42.8, 50.8
+local LIGHTHOUSE_U, LIGHTHOUSE_V = 38.5, -8.8
+
 -- 6 explorable side alcoves distributed across all 4 biomes, each reachable from main path.
 StageRenderer.SIDE_ALCOVES = {
-    { id = "bosque_rewe",      name = "Claro del Rewe",       biome = "bosque",   u = 16.0,  v = 6.4,  r = 2.6, prop = "rewe_totem" },
-    { id = "bosque_orbe",      name = "Santuario del Orbe",   biome = "bosque",   u = 24.0,  v = 3.5,  r = 2.5, prop = "orb_shrine" },
-    { id = "atacama_mirador",  name = "Mirador del Sol",      biome = "desierto", u = 43.5,  v = 2.8,  r = 2.6, prop = "apacheta_sundial" },
-    { id = "atacama_cristal",  name = "Gruta de Cristales",   biome = "desierto", u = 54.0,  v = -2.9, r = 2.6, prop = "mountain_crystal" },
-    { id = "costa_mirador",    name = "Mirador de la Costa",  biome = "costa",    u = 85.8,  v = -4.3, r = 2.5, prop = "pincoya_shrine" },
-    { id = "ciudad_plazoleta", name = "Plazoleta Civica",     biome = "ciudad",   u = 103.5, v = -1.4, r = 2.6, prop = "stone_pedestal" },
+    { id = "bosque_rewe",      name = "Claro del Rewe",       biome = "bosque",   u = 68.0,  v = 6.4,  r = 2.6, prop = "rewe_totem" },
+    { id = "bosque_orbe",      name = "Santuario del Orbe",   biome = "bosque",   u = 76.0,  v = 3.5,  r = 2.5, prop = "orb_shrine" },
+    { id = "atacama_mirador",  name = "Mirador del Sol",      biome = "desierto", u = 8.5,   v = 5.1,  r = 2.6, prop = "apacheta_sundial" },
+    { id = "atacama_cristal",  name = "Gruta de Cristales",   biome = "desierto", u = 19.0,  v = -2.9, r = 2.6, prop = "mountain_crystal" },
+    { id = "costa_mirador",    name = "Mirador de la Costa",  biome = "costa",    u = 45.8,  v = -4.3, r = 2.5, prop = "pincoya_shrine" },
+    { id = "chiloe_mirador",   name = "Mirador de Chiloé",    biome = "chiloe",   u = 103.5, v = -1.4, r = 2.6, prop = "pincoya_shrine" },
 }
 
 -- Wizard hat head-anchor offsets (in 64x64 sprite pixels relative to bottom-center foot anchor)
@@ -104,7 +111,7 @@ StageRenderer.HAT_HEAD_OFFSETS = {
 StageRenderer.BIOME_VISUALS = {
     bosque = {
         id = "bosque",
-        name = "Bosque y Plaza Valdiviana",
+        name = "Bosque Valdiviano",
         floorTile = "grass_floor",
         pathTile = "stone_floor",
         cliffTile = "grass_floor",
@@ -157,14 +164,14 @@ StageRenderer.BIOME_VISUALS = {
         miniCol = { 0.20, 0.60, 0.78 },
         hazeCol = { 0.82, 0.94, 0.98 },
     },
-    ciudad = {
-        id = "ciudad",
-        name = "Ciudad y Gran Oficina",
-        floorTile = "stone_floor",
+    chiloe = {
+        id = "chiloe",
+        name = "Chiloé",
+        floorTile = "grass_floor",
         pathTile = "stone_floor",
-        cliffTile = "mountain_floor",
+        cliffTile = "coast_floor",
         backdrop = { 0.18, 0.20, 0.29 },
-        groundTint = { 0.86, 0.88, 0.96 },
+        groundTint = { 0.79, 0.92, 0.88 },
         pathTint = { 0.98, 0.98, 1.00 },
         alcoveTint = { 0.94, 0.90, 1.00 },
         cliffTopTint = { 0.78, 0.80, 0.90 },
@@ -172,13 +179,13 @@ StageRenderer.BIOME_VISUALS = {
         cliffRight = { 0.27, 0.30, 0.40 },
         cliffLip = { 0.80, 0.84, 0.94 },
         cliffBand = { 0.64, 0.68, 0.80 },
-        miniCol = { 0.56, 0.46, 0.78 },
+        miniCol = { 0.42, 0.52, 0.80 },
         hazeCol = { 0.92, 0.80, 0.68 },
     },
 }
 
 --------------------------------------------------------------------------------
--- 1B. HD-2D Lighting Presets, Stage Tile Map & Battle Arena Decor (8 Stages)
+-- 1B. HD-2D Lighting Presets, Stage Tile Map & Battle Arena Decor
 --------------------------------------------------------------------------------
 
 StageRenderer.LIGHTING_ORDER = { "dia", "atardecer", "noche", "dramatico" }
@@ -278,12 +285,13 @@ StageRenderer.THEME_TILES = {
     mirador = { floor = "desert_floor", path = "stone_floor" },
     vereda  = { floor = "desert_floor", path = "stone_floor" },
     muelle  = { floor = "coast_floor",  path = "stone_floor" },
+    chiloe  = { floor = "coast_floor",  path = "stone_floor" },
     pantano = { floor = "coast_floor",  path = "stone_floor" },
     esquina = { floor = "stone_floor",  path = "mountain_floor" },
     oficina = { floor = "stone_floor",  path = "mountain_floor" },
 }
 
--- Curated HD-2D side-view battle arena framing props for all 8 stages.
+-- Curated HD-2D side-view battle arena framing props for battle stages.
 -- Composition rule: Pudú at (0.28w, 0.65h) and Rival at (0.72w, 0.65h) stay 100% unobstructed.
 -- All non-fg props are placed along the far horizon (yFrac <= 0.50) or outer flanks (xFrac <= 0.16 or >= 0.84).
 -- Foreground corner framing props (layer = "fg") sit strictly at xFrac = 0.03 and 0.97, yFrac = 0.84.
@@ -390,7 +398,9 @@ StageRenderer.BATTLE_STAGE_DECOR = {
     },
 }
 
--- Default sky palettes when theme is omitted or partial (supports both biome IDs and 8 stage kinds)
+StageRenderer.BATTLE_STAGE_DECOR.chiloe = StageRenderer.BATTLE_STAGE_DECOR.muelle
+
+-- Default sky palettes when theme is omitted or partial (supports both biome IDs and stage kinds)
 local DEFAULT_SKY_THEMES = {
     bosque = {
         skyTop = { 0.16, 0.44, 0.72 },
@@ -437,6 +447,7 @@ local STAGE_TO_BIOME = {
     vereda = "desierto",
     muelle = "costa",
     pantano = "costa",
+    chiloe = "chiloe",
     esquina = "ciudad",
     oficina = "ciudad",
     desierto = "desierto",
@@ -457,25 +468,7 @@ local ARAUCARIA_TIERS = {
     { y = -78, rx = 30, ry = 9,  col = { 0.22, 0.52, 0.28 } },
 }
 
-local MINIMAP_BIOME_BANDS = {
-    { u0 = 0,  u1 = 40,  col = StageRenderer.BIOME_VISUALS.bosque.miniCol },
-    { u0 = 40, u1 = 66,  col = StageRenderer.BIOME_VISUALS.desierto.miniCol },
-    { u0 = 66, u1 = 92,  col = StageRenderer.BIOME_VISUALS.costa.miniCol },
-    { u0 = 92, u1 = 118, col = StageRenderer.BIOME_VISUALS.ciudad.miniCol },
-}
-
--- Seeded with canonical 9 encounters so walkability works even before setEncounters() is called.
-local _encounterAnchors = {
-    { id = "nino_helado",      u = 10.0,  v = 0.2 },
-    { id = "mimo_muro",        u = 22.0,  v = -2.0 },
-    { id = "puma_dramatico",   u = 34.0,  v = 1.6 },
-    { id = "turista_selfie",   u = 48.0,  v = -1.2 },
-    { id = "gato_guaton",      u = 60.0,  v = 1.8 },
-    { id = "gaviota_mafiosa",  u = 74.0,  v = -1.4 },
-    { id = "piscina_barro",    u = 86.0,  v = 1.2 },
-    { id = "semaforo_rebelde", u = 99.0,  v = -0.8 },
-    { id = "fila_tramite",     u = 112.0, v = 0.4 },
-}
+local _encounterAnchors = {}
 
 --------------------------------------------------------------------------------
 -- 2. Math & Deterministic Helpers
@@ -519,15 +512,7 @@ function StageRenderer.pathCenterV(u)
 end
 
 function StageRenderer.getBiomeAt(u)
-    if u < 40.0 then
-        return "bosque"
-    elseif u < 66.0 then
-        return "desierto"
-    elseif u < 92.0 then
-        return "costa"
-    else
-        return "ciudad"
-    end
+    return Encounters.getBiomeAtU(u).id
 end
 
 function StageRenderer.setEncounters(encountersList)
@@ -551,13 +536,10 @@ function StageRenderer.setEncounters(encountersList)
     end
 end
 
--- Ensure precomputed pc on initial seed anchors
-for i = 1, #_encounterAnchors do
-    _encounterAnchors[i].pc = StageRenderer.pathCenterV(_encounterAnchors[i].u)
-end
+StageRenderer.setEncounters(Encounters.LIST)
 
 function StageRenderer.isBosqueBridge(u, v)
-    if u < 26.3 or u > 31.1 then
+    if u < RIVER_START - 0.7 or u > RIVER_END + 0.7 then
         return false
     end
     local pc = StageRenderer.pathCenterV(u)
@@ -565,16 +547,16 @@ function StageRenderer.isBosqueBridge(u, v)
 end
 
 function StageRenderer.isCostaPier(u, v)
-    if u < 67.0 or u > 83.0 then
+    if u < BAY_START - 0.4 or u > BAY_END + 0.4 then
         return false
     end
     local pc = StageRenderer.pathCenterV(u)
     if abs(v - pc) <= 2.55 then
         return true
     end
-    -- Widened wharf platform around Gaviota Mafiosa (u=74.0, v=-1.4) so it stands cleanly on pier deck.
-    if u >= 70.6 and u <= 77.4 then
-        local du = u - 74.0
+    -- Widened wharf platform around Gaviota Mafiosa (u=34.0, v=-1.4) so it stands cleanly on pier deck.
+    if u >= 30.6 and u <= 37.4 then
+        local du = u - 34.0
         local dv = v - (-1.4)
         if abs(dv) <= 3.35 and (du * du * 0.72 + dv * dv) <= 13.0 then
             return true
@@ -664,21 +646,21 @@ end
 
 -- Longitudinal base elevation profile along u (walkable corridor height)
 local function evalBaseCorridorElev(u)
-    -- Atacama elevated red plateau (+1.05 on u = 40.5..58.0, smooth ramps 38.5..41.0 & 57.5..60.0)
-    if u >= 38.5 and u <= 60.0 then
-        local up = smoothstep(38.5, 40.5, u)
-        local down = 1.0 - smoothstep(58.0, 60.0, u)
+    -- Atacama plateau with a ramp down to the coast.
+    if u >= 0.0 and u <= 22.0 then
+        local up = smoothstep(0.0, 2.5, u)
+        local down = 1.0 - smoothstep(19.0, 22.0, u)
         return 1.05 * up * down
     end
 
-    -- Costa marsh low wetland (u = 82.8..90.8)
-    if u >= 82.8 and u <= 90.8 then
-        local into = smoothstep(82.8, 83.6, u)
-        local out = 1.0 - smoothstep(90.0, 90.8, u)
+    -- Costa marsh low wetland
+    if u >= MARSH_START and u <= MARSH_END then
+        local into = smoothstep(MARSH_START, MARSH_START + 0.8, u)
+        local out = 1.0 - smoothstep(MARSH_END - 0.8, MARSH_END, u)
         return -0.08 * into * out
     end
 
-    -- Ciudad 2-terrace stone acropolis:
+    -- Chiloé terraces approaching the final dock:
     -- Terrace 1: u = 93.0..96.0 -> +0.55
     -- Terrace 2: u = 105.0..108.5 -> +1.15 through 118+
     if u >= 93.0 then
@@ -731,7 +713,7 @@ function StageRenderer.getElevation(u, v)
         return 0.22
     end
     -- 2. Bosque river channel (flows continuously across the valley)
-    if u >= 27.0 and u <= 30.4 then
+    if u >= RIVER_START and u <= RIVER_END then
         return -0.35
     end
     -- 3. Costa wooden pier over ocean (including widened Gaviota Mafiosa dock)
@@ -739,10 +721,10 @@ function StageRenderer.getElevation(u, v)
         return 0.42
     end
     -- 4. Costa Pacific ocean bay (extends seamlessly across screen)
-    if u >= 67.4 and u <= 82.6 then
-        -- Small rocky outcrop for Valparaiso lighthouse at u=78.5, v=-8.8
-        local ldu = u - 78.5
-        local ldv = v - (-8.8)
+    if u >= BAY_START and u <= BAY_END then
+        -- Small rocky outcrop for the Valparaíso lighthouse.
+        local ldu = u - LIGHTHOUSE_U
+        local ldv = v - LIGHTHOUSE_V
         local ld = sqrt(ldu * ldu + ldv * ldv)
         if ld <= 2.9 then
             return 0.85 * (1.0 - smoothstep(1.8, 2.9, ld)) - 0.42 * smoothstep(1.8, 2.9, ld)
@@ -758,7 +740,7 @@ function StageRenderer.getElevation(u, v)
     local flatMask = max(encMask, alcMask)
 
     -- Dry stone overlook alcove beside the marsh (only on the alcove's own side away from the marsh path!)
-    if inAlcove and u >= 82.8 and u <= 90.8 and (v - pc) < -1.8 then
+    if inAlcove and u >= MARSH_START and u <= MARSH_END and (v - pc) < -1.8 then
         return 0.14
     end
 
@@ -771,7 +753,7 @@ function StageRenderer.getTerrainType(u, v)
     if StageRenderer.isBosqueBridge(u, v) then
         return "bridge"
     end
-    if u >= 27.0 and u <= 30.4 then
+    if u >= RIVER_START and u <= RIVER_END then
         return "river"
     end
 
@@ -779,18 +761,13 @@ function StageRenderer.getTerrainType(u, v)
     if StageRenderer.isCostaPier(u, v) then
         return "pier"
     end
-    if u >= 67.4 and u <= 82.6 then
-        local ldu = u - 78.5
-        local ldv = v - (-8.8)
+    if u >= BAY_START and u <= BAY_END then
+        local ldu = u - LIGHTHOUSE_U
+        local ldv = v - LIGHTHOUSE_V
         if (ldu * ldu + ldv * ldv) <= 5.8 then
             return "cliff"
         end
         return "water"
-    end
-
-    -- 3. Royal Crimson Carpet (Ciudad Gran Oficina)
-    if u >= 104.5 and u <= 114.5 and abs(v - 0.4) <= 1.35 then
-        return "carpet"
     end
 
     local pc = StageRenderer.pathCenterV(u)
@@ -810,8 +787,8 @@ function StageRenderer.getTerrainType(u, v)
         return "cliff"
     end
 
-    -- 6. Marsh (Costa wetland u = 82.8..90.8, keeping narrow central stepping trail readable)
-    if u >= 82.8 and u <= 90.8 then
+    -- 6. Marsh with a dry stepping trail along the main path
+    if u >= MARSH_START and u <= MARSH_END then
         if abs(v - pc) <= 1.05 then
             return "path"
         end
@@ -842,7 +819,7 @@ function StageRenderer.isWalkable(u, v)
         return false
     end
 
-    if terrain == "bridge" or terrain == "pier" or terrain == "carpet" then
+    if terrain == "bridge" or terrain == "pier" then
         return true
     end
 
@@ -1572,7 +1549,7 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
         end
         love.graphics.rectangle("fill", 0, horizonY - 10, sw, 14)
 
-    elseif biomeId == "costa" then
+    elseif biomeId == "costa" or biomeId == "chiloe" then
         -- Far layer: Coastal headlands + layered Valparaiso hills
         local hR, hG, hB = tintRGB(0.24, 0.46, 0.64)
         love.graphics.setColor(hR, hG, hB, 0.88)
@@ -1582,23 +1559,26 @@ function StageRenderer:drawSkyAndHorizon(theme, w, h, time, horizonFrac, stageKi
             local hh = 42 + ((i * 31) % 38)
             love.graphics.ellipse("fill", hx + hw * 0.5, horizonY + 12, hw * 0.62, hh)
         end
-        -- Near layer: Colorful Valparaiso hillside houses + twinkling harbor lights at night
-        for i = 0, 22 do
-            local bx = i * (sw / 22)
-            local bh = 14 + ((i * 17) % 24)
-            local bw = 18 + (i % 3) * 8
-            local hc = VALPARAISO_HOUSE_COLS[(i % #VALPARAISO_HOUSE_COLS) + 1]
-            local cR, cG, cB = tintRGB(hc[1] * 0.72, hc[2] * 0.72, hc[3] * 0.78)
-            love.graphics.setColor(cR, cG, cB, 0.92)
-            love.graphics.rectangle("fill", bx, horizonY - bh - 4, bw, bh + 6)
-            if isNight or isDramatic or isSunset then
-                love.graphics.setColor(1.0, 0.86, 0.46, isNight and 0.78 or 0.48)
-                love.graphics.rectangle("fill", bx + 4, horizonY - bh + 2, 3, 3)
-                if bw > 22 then
-                    love.graphics.rectangle("fill", bx + 12, horizonY - bh + 5, 3, 3)
+        if biomeId == "costa" then
+            -- Near layer: Colorful Valparaiso hillside houses + twinkling harbor lights at night
+            for i = 0, 22 do
+                local bx = i * (sw / 22)
+                local bh = 14 + ((i * 17) % 24)
+                local bw = 18 + (i % 3) * 8
+                local hc = VALPARAISO_HOUSE_COLS[(i % #VALPARAISO_HOUSE_COLS) + 1]
+                local cR, cG, cB = tintRGB(hc[1] * 0.72, hc[2] * 0.72, hc[3] * 0.78)
+                love.graphics.setColor(cR, cG, cB, 0.92)
+                love.graphics.rectangle("fill", bx, horizonY - bh - 4, bw, bh + 6)
+                if isNight or isDramatic or isSunset then
+                    love.graphics.setColor(1.0, 0.86, 0.46, isNight and 0.78 or 0.48)
+                    love.graphics.rectangle("fill", bx + 4, horizonY - bh + 2, 3, 3)
+                    if bw > 22 then
+                        love.graphics.rectangle("fill", bx + 12, horizonY - bh + 5, 3, 3)
+                    end
                 end
             end
         end
+
         -- Shimmering distant Pacific sea band right along horizon
         local wR, wG, wB = tintRGB(0.14, 0.44, 0.64)
         love.graphics.setColor(wR, wG, wB, 0.97)
@@ -1814,47 +1794,6 @@ function StageRenderer:_drawWoodenDeckTile(cx, cy, halfW, halfH, terrain, z)
     love.graphics.setLineWidth(1)
 end
 
-function StageRenderer:_drawCarpetTile(cx, cy, halfW, halfH, u, v, z)
-    local padX = 0.95
-    local padY = 0.72
-    local tx, ty = cx, cy - halfH - padY
-    local rx, ry = cx + halfW + padX, cy
-    local bx, by = cx, cy + halfH + padY
-    local lx, ly = cx - halfW - padX, cy
-
-    -- Royal crimson carpet base
-    love.graphics.setColor(0.76, 0.12, 0.17, 1.0)
-    love.graphics.polygon("fill", tx, ty, rx, ry, bx, by, lx, ly)
-
-    -- Subtle rich velvet center sheen
-    love.graphics.setColor(0.88, 0.20, 0.24, 0.45)
-    love.graphics.polygon(
-        "fill",
-        cx, cy - halfH * 0.55,
-        cx + halfW * 0.55, cy,
-        cx, cy + halfH * 0.55,
-        cx - halfW * 0.55, cy
-    )
-
-    -- Ornate gold border trim running along the outer carpet edges (along u)
-    local dv = v - 0.4
-    love.graphics.setColor(0.96, 0.80, 0.28, 0.94)
-    love.graphics.setLineWidth(max(1.8, 2.8 * z))
-    if dv <= -0.45 then
-        love.graphics.line(lx + 4 * z, ly + 2 * z, tx + 4 * z, ty + 2 * z)
-    end
-    if dv >= 0.45 then
-        love.graphics.line(bx - 4 * z, by - 2 * z, rx - 4 * z, ry - 2 * z)
-    end
-    -- Gold fringe ends at start & end of carpet
-    if u <= 105.6 then
-        love.graphics.line(lx + 3 * z, ly, bx, by - 2 * z)
-    elseif u >= 113.4 then
-        love.graphics.line(tx, ty + 2 * z, rx - 3 * z, ry)
-    end
-    love.graphics.setLineWidth(1)
-end
-
 function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terrain, biomeVis, time, z)
     local rx, ry = cx + halfW, cy
     local bx, by = cx, cy + halfH
@@ -1926,28 +1865,6 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
         return
     end
 
-    -- Royal Crimson Carpet flowing cleanly down acropolis stair risers with brass stair rods!
-    if terrain == "carpet" then
-        local diffL = elev - eL
-        local diffR = elev - eR
-        local tuck = 2.6
-        if diffL > 0.04 then
-            local dropL = diffL * StageRenderer.ELEV_PX * z + tuck
-            love.graphics.setColor(0.52, 0.07, 0.11, 1.0)
-            love.graphics.polygon("fill", lx - 0.8, ly, bx + 0.8, by, bx + 0.8, by + dropL, lx - 0.8, ly + dropL)
-            love.graphics.setColor(0.95, 0.79, 0.28, 0.92)
-            love.graphics.setLineWidth(max(1.3, 2.0 * z))
-            love.graphics.line(lx, ly + dropL - tuck, bx, by + dropL - tuck)
-            love.graphics.setLineWidth(1)
-        end
-        if diffR > 0.04 then
-            local dropR = diffR * StageRenderer.ELEV_PX * z + tuck
-            love.graphics.setColor(0.40, 0.05, 0.08, 1.0)
-            love.graphics.polygon("fill", bx - 0.8, by, rx + 0.8, ry, rx + 0.8, ry + dropR, bx - 0.8, by + dropR)
-        end
-        return
-    end
-
     -- Solid terrain 3D cliff faces (Left-front = sunlit face, Right-front = deeper shadow face)
     local diffL = elev - eL
     local diffR = elev - eR
@@ -1971,7 +1888,7 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
                 local y2 = dropL * 0.52
                 love.graphics.setColor(cb[1], cb[2], cb[3], 0.68)
                 love.graphics.polygon("fill", lx, ly + y1, bx, by + y1, bx, by + y2, lx, ly + y2)
-            elseif biomeVis.id == "ciudad" then
+            elseif biomeVis.id == "chiloe" then
                 local trimH = min(4.0 * z, dropL * 0.28)
                 love.graphics.setColor(cb[1], cb[2], cb[3], 0.80)
                 love.graphics.polygon("fill", lx, ly + 1, bx, by + 1, bx, by + trimH, lx, ly + trimH)
@@ -2009,7 +1926,7 @@ function StageRenderer:_drawTileSkirts(cx, cy, halfW, halfH, elev, eL, eR, terra
                 local y2 = dropR * 0.52
                 love.graphics.setColor(cb[1] * 0.72, cb[2] * 0.72, cb[3] * 0.72, 0.62)
                 love.graphics.polygon("fill", bx, by + y1, rx, ry + y1, rx, ry + y2, bx, by + y2)
-            elseif biomeVis.id == "ciudad" then
+            elseif biomeVis.id == "chiloe" then
                 local trimH = min(3.8 * z, dropR * 0.26)
                 love.graphics.setColor(cb[1] * 0.74, cb[2] * 0.74, cb[3] * 0.74, 0.78)
                 love.graphics.polygon("fill", bx, by + 1, rx, ry + 1, rx, ry + trimH, bx, by + trimH)
@@ -2242,12 +2159,6 @@ function StageRenderer:drawOverworldFloor(ctx)
                         safeSend(litShader, "surfaceBaseY", cy)
                     end
                     self:_drawWoodenDeckTile(cx, cy, halfW, halfH, terrain, z)
-                elseif terrain == "carpet" then
-                    if litShader then
-                        safeSend(litShader, "hasNormalMap", 0.0)
-                        safeSend(litShader, "surfaceBaseY", cy)
-                    end
-                    self:_drawCarpetTile(cx, cy, halfW, halfH, u, v, z)
                 else
                     local tileKey
                     local tint
@@ -2309,7 +2220,7 @@ function StageRenderer:drawOverworldFloor(ctx)
     local encList = ctx.encounters or _encounterAnchors
     for u = 6.0, 102.0, 5.5 do
         if abs(u - camU) <= 18.0 then
-            -- Skip directly underneath encounters or carpet
+            -- Skip directly underneath encounters
             local nearEnc = false
             local pc = StageRenderer.pathCenterV(u)
             for i = 1, #encList do
@@ -2384,58 +2295,41 @@ function StageRenderer:buildOverworldDecor(encountersList)
         }
     end
 
-    -- A. Iconic Biome Border Arches / Frontier Pillars near u = 39, 65, 91
-    local borders = {
-        { u = 39.0, biome = "bosque",   style = "stone" },
-        { u = 65.0, biome = "desierto", style = "sandstone" },
-        { u = 91.0, biome = "costa",    style = "harbor" },
-    }
-    for i = 1, #borders do
-        local b = borders[i]
-        local pc = StageRenderer.pathCenterV(b.u)
-        addProp("biome_arch", b.u, pc - 3.45, 1.18, b.biome, b.style)
-        addProp("biome_arch", b.u, pc + 3.45, 1.18, b.biome, b.style)
+    local borderStyles = { "sandstone", "harbor", "stone" }
+    for i, style in ipairs(borderStyles) do
+        local biome = Encounters.getBiome(Encounters.BIOME_ORDER[i])
+        local u = biome.uEnd - 1
+        local pc = StageRenderer.pathCenterV(u)
+        addProp("biome_arch", u, pc - 3.45, 1.18, biome.id, style)
+        addProp("biome_arch", u, pc + 3.45, 1.18, biome.id, style)
     end
 
-    -- B. Bosque Bridge Entrance Posts (u = 26.2 and u = 31.2)
-    for _, bu in ipairs({ 26.2, 31.2 }) do
-        local pc = StageRenderer.pathCenterV(bu)
-        addProp("lantern_post", bu, pc - 2.65, 1.0, "bosque")
-        addProp("lantern_post", bu, pc + 2.65, 1.0, "bosque")
+    for _, u in ipairs({ RIVER_START - 0.8, RIVER_END + 0.8 }) do
+        local pc = StageRenderer.pathCenterV(u)
+        addProp("lantern_post", u, pc - 2.65, 1.0, "bosque")
+        addProp("lantern_post", u, pc + 2.65, 1.0, "bosque")
     end
+    addProp("coast_lighthouse", LIGHTHOUSE_U, LIGHTHOUSE_V, 1.35, "costa")
+    local pierU = BAY_START - 0.2
+    local pierV = StageRenderer.pathCenterV(pierU)
+    addProp("lantern_post", pierU, pierV - 2.75, 1.0, "costa")
+    addProp("lantern_post", pierU, pierV + 2.75, 1.0, "costa")
 
-    -- C. Costa Iconic Landmarks: Valparaiso Lighthouse & Ghostly Caleuche Ship in the Ocean Bay!
-    addProp("coast_lighthouse", 78.5, -8.8, 1.35, "costa")
-    addProp("caleuche_ship", 73.2, -8.6, 1.25, "costa")
-    -- Pier entrance & harbor wharf lanterns
-    local pcPierStart = StageRenderer.pathCenterV(67.2)
-    addProp("lantern_post", 67.2, pcPierStart - 2.75, 1.0, "costa")
-    addProp("lantern_post", 67.2, pcPierStart + 2.75, 1.0, "costa")
-    addProp("lantern_post", 82.8, StageRenderer.pathCenterV(82.8) - 2.75, 1.0, "costa")
-
-    -- D. Ciudad Acropolis Columns & Velvet Carpet Stanchions
-    for _, cu in ipairs({ 95.5, 102.0, 107.0, 110.5, 114.5 }) do
-        local pc = (cu >= 105.0) and 0.4 or StageRenderer.pathCenterV(cu)
-        addProp("office_column", cu, pc - 3.7, 1.15, "ciudad")
-        addProp("office_column", cu, pc + 3.7, 1.15, "ciudad")
+    for _, u in ipairs({ 95.5, 102.0, 107.0, 110.5, 114.5 }) do
+        local pc = StageRenderer.pathCenterV(u)
+        addProp("lantern_post", u, pc - 3.7, 1.05, "chiloe")
+        addProp("lantern_post", u, pc + 3.7, 1.05, "chiloe")
     end
-    for su = 105.2, 114.0, 2.8 do
-        addProp("stanchion", su, 0.4 - 1.55, 0.95, "ciudad")
-        addProp("stanchion", su, 0.4 + 1.55, 0.95, "ciudad")
-    end
-    -- Flanking ceremonial bureau shrines cleanly framing the Boss without overlapping its head
-    addProp("quena_monolith", 115.6, -2.0, 1.16, "ciudad")
-    addProp("quena_monolith", 115.6, 2.8, 1.16, "ciudad")
+    addProp("coast_lighthouse", 109.0, -6.7, 1.32, "chiloe")
+    addProp("pincoya_shrine", 115.6, 4.5, 1.12, "chiloe")
 
-    -- D2. Curated Iconic Bosque Araucarias & Atacama Cardon Cacti framing key sightlines
-    addProp("araucaria_tree", 6.5, StageRenderer.pathCenterV(6.5) - 5.2, 1.32, "bosque")
-    addProp("ancient_tree", 13.5, StageRenderer.pathCenterV(13.5) - 4.8, 1.28, "bosque")
-    addProp("araucaria_tree", 19.5, StageRenderer.pathCenterV(19.5) - 5.4, 1.36, "bosque")
-    addProp("araucaria_tree", 32.5, StageRenderer.pathCenterV(32.5) - 5.0, 1.32, "bosque")
-    addProp("desert_cactus", 42.5, StageRenderer.pathCenterV(42.5) - 4.8, 1.30, "desierto")
-    addProp("desert_cactus", 47.0, StageRenderer.pathCenterV(47.0) + 5.2, 1.25, "desierto")
-    addProp("desert_cactus", 51.5, StageRenderer.pathCenterV(51.5) - 5.1, 1.34, "desierto")
-    addProp("desert_cactus", 57.0, StageRenderer.pathCenterV(57.0) + 5.1, 1.28, "desierto")
+    addProp("araucaria_tree", 58.5, StageRenderer.pathCenterV(58.5) - 5.2, 1.32, "bosque")
+    addProp("ancient_tree", 65.5, StageRenderer.pathCenterV(65.5) - 4.8, 1.28, "bosque")
+    addProp("araucaria_tree", 71.5, StageRenderer.pathCenterV(71.5) - 5.4, 1.36, "bosque")
+    addProp("desert_cactus", 2.5, StageRenderer.pathCenterV(2.5) - 4.8, 1.30, "desierto")
+    addProp("desert_cactus", 7.0, StageRenderer.pathCenterV(7.0) + 5.2, 1.25, "desierto")
+    addProp("desert_cactus", 11.5, StageRenderer.pathCenterV(11.5) - 5.1, 1.34, "desierto")
+    addProp("desert_cactus", 17.0, StageRenderer.pathCenterV(17.0) + 5.1, 1.28, "desierto")
 
     -- E. Curated Shrine/Landmark at the outer rim of each of the 6 Side Alcoves
     for i = 1, #StageRenderer.SIDE_ALCOVES do
@@ -2450,7 +2344,7 @@ function StageRenderer:buildOverworldDecor(encountersList)
     local bosqueNearLow = { "valdivian_fern", "valdivian_shrub", "copihue", "mossy_boulder" }
     local desiertoProps = { "desert_cactus", "mountain_crystal", "rock_monolith", "desert_cactus", "moai_relic", "apacheta_sundial" }
     local costaFarProps = { "valdivian_shrub", "mossy_boulder", "lantern_post", "pincoya_shrine" }
-    local ciudadProps = { "lantern_post", "stone_pedestal", "office_column", "debris_pile" }
+    local chiloeProps = { "lantern_post", "mossy_boulder", "valdivian_fern", "pincoya_shrine" }
 
     for u = -2.0, 117.0, 2.6 do
         local pc = StageRenderer.pathCenterV(u)
@@ -2475,7 +2369,7 @@ function StageRenderer:buildOverworldDecor(encountersList)
 
                     local terrain = StageRenderer.getTerrainType(pu, pv)
                     if terrain ~= "water" and terrain ~= "river" and terrain ~= "bridge"
-                        and terrain ~= "pier" and terrain ~= "carpet" then
+                        and terrain ~= "pier" then
 
                         -- Keep foreground (+v) close band low so tall props never cover the Pudu!
                         local isForegroundNear = (side > 0 and abs(pv - StageRenderer.pathCenterV(pu)) < 5.0)
@@ -2502,12 +2396,8 @@ function StageRenderer:buildOverworldDecor(encountersList)
                                 kind = costaFarProps[(floor(h2 * #costaFarProps) % #costaFarProps) + 1]
                             end
                         else
-                            -- Ciudad
                             if h1 < 0.54 then
-                                kind = ciudadProps[(floor(h2 * #ciudadProps) % #ciudadProps) + 1]
-                                if isForegroundNear and kind == "office_column" then
-                                    kind = "stone_pedestal"
-                                end
+                                kind = chiloeProps[(floor(h2 * #chiloeProps) % #chiloeProps) + 1]
                             end
                         end
 
@@ -2642,17 +2532,17 @@ local function drawStylizedProp(stage, prop, sx, sy, z, time, assetsOrProps, lit
 
     elseif k == "mossy_boulder" or k == "rock_monolith" or k == "debris_pile" then
         local isDesert = (prop.biome == "desierto")
-        local isCity = (prop.biome == "ciudad")
-        local baseR = isDesert and 0.70 or (isCity and 0.44 or 0.42)
-        local baseG = isDesert and 0.39 or (isCity and 0.46 or 0.45)
-        local baseB = isDesert and 0.24 or (isCity and 0.54 or 0.48)
+        local isChiloe = (prop.biome == "chiloe")
+        local baseR = isDesert and 0.70 or (isChiloe and 0.44 or 0.42)
+        local baseG = isDesert and 0.39 or (isChiloe and 0.46 or 0.45)
+        local baseB = isDesert and 0.24 or (isChiloe and 0.54 or 0.48)
         local hRock = (k == "rock_monolith") and 40 * s or 20 * s
         local wRock = (k == "rock_monolith") and 16 * s or 19 * s
         love.graphics.setColor(baseR * 0.72, baseG * 0.72, baseB * 0.76, aMul)
         love.graphics.polygon("fill", sx - wRock, sy, sx - wRock * 0.6, sy - hRock, sx + wRock * 0.55, sy - hRock * 0.88, sx + wRock, sy)
         love.graphics.setColor(baseR, baseG, baseB, aMul)
         love.graphics.polygon("fill", sx - wRock, sy, sx - wRock * 0.6, sy - hRock, sx + 2 * s, sy - hRock * 0.75, sx, sy + 2 * s)
-        if not isDesert and not isCity then
+        if not isDesert and not isChiloe then
             love.graphics.setColor(0.28, 0.56, 0.26, 0.90 * aMul)
             love.graphics.ellipse("fill", sx - 2 * s, sy - hRock * 0.82, wRock * 0.55, 4.5 * s)
         end
@@ -2963,7 +2853,9 @@ local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets,
         local pw = tw + 14
         local ph = th + 6
         local px = floor(clamp(sx - pw * 0.5, 12, sw - pw - 12))
-        local py = floor(max(52, sy - targetH - ph - 6 + bob))
+        local py = floor(sy - targetH - ph - 6 + bob)
+        local fitsAbove = py >= 52
+        if not fitsAbove then py = floor(sy + 11) end
 
         if defeated then
             love.graphics.setColor(0.06, 0.16, 0.12, 0.72)
@@ -2981,7 +2873,7 @@ local function drawRivalEntity(stage, enc, idx, sx, sy, sw, sh, z, time, assets,
         love.graphics.print(label, px + 7, py + 3)
 
         if isAlerted then
-            drawAlertCallout(sx, py - 2, alertTimer)
+            drawAlertCallout(sx, fitsAbove and (py - 2) or max(52, sy - targetH - 8), alertTimer)
         end
     elseif isAlerted then
         drawAlertCallout(sx, max(52, sy - targetH - 8), alertTimer)
@@ -3105,7 +2997,7 @@ function StageRenderer:drawOverworld(ctx)
         end
     end
 
-    -- Encounters (9 rivals)
+    -- Encounters
     for i = 1, #encList do
         local enc = encList[i]
         if enc and abs(enc.u - camU) <= 18.0 then
@@ -3113,7 +3005,7 @@ function StageRenderer:drawOverworld(ctx)
             local sx, sy = self:isoToScreen(enc.u, enc.v, elev, sw, sh)
             if sx >= -120 and sx <= sw + 120 and sy >= -120 and sy <= sh + 150 then
                 local baseY = baseScreenY + (enc.u - camU) * uyZ + (enc.v - camV) * vyZ
-                pushEntry("rival", baseY, 10000 + i, sx, sy, enc, i)
+                pushEntry("rival", baseY, 10000 + i, sx, sy, enc, enc.index or i)
             end
         end
     end
@@ -3213,21 +3105,22 @@ function StageRenderer:drawOverworldMinimap(puduU, puduV, encountersList, defeat
     end
 
     -- 4 biome colored bands ascending diagonally
-    for i = 1, #MINIMAP_BIOME_BANDS do
-        local b = MINIMAP_BIOME_BANDS[i]
-        local x0a, y0a = mapPt(b.u0, -8.5)
-        local x0b, y0b = mapPt(b.u0, 8.5)
-        local x1b, y1b = mapPt(b.u1, 8.5)
-        local x1a, y1a = mapPt(b.u1, -8.5)
-        love.graphics.setColor(b.col[1], b.col[2], b.col[3], 0.42)
+    for _, id in ipairs(Encounters.BIOME_ORDER) do
+        local biome = Encounters.getBiome(id)
+        local col = StageRenderer.BIOME_VISUALS[id].miniCol
+        local x0a, y0a = mapPt(biome.uStart, -8.5)
+        local x0b, y0b = mapPt(biome.uStart, 8.5)
+        local x1b, y1b = mapPt(biome.uEnd, 8.5)
+        local x1a, y1a = mapPt(biome.uEnd, -8.5)
+        love.graphics.setColor(col[1], col[2], col[3], 0.42)
         love.graphics.polygon("fill", x0a, y0a, x1a, y1a, x1b, y1b, x0b, y0b)
     end
 
-    -- Subtle river & ocean accent bands on minimap
-    local rx0, ry0 = mapPt(27.0, -8.0)
-    local rx1, ry1 = mapPt(30.4, -8.0)
-    local rx2, ry2 = mapPt(30.4, 8.0)
-    local rx3, ry3 = mapPt(27.0, 8.0)
+    -- Subtle river accent band on the minimap
+    local rx0, ry0 = mapPt(RIVER_START, -8.0)
+    local rx1, ry1 = mapPt(RIVER_END, -8.0)
+    local rx2, ry2 = mapPt(RIVER_END, 8.0)
+    local rx3, ry3 = mapPt(RIVER_START, 8.0)
     love.graphics.setColor(0.20, 0.72, 0.88, 0.55)
     love.graphics.polygon("fill", rx0, ry0, rx1, ry1, rx2, ry2, rx3, ry3)
 
@@ -3242,14 +3135,14 @@ function StageRenderer:drawOverworldMinimap(puduU, puduV, encountersList, defeat
     end
     love.graphics.setLineWidth(1)
 
-    -- 9 Encounter dots (amber/red active, green defeated)
+    -- Encounter dots (amber/red active, green defeated)
     local encList = encountersList or _encounterAnchors
     local defMap = defeatedMap or {}
     for i = 1, #encList do
         local enc = encList[i]
         if enc and enc.u and enc.v then
             local ex, ey = mapPt(enc.u, enc.v)
-            local isDef = (defMap[enc.id] == true) or (defMap[i] == true)
+            local isDef = (defMap[enc.id] == true) or (defMap[enc.index or i] == true)
             if isDef then
                 love.graphics.setColor(0.20, 0.86, 0.52, 0.96)
                 love.graphics.circle("fill", ex, ey, 3.2)
@@ -3411,6 +3304,7 @@ local BATTLE_FLOOR_TINTS = {
     pantano = { 0.56, 0.68, 0.48 },
     esquina = { 0.74, 0.76, 0.84 },
     oficina = { 0.84, 0.86, 0.96 },
+    chiloe  = { 0.82, 0.91, 0.96 },
 }
 
 local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw, sh, tNow, activeLit)
@@ -3497,7 +3391,7 @@ local function drawBattleStageCenterDetail(stageKind, pal, horizonY, floorH, sw,
             )
         end
 
-    elseif stageKind == "muelle" then
+    elseif stageKind == "muelle" or stageKind == "chiloe" then
         -- Perspective weathered wooden pier decking planks overlooking the Valparaiso bay
         local deckTopY = horizonY + 14
         local deckH = sh - deckTopY
@@ -4264,7 +4158,7 @@ function StageRenderer:drawBattlePlaceholderStage(ctx)
         love.graphics.line(sw * 0.24, horizonY + 12, sw * 0.12, sh)
         love.graphics.line(sw * 0.76, horizonY + 12, sw * 0.88, sh)
         love.graphics.setLineWidth(1)
-    elseif stageKind == "muelle" then
+    elseif stageKind == "muelle" or stageKind == "chiloe" then
         love.graphics.setColor(0.58, 0.42, 0.26, 0.94)
         love.graphics.rectangle("fill", 0, horizonY + 18, sw, floorH)
         love.graphics.setColor(0.32, 0.20, 0.10, 0.65)

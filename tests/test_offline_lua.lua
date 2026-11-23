@@ -36,13 +36,32 @@ local function judge(text, encounter)
     return check(Judge.standaloneLuaEvaluate(text, encounter or {}))
 end
 assert(Encounters.count() == 9)
-for _, enc in ipairs(Encounters.LIST) do
+for _, enc in ipairs(Encounters.SELECTABLE) do
     local r = judge(rules.rivals[enc.id].weak[1], enc)
     assert(r.is_critical and r.damage_to_enemy >= 85 and r.combo_triggered == "none", enc.id)
     assert(#enc.tauntLines == 4 and #enc.weaknesses >= 5 and enc.introLine and enc.semiHintLine)
     r = judge(rules.rivals[enc.id].backfire[1], enc)
     assert(r.outcome_type == "backfire" and r.damage_to_pudu == 14 and r.enemy_reaction == "laughing", enc.id)
 end
+local campaign = { "desierto", "costa", "bosque", "chiloe" }
+local StageRenderer = require("stage_renderer")
+assert(#Encounters.LIST == #campaign and Encounters.LIST[1].id == "pila_de_ropa")
+local greatestRivalHp, lastU = 0, 0
+for i, enc in ipairs(Encounters.LIST) do
+    assert(enc.biome == campaign[i] and StageRenderer.getBiomeAt(enc.u) == enc.biome)
+    assert(enc.u > lastU and StageRenderer.isWalkable(enc.u, enc.v))
+    lastU = enc.u
+    if i < #campaign then greatestRivalHp = math.max(greatestRivalHp, enc.maxHp) end
+end
+for u = 0, 116.5, 0.25 do
+    assert(StageRenderer.isWalkable(u, StageRenderer.pathCenterV(u)), "blocked route at " .. u)
+end
+local boss = Encounters.LIST[#campaign]
+assert(boss.finalBoss and boss.maxHp > greatestRivalHp)
+local bossVerdict = judge("faro", boss)
+assert(bossVerdict.enemy_counter_damage > judge("silla", Encounters.LIST[1]).enemy_counter_damage)
+bossVerdict.enemy_counter_damage = 5
+assert(Judge.ensureResultCoherence(bossVerdict, "faro", boss).enemy_counter_damage == 20)
 for _, state in ipairs(rules.states) do
     local r = judge(state.words[1])
     assert(r.adds_stage_state == state.id and r.combo_triggered == "none", state.id)

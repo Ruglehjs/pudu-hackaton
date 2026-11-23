@@ -9,13 +9,13 @@
 ## 1. Identidad del Proyecto y Arquitectura de Carpetas
 
 **Nombre:** **Pudú Fantasy — Batallas de Prompts al Compás**  
-**Género:** RPG humorístico HD-2D por turnos (inspirado en *Final Fantasy* + expresividad rítmica idle de *Mario & Luigi: Superstar Saga*) donde el jugador vence a 9 rivales cómicos escribiendo **cualquier prompt libre**.  
+**Género:** RPG humorístico HD-2D por turnos (inspirado en *Final Fantasy* + expresividad rítmica idle de *Mario & Luigi: Superstar Saga*) donde el jugador vence a 4 rivales cómicos, uno por bioma, escribiendo **cualquier prompt libre**.
 **Motor y Stack:**
 - **Cliente de juego:** **LÖVE2D 11.5** (LuaJIT, `1280×720` base, compilable a `.love` y `.exe` Win64 portable).
 - **Puente IA opcional (local):** **Python 3.10+** (`ai_bridge.py` en `http://127.0.0.1:18425`, compatible con **Vertex AI ADC** y **Gemini API Key**):
   - Etapa 1 (Juicio cómico rápido): `gemini-2.5-flash` con `thinkingBudget=0`, TLS persistente y `responseSchema` estricto de **34 campos JSON**.
   - Etapa 2 (Sprite HD-2D en vivo, lanzamiento paralelo especulativo): `gemini-2.5-flash-image` + recorte alfa + mapa de normales Sobel (`_n.png`).
-- **Modo 100% Offline / Standalone:** `battle_worker.lua` incluye un motor de respaldo completo en Lua puro (los 9 encuentros + 6 Super-Combos de 2 turnos + sanitizador anti-trampas) que responde en **0 ms** cuando no hay puente Python ni WiFi.
+- **Modo 100% Offline / Standalone:** `battle_worker.lua` incluye un motor de respaldo completo en Lua puro (los 4 encuentros de campaña, 5 combates de QA y 6 Super-Combos de 2 turnos + sanitizador anti-trampas) que responde en **0 ms** cuando no hay puente Python ni WiFi.
 
 ### Estructura de carpetas del repositorio
 
@@ -26,7 +26,7 @@ Pudu-hackaton/
 ├── main.lua                        # Integrador principal: ciclo love.*, máquina de estados, CLI, workers
 ├── asset_loader.lua                # Carga dual Fused/Unfused (diff + _n normal map), greybox Modo B y hot-reload [F5]
 ├── json.lua                        # Codificador/decodificador JSON UTF-8 puro en LuaJIT
-├── encounters.lua                  # 4 biomas (↗), 9 rivales, temas de escenario, semiHintLine, overrides I/O
+├── encounters.lua                  # 4 biomas (↗), 4 rivales de campaña, temas de escenario, semiHintLine, overrides I/O
 ├── stage_renderer.lua              # Mapa diagonal ↗, relieve 3D, cámara calma room-snapped, arena batalla, minimapa
 ├── shaders.lua                     # Shaders GLSL (MRT G-Buffer, JFA SDF, 5-Cascade Radiance GI, Dual-Kawase Bloom, ACES, fallback)
 ├── lighting_pipeline.lua           # Orquestador GPU Deferred 2D + 2D GI + HDR Bloom + estadísticas [PERF]
@@ -84,7 +84,7 @@ Pudu-hackaton/
 | `main.lua` | Integrador único de callbacks `love.*`, `love.errorhandler` con salida `exit 1` bajo `--quit-after=`, `parseCliArgs` (`%-%-`), hot-reload `[F5]`, captura `--screenshot` y despacho a módulos. |
 | `json.lua` | `json.encode(val)` y `json.decode(str)` UTF-8 sin dependencias externas para LuaJIT. |
 | `audio.lua` | `Audio.new(muted)` + `Audio.TRACK_META` (`user_battle` `139.20 BPM`/`beatOffset=0.342`, `overworld` `116.04`, `superstar` `132.01`, `boss` `141.16`, `plaza` `120.00`, `victory` `136.84`). Carga `"static"` protegida con `pcall`; si faltan archivos los guarda en `self.missing` sin crash. En mute mantiene el `Source` corriendo a volumen `0.0` para preservar `source:tell("seconds")`. Expone `playTrack`, `getTrackState`, `play`, `setTrackPaused`, `setMusicVolume`, `toggleMusic`, `toggleMute`, `stopAll`. |
-| `encounters.lua` | Definición de los 4 biomas (`bosque`, `desierto`, `costa`, `ciudad`), 9 rivales cómicos, temas de escenario, `semiHintLine` y lectura/escritura de overrides. |
+| `encounters.lua` | Definición de los 4 biomas (`desierto`, `costa`, `bosque`, `chiloe`), 4 rivales de campaña, temas de escenario, `semiHintLine` y lectura/escritura de overrides. |
 | `stage_renderer.lua` | Overworld diagonal `↗`, relieve 3D, cámara calma room-snapped, arena lateral JRPG y minimapa. |
 | `shaders.lua` / `lighting_pipeline.lua` | Compilación GLSL con `safeSend`/`hasUniform`, MRT Deferred 2D, 2D GI, Dual-Kawase Bloom, ACES, fallback `lit`+`post` y telemetría `[PERF]`. |
 | `beat_sync.lua` | PLL sin deriva acoplado a `audio:getTrackState()`, groove idle del Pudú/rivales y rebote elástico del sombrero café. |
@@ -144,7 +144,7 @@ Ningún elemento de UI o texto de combate puede pisar a otro. Respetar estrictam
 | **Strip inferior Final Fantasy** | Fondo `h - 86 .. h - 8` (`78px` alto) | Izquierda: retrato + HP Pudú. Derecha: caja pura de prompt. |
 
 ### R7. Cámara calma Room-Snapped en el mapa diagonal `↗`
-- El Overworld asciende en diagonal de abajo-izquierda hacia arriba-derecha (`↗`, `u = 0..118`) a través de 4 biomas (`bosque` -> `desierto` -> `costa` -> `ciudad`).
+- El Overworld asciende en diagonal de abajo-izquierda hacia arriba-derecha (`↗`, `u = 0..118`) a través de 4 biomas (`desierto` -> `costa` -> `bosque` -> `chiloe`), con un combate obligatorio por bioma.
 - La cámara en exploración permanece **100% QUIETA** dentro de la habitación activa (cero seguimiento nervioso frame a frame que provoque mareo).
 - Solo dispara **un único paneo suave (`smoothstep`)** cuando el Pudú cruza el umbral del cuarto (`du > 7.4` o `dv > 5.4`), bloqueando brevemente el avance durante el paneo.
 
@@ -211,8 +211,8 @@ Todo PR debe preservar estos flags en `main.lua` (`parseCliArgs` con patrones `%
 | Flag CLI | Propósito QA / Automatización |
 |---|---|
 | `--mode=explore\|battle` | Inicia directo en Overworld `↗` o en Arena de Batalla. |
-| `--biome=bosque\|desierto\|costa\|ciudad` | Teleporta al bioma indicado en modo exploración. |
-| `--encounter=1..9` | Selecciona el encuentro (1 al 9). |
+| `--biome=desierto\|costa\|bosque\|chiloe` | Teleporta al bioma indicado en modo exploración. `ciudad` es un alias de `chiloe`. |
+| `--encounter=1..9` | Selecciona uno de los 4 combates de campaña o uno de los combates de QA (5 al 9). |
 | `--mock` | Activa modo prueba 0 ms (sin llamadas externas a Gemini). |
 | `--auto-prompt="<texto>"` | Envía el prompt automáticamente y resuelve las flechas del ritual en modo test. |
 | `--test-ritual` | Abre el ritual de flechas luminosas de inmediato para inspección visual. |

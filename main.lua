@@ -190,6 +190,7 @@ local TO_EXPLORE_DURATION = 0.72
 local BATTLE_ENTER_DURATION = 0.88
 local BATTLE_ENTER_SLIDE_PX = 320.0
 local ENCOUNTER_TRIGGER_DIST = 1.75
+local ENCOUNTER_SHORTCUT_DIST = 4.0
 local WALK_SPEED = 6.2
 
 -- Wizard hat head-anchor offsets per Pudú facing row (0..7) in 64px base units
@@ -377,7 +378,7 @@ local comboDemos = {
     combo_electro = { "charco", "rayo" },
     combo_deep_freeze = { "charco", "hielo" },
     combo_steam_sauna = { "escarcha", "secador" },
-    combo_slip_slide = { "jabón", "plátano" },
+    combo_slip_slide = { "espuma", "plátano" },
     combo_fire_boom = { "aceite", "fósforo" },
     combo_chaos = { "oscuridad", "bocina" },
 }
@@ -638,8 +639,9 @@ local function reloadAssets(isHotReload)
     if overrides then
         Encounters.applyOverrides(overrides)
     end
-    Game.assets = AssetLoader.loadAll(Encounters.LIST)
+    Game.assets = AssetLoader.loadAll(Encounters.SELECTABLE)
     if isHotReload then
+        Game.stage:buildOverworldDecor(Game.overworldEncounters)
         Game.reloadCount = Game.reloadCount + 1
         local s = Game.assets.stats
         showToast(string.format("Hot-Reload #%d listo (%d reales / %d greybox)", Game.reloadCount, s.realCount, s.placeholderCount), 2.4)
@@ -681,26 +683,31 @@ local function findSafeSpotNearEncounter(enc, offsetU)
     return clamp(enc.u - 2.6, 2.0, 114.0), StageRenderer.pathCenterV(clamp(enc.u - 2.6, 2.0, 114.0))
 end
 
-local function findNearestEncounterIndex(preferUndefeated)
-    local bestIdx = 1
-    local bestDist = math.huge
-    for i = 1, Encounters.count() do
-        local enc = Encounters.LIST[i]
-        local isDef = Game.defeatedMap[enc.id] == true
-        if (not preferUndefeated) or (not isDef) then
-            local du = enc.u - Game.puduU
-            local dv = enc.v - Game.puduV
-            local d = math.sqrt(du * du + dv * dv)
-            if d < bestDist then
-                bestDist = d
-                bestIdx = i
+local function distanceSquaredToEncounter(enc)
+    local du, dv = enc.u - Game.puduU, enc.v - Game.puduV
+    return du * du + dv * dv
+end
+
+local function nextOverworldEncounter()
+    local nearest, nearestDistance = nil, math.huge
+    for _, enc in ipairs(Game.overworldEncounters or Encounters.LIST) do
+        if not Game.defeatedMap[enc.id] then
+            if not Game.qaExplore then return enc end
+            local distance = distanceSquaredToEncounter(enc)
+            if distance < nearestDistance then
+                nearest, nearestDistance = enc, distance
             end
         end
     end
-    if preferUndefeated and bestDist == math.huge then
-        return findNearestEncounterIndex(false)
+    return nearest
+end
+
+local function campaignWins()
+    local wins = 0
+    for _, enc in ipairs(Encounters.LIST) do
+        if Game.defeatedMap[enc.id] then wins = wins + 1 end
     end
-    return bestIdx
+    return wins
 end
 
 local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
@@ -723,7 +730,10 @@ local function enterBattleArenaImmediate(idx, skipEnterDash, initialEnterT)
     Game.enemyReaction = (Game.cli and Game.cli.forceReaction) or "idle"
 
     if Game.audio then
-        Game.audio:playTrack("user_battle", false)
+        local enc = Encounters.getByIndex(targetIdx)
+        if not enc.finalBoss or not Game.audio:playTrack(enc.track, false) then
+            Game.audio:playTrack("user_battle", false)
+        end
     end
     if Game.beatSync then
         local ts = Game.audio and Game.audio:getTrackState()
@@ -792,12 +802,9 @@ local function updateTransition(dt)
             Game.alertEncounterIdx = nil
             Game.transitionSwitched = true
             local enc = Encounters.getByIndex(Game.encounterIndex)
-            if enc then
-                local du = Game.puduU - enc.u
-                local dv = Game.puduV - enc.v
-                if math.sqrt(du * du + dv * dv) < 2.4 then
-                    Game.puduU, Game.puduV = findSafeSpotNearEncounter(enc, -2.6)
-                end
+            if distanceSquaredToEncounter(enc) < 2.4 ^ 2
+                or (not Game.qaExplore and enc == nextOverworldEncounter() and Game.puduU >= enc.u) then
+                Game.puduU, Game.puduV = findSafeSpotNearEncounter(enc, -2.6)
             end
             Game.stage:snapCameraToChunk(Game.puduU, Game.puduV)
             Game.encounterCooldown = 0.85
@@ -834,12 +841,15 @@ local function updateExplore(dt)
     if love.keyboard.isDown("a", "left") then dx = dx - 1 end
     if love.keyboard.isDown("d", "right") then dx = dx + 1 end
 
+    local nextEncounter = nextOverworldEncounter()
+    local gateU = nextEncounter and not Game.qaExplore and nextEncounter.u
     if dx ~= 0 or dy ~= 0 then
         Game.puduMoving = true
         Game.puduFacingRow = screenDirToFacingRow(dx, dy)
         local du, dv = StageRenderer.screenVecToIso(dx, dy, WALK_SPEED)
         local candU = Game.puduU + du * dt
         local candV = Game.puduV + dv * dt
+        if gateU and du > 0 then candU = math.min(candU, gateU) end
 
         -- Separate-axis sliding collision check
         if StageRenderer.isWalkable(candU, candV) then
@@ -861,19 +871,11 @@ local function updateExplore(dt)
 
     Game.stage:updateExploreCamera(Game.puduU, Game.puduV, dt)
 
-    -- Check proximity collision with undefeated rivals
-    if Game.encounterCooldown <= 0 then
-        for i = 1, Encounters.count() do
-            local enc = Encounters.LIST[i]
-            if not Game.defeatedMap[enc.id] then
-                local du = enc.u - Game.puduU
-                local dv = enc.v - Game.puduV
-                if (du * du + dv * dv) < (ENCOUNTER_TRIGGER_DIST * ENCOUNTER_TRIGGER_DIST) then
-                    triggerEncounterTransition(i)
-                    return
-                end
-            end
-        end
+    -- Crossing the next rival's position starts combat even if the player takes a side path.
+    if nextEncounter and Game.encounterCooldown <= 0
+        and (distanceSquaredToEncounter(nextEncounter) < ENCOUNTER_TRIGGER_DIST ^ 2
+            or (gateU and Game.puduU >= gateU)) then
+        triggerEncounterTransition(nextEncounter.index)
     end
 end
 
@@ -1166,11 +1168,13 @@ local function getHudState(battleEnc)
         mode = Game.mode, battlePhase = b and Game.battlePhase or nil,
         musicOff = audio.muted or not audio.musicEnabled,
         toast = Game.toastText, elapsed = Game.elapsed,
-        albumCount = Game.album:countUnlocked(), encounterCount = Encounters.count(),
+        albumCount = Game.album:countUnlocked(Encounters.SELECTABLE), encounterCount = Encounters.count(),
     }
     if b then
         state.context, state.contextColor = battleEnc.name, battleEnc.color
         state.hp, state.enemyHp, state.enemyMaxHp = b.hp, b.enemyHp, battleEnc.maxHp
+        state.campaignComplete = battleEnc.finalBoss and Game.battlePhase == "victory"
+            and campaignWins() == #Encounters.LIST
         state.stageStates, state.portraits, state.mood = Game.stageStates, Game.assets.portraits, b.mood
         state.speech, state.lastPrompt = b.speech, b.prompt
         state.enemyStatusTag = b.result and b.result.status_tag
@@ -1182,9 +1186,9 @@ local function getHudState(battleEnc)
         end
     else
         local biome = Encounters.getBiome(StageRenderer.getBiomeAt(Game.puduU))
-        local defeated = 0
-        for _ in pairs(Game.defeatedMap) do defeated = defeated + 1 end
-        state.context = ("%s (%d/%d)"):format(biome.name, defeated, Encounters.count())
+        local target = nextOverworldEncounter()
+        state.canStartBattle = target and (Game.qaExplore or distanceSquaredToEncounter(target) < ENCOUNTER_SHORTCUT_DIST ^ 2)
+        state.context = ("%s (%d/%d)"):format(biome.name, campaignWins(), #Encounters.LIST)
         state.contextColor = biome.accentColor
     end
     return state
@@ -1205,6 +1209,11 @@ function love.load(args)
         Game.demoId, Game.mode = id, "battle"
     end
     Game.encounterIndex = Game.cli.encounter
+    Game.qaExplore = Game.cli.biome ~= nil or Game.cli.encounterExplicit
+    Game.overworldEncounters = Encounters.LIST
+    if Game.mode == "explore" and not Game.cli.biome and Game.encounterIndex > #Encounters.LIST then
+        Game.overworldEncounters = { Encounters.getByIndex(Game.encounterIndex) }
+    end
     Game.fonts = loadFonts()
     Game.hud = BattleHUD.new(Game.fonts)
     Game.ritual = SpellRitual.new()
@@ -1234,26 +1243,22 @@ function love.load(args)
     if Game.cli.disableBloom then
         Game.stage:setBloomEnabled(false)
     end
-    Game.stage:buildOverworldDecor(Encounters.LIST)
+    Game.stage:buildOverworldDecor(Game.overworldEncounters)
 
     local w, h = love.graphics.getDimensions()
     ensureWorldCanvas(w, h)
 
     -- Initial Pudu overworld position & camera snap
-    if Game.cli.biome then
-        local biome = Encounters.getBiome(Game.cli.biome)
-        Game.puduU = biome.spawnU or 3.8
-        Game.puduV = StageRenderer.pathCenterV(Game.puduU)
-        Game.puduFacingRow = 3
-    elseif Game.cli.transitionPreview ~= nil or (Game.cli.encounterExplicit and Game.mode == "explore") then
+    if not Game.cli.biome and (Game.cli.transitionPreview ~= nil
+        or (Game.cli.encounterExplicit and Game.mode == "explore")) then
         local enc = Encounters.getByIndex(Game.encounterIndex)
         if enc then
             Game.puduU, Game.puduV = findSafeSpotNearEncounter(enc, -2.0)
             Game.puduFacingRow = 3
         end
     else
-        Game.puduU = 3.8
-        Game.puduV = StageRenderer.pathCenterV(3.8)
+        Game.puduU = Encounters.getBiome(Game.cli.biome).spawnU
+        Game.puduV = StageRenderer.pathCenterV(Game.puduU)
         Game.puduFacingRow = 3
     end
 
@@ -1408,8 +1413,14 @@ local function routeHudAction(action)
         local enabled = Game.audio:toggleMusic()
         showToast(enabled and "Música activada" or "Música desactivada", 1.8)
     elseif action == "map" then
-        if Game.mode == "battle" then triggerReturnToExplore()
-        else triggerEncounterTransition(findNearestEncounterIndex(true)) end
+        if Game.mode == "battle" then
+            triggerReturnToExplore()
+        else
+            local target = nextOverworldEncounter()
+            if target and (Game.qaExplore or distanceSquaredToEncounter(target) < ENCOUNTER_SHORTCUT_DIST ^ 2) then
+                triggerEncounterTransition(target.index)
+            end
+        end
     elseif action == "retry" and (Game.battlePhase == "victory" or Game.battlePhase == "defeat") then
         enterBattleArenaImmediate(Game.encounterIndex, false, 0)
     elseif action == "album" then
@@ -1543,7 +1554,7 @@ function love.draw()
             h = h,
             time = Game.elapsed,
             assets = Game.assets,
-            encounters = Encounters.LIST,
+            encounters = Game.overworldEncounters,
             defeatedMap = Game.defeatedMap,
             puduU = Game.puduU,
             puduV = Game.puduV,
@@ -1665,7 +1676,7 @@ function love.draw()
         Game.stage:drawOverworldMinimap(
             Game.puduU,
             Game.puduV,
-            Encounters.LIST,
+            Game.overworldEncounters,
             Game.defeatedMap,
             w,
             h,
@@ -1702,7 +1713,7 @@ function love.draw()
     elseif Game.transitionState == "to_explore" then
         Game.stage:drawBattleTransition(Game.transitionTimer / TO_EXPLORE_DURATION, w, h)
     end
-    Game.album:draw(Encounters.LIST, Game.assets.encounters, Game.fonts, w, h)
+    Game.album:draw(Encounters.SELECTABLE, Game.assets.encounters, Game.fonts, w, h)
 
     local statsNow = love.graphics.getStats()
     Game.lastDrawCalls = statsNow.drawcalls or 0

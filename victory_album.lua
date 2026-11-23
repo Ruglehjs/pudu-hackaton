@@ -12,6 +12,7 @@ local BIOMES = {
     bosque = { name = "Bosque", color = { 0.65, 0.92, 0.65 }, background = { 0.15, 0.40, 0.31 } },
     desierto = { name = "Desierto", color = { 1, 0.82, 0.59 }, background = { 0.47, 0.32, 0.21 } },
     costa = { name = "Costa", color = { 0.57, 0.92, 0.99 }, background = { 0.14, 0.37, 0.53 } },
+    chiloe = { name = "Chiloé", color = { 0.52, 0.90, 0.84 }, background = { 0.18, 0.36, 0.40 } },
     ciudad = { name = "Ciudad", color = { 0.86, 0.77, 1 }, background = { 0.33, 0.29, 0.49 } },
 }
 
@@ -120,9 +121,15 @@ function VictoryAlbum:getEntry(encId)
     return self.entries[encId]
 end
 
-function VictoryAlbum:countUnlocked()
+function VictoryAlbum:countUnlocked(encountersList)
     local count = 0
-    for _ in pairs(self.entries) do count = count + 1 end
+    if encountersList then
+        for _, encounter in ipairs(encountersList) do
+            if self.entries[encounter.id] then count = count + 1 end
+        end
+    else
+        for _ in pairs(self.entries) do count = count + 1 end
+    end
     return count
 end
 
@@ -389,7 +396,8 @@ function VictoryAlbum:draw(encountersList, enemySprites, fonts, w, h)
     g.print("ÁLBUM DE LOCURAS", box.x + 24, box.y + 19)
     g.setFont(fonts.body)
     g.setColor(0.79, 0.85, 0.99)
-    g.print(string.format("%d / 9 rivales vencidos", self:countUnlocked()), box.x + 25, box.y + 43)
+    g.print(string.format("%d / %d rivales vencidos", self:countUnlocked(encountersList), #encountersList),
+        box.x + 25, box.y + 43)
     drawButton(ui.clear, "Limpiar", contains(ui.clear, mx, my), fonts.body)
     drawButton(ui.close, "[X]", contains(ui.close, mx, my), fonts.body)
 

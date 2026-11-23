@@ -28,8 +28,10 @@ class JudgeTests(unittest.TestCase):
             self.assertIn(result[key], values)
         self.assertRegex(result["ritual_theme_color"], r"^#[A-Fa-f0-9]{6}$")
 
-    def test_nine_rivals_have_a_critical_and_a_backfire(self):
+    def test_rivals_have_a_critical_and_a_backfire(self):
         attacks = [
+            ("pila_de_ropa", "lavadora", "calcetín"),
+            ("caleuche", "faro", "niebla"),
             ("nino_helado", "nube de lluvia", "paraguas"),
             ("mimo_muro", "balde de pintura", "muro de cemento"),
             ("puma_dramatico", "ovillo", "peine"), ("turista_selfie", "paloma", "trípode"),
@@ -48,6 +50,12 @@ class JudgeTests(unittest.TestCase):
                 self.assertEqual(own_goal["outcome_type"], "backfire")
                 self.assertIn(own_goal["damage_to_pudu"], range(10, 19))
         self.assertEqual(ai.fallback_battle_evaluate("nube de lluvia", "nino_helado")["enemy_reaction"], "crying")
+
+    def test_boss_counter_uses_the_same_floor_online_and_offline(self):
+        local = ai.fallback_battle_evaluate("faro", "caleuche")
+        online = ai.sanitize_battle_result({**local, "enemy_counter_damage": 5}, "faro", "caleuche")
+        self.assertEqual(local["enemy_counter_damage"], 20)
+        self.assertEqual(online["enemy_counter_damage"], local["enemy_counter_damage"])
 
     def test_two_turn_combos(self):
         cases = [

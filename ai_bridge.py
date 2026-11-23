@@ -120,7 +120,7 @@ def _judge_local(prompt, enc):
         outcome_type="creative_chaos", is_critical=False, damage_to_enemy=30, damage_to_pudu=0, heal_pudu=0,
         enemy_reaction="confused", pudu_reaction="happy",
         enemy_speech="¡Me distraje aplaudiendo y me caí de poto!", narrator_text=rival["gag"],
-        enemy_counter_name=rival["counter"], enemy_counter_line=rival["line"], enemy_counter_damage=11,
+        enemy_counter_name=rival["counter"], enemy_counter_line=rival["line"], enemy_counter_damage=rival.get("counter_damage", 11),
         enemy_counter_fx="wind", comedy_score=6, comedy_badge="¡BUENA TALLA!", keep_prop_on_stage=bool(state),
         prop_anchor="ground_enemy", status_tag="DESPISTADO", ritual_theme_color="#68CEA4",
         adds_stage_state=state["id"] if state else "none", combo_triggered="none", combo_name="", anticipation_line="¿Quién pidió ese paquete?",
@@ -200,6 +200,8 @@ def sanitize_battle_result(raw, prompt, encounter):
         v = raw.get(key)
         if type(v) is int or (type(v) is float and math.isfinite(v)):
             r[key] = _bounded(v, lo, hi)
+    counter_floor = RULES["rivals"].get(enc["id"], {}).get("counter_damage", RANGES["enemy_counter_damage"][0])
+    r["enemy_counter_damage"] = max(counter_floor, r["enemy_counter_damage"])
     for key, allowed in ENUMS.items():
         if raw.get(key) in allowed:
             r[key] = raw[key]

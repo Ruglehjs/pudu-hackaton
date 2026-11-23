@@ -1,6 +1,6 @@
 -- encounters.lua
--- Canonical world catalog for Pudu Fantasy: 4 Chilean biomes, 8 HD-2D stage themes,
--- 9 comic encounters, query helpers, and stage_overrides.json persistence.
+-- Canonical world catalog for Pudu Fantasy: 4 Chilean biomes, HD-2D stage themes,
+-- 4 campaign encounters and 5 QA battles, query helpers, and stage_overrides.json persistence.
 -- Pure Lua data and I/O module (zero graphics dependencies; safe in threads or LuaJIT).
 
 local json = require("json")
@@ -21,31 +21,17 @@ end
 -- 1. Four Explorable Biomes (Diagonal Overworld u = 0..118)
 --------------------------------------------------------------------------------
 
-Encounters.BIOME_ORDER = { "bosque", "desierto", "costa", "ciudad" }
+Encounters.BIOME_ORDER = { "desierto", "costa", "bosque", "chiloe" }
 
 Encounters.BIOMES = {
-  bosque = {
-    id = "bosque",
-    order = 1,
-    name = "Bosque y Plaza Valdiviana",
-    shortName = "Bosque Valdiviano",
-    uStart = 0,
-    uEnd = 38,
-    spawnU = 3.8,
-    floorTile = "grass_floor",
-    pathTile = "stone_floor",
-    stageDefault = "bosque",
-    accentColor = { 0.34, 0.78, 0.42 },
-    stages = { "plaza", "bosque" },
-  },
   desierto = {
     id = "desierto",
-    order = 2,
+    order = 1,
     name = "Desierto de Atacama",
     shortName = "Atacama",
-    uStart = 38,
-    uEnd = 64,
-    spawnU = 45.0,
+    uStart = 0,
+    uEnd = 26,
+    spawnU = 3.8,
     floorTile = "desert_floor",
     pathTile = "stone_floor",
     stageDefault = "mirador",
@@ -54,36 +40,50 @@ Encounters.BIOMES = {
   },
   costa = {
     id = "costa",
-    order = 3,
+    order = 2,
     name = "Costa y Muelle de Valparaíso",
     shortName = "Valparaíso",
-    uStart = 64,
-    uEnd = 90,
-    spawnU = 71.0,
+    uStart = 26,
+    uEnd = 52,
+    spawnU = 29.0,
     floorTile = "coast_floor",
     pathTile = "stone_floor",
     stageDefault = "muelle",
     accentColor = { 0.28, 0.76, 0.88 },
     stages = { "muelle", "pantano" },
   },
-  ciudad = {
-    id = "ciudad",
+  bosque = {
+    id = "bosque",
+    order = 3,
+    name = "Bosque Valdiviano",
+    shortName = "Bosque Valdiviano",
+    uStart = 52,
+    uEnd = 92,
+    spawnU = 56.0,
+    floorTile = "grass_floor",
+    pathTile = "stone_floor",
+    stageDefault = "bosque",
+    accentColor = { 0.34, 0.78, 0.42 },
+    stages = { "plaza", "bosque" },
+  },
+  chiloe = {
+    id = "chiloe",
     order = 4,
-    name = "Ciudad y Gran Oficina",
-    shortName = "Gran Oficina",
-    uStart = 90,
+    name = "Chiloé",
+    shortName = "Chiloé",
+    uStart = 92,
     uEnd = 118,
     spawnU = 104.0,
-    floorTile = "stone_floor",
-    pathTile = "mountain_floor",
-    stageDefault = "oficina",
-    accentColor = { 0.72, 0.56, 0.92 },
-    stages = { "esquina", "oficina" },
+    floorTile = "grass_floor",
+    pathTile = "stone_floor",
+    stageDefault = "chiloe",
+    accentColor = { 0.56, 0.72, 0.94 },
+    stages = { "chiloe" },
   },
 }
 
 --------------------------------------------------------------------------------
--- 2. Eight HD-2D Stage Themes
+-- 2. HD-2D Stage Themes
 --------------------------------------------------------------------------------
 
 Encounters.STAGE_THEME_ORDER = {
@@ -93,6 +93,7 @@ Encounters.STAGE_THEME_ORDER = {
   "vereda",
   "muelle",
   "pantano",
+  "chiloe",
   "esquina",
   "oficina",
 }
@@ -218,6 +219,26 @@ Encounters.STAGE_THEMES = {
     sunEnergy = 1.08,
     props = { "lily_pad", "log_dam", "mossy_log", "valdivian_fern", "pincoya_shrine" },
   },
+  chiloe = {
+    id = "chiloe",
+    name = "Muelle de Chiloé",
+    biome = "chiloe",
+    floorTile = "coast_floor",
+    pathTile = "stone_floor",
+    skyTop = { 0.12, 0.22, 0.43 },
+    skyBot = { 0.48, 0.68, 0.76 },
+    horizonGlow = { 0.70, 0.84, 0.88 },
+    groundA = { 0.23, 0.43, 0.51 },
+    groundB = { 0.16, 0.32, 0.40 },
+    pathA = { 0.52, 0.42, 0.34 },
+    pathB = { 0.36, 0.28, 0.24 },
+    accentColor = { 0.55, 0.76, 0.95 },
+    ambientColor = { 0.34, 0.45, 0.58 },
+    sunColor = { 0.86, 0.92, 1.00 },
+    sunDir = normalizeVec3(-0.42, -0.64, 0.64),
+    sunEnergy = 1.12,
+    props = { "lantern_post", "pincoya_shrine", "coast_lighthouse" },
+  },
   esquina = {
     id = "esquina",
     name = "Esquina del Semáforo Rebelde",
@@ -261,84 +282,80 @@ Encounters.STAGE_THEMES = {
 }
 
 --------------------------------------------------------------------------------
--- 3. Nine Canonical Comic Encounters
+-- 3. Campaign Encounters and QA Battles
 --------------------------------------------------------------------------------
 
 Encounters.LIST = {
   {
-    index = 1,
-    id = "nino_helado",
-    name = "Niño del Helado Triple",
-    subtitle = "Presumido de la Plaza",
-    biome = "bosque",
-    stage = "plaza",
-    category = "persona",
-    u = 10.0,
-    v = 0.2,
-    maxHp = 100,
-    track = "superstar",
-    music = "superstar",
+    id = "pila_de_ropa",
+    name = "Pila de Ropa",
+    subtitle = "Montaña de Prendas de Atacama",
+    biome = "desierto",
+    stage = "vereda",
+    category = "desafio",
+    u = 13.0,
+    v = 1.0,
+    maxHp = 90,
+    track = "plaza",
+    music = "plaza",
     scale = 2.55,
     offsetX = 0,
     offsetY = 0,
-    spritePath = "assets/sprites/encounters/nino_helado",
-    sprite = "assets/sprites/encounters/nino_helado",
-    color = { 0.94, 0.52, 0.62 },
-    weaknesses = { "lluvia", "nube", "agua", "gaviota", "viento", "sol", "platano" },
-    situation = "Presume su helado gigante de 3 bolas bloqueando el camino en la plaza.",
-    introLine = "¡Jajá! Mi helado triple es más grande que tú, ciervito. ¡No pasas!",
-    semiHintLine = "¡Qué suerte este cielo calmo y sin pájaros glotones! Nada derrite ni bota mi cono...",
-    defeatLine = "¡BUAAA! ¡Mis tres bolas de lúcuma y frutilla! ¡Le voy a acusar a mi mamá!",
-    moodLabel = "PRESUMIDO",
+    spritePath = "assets/sprites/encounters/pila_de_ropa",
+    color = { 0.86, 0.52, 0.41 },
+    weaknesses = { "lavadora", "jabon", "detergente", "tendedero", "viento", "percha" },
+    situation = "Una montaña de ropa abandonada cobró vida y se atravesó en el camino de Atacama.",
+    introLine = "¡Alto! Este camino es mío. Si quieres pasar, toma número para el lavado.",
+    semiHintLine = "Llevo semanas juntando polvo. Por suerte aquí nunca es día de lavado.",
+    defeatLine = "¡Ya, ya! Déjame secar al sol y te doy paso.",
+    moodLabel = "ARRUGADA",
     tauntLines = {
-      "¡Mira qué equilibrio! Tres bolas y cero vergüenza, ciervito.",
-      "¿Ese es tu conjuro? Mi barquillo ni tembló un milímetro.",
-      "¡Jajá! Con una mano sostengo mi postre y con la otra te gano.",
-      "¡Pasa por otro lado, pudú! Esta vereda es zona exclusiva de helado.",
+      "¡Te voy a envolver en un calcetín sin pareja!",
+      "¡El ciclo de centrifugado lo elijo yo!",
+      "Una polera más y ni siquiera verás el camino.",
+      "¿Quieres pasar? Primero dobla esa sábana con elástico.",
     },
   },
   {
-    index = 2,
-    id = "mimo_muro",
-    name = "Mimo del Muro Invisible",
-    subtitle = "Artista Callejero Obstinado",
-    biome = "bosque",
-    stage = "plaza",
-    category = "persona",
-    u = 22.0,
-    v = -2.0,
-    maxHp = 110,
+    id = "gaviota_mafiosa",
+    name = "Gaviota Mafiosa",
+    subtitle = "Jefa del Peaje Portuario",
+    biome = "costa",
+    stage = "muelle",
+    category = "animal",
+    u = 34.0,
+    v = -1.4,
+    maxHp = 115,
     track = "superstar",
     music = "superstar",
-    scale = 2.55,
+    scale = 2.45,
     offsetX = 0,
     offsetY = 0,
-    spritePath = "assets/sprites/encounters/mimo_muro",
-    sprite = "assets/sprites/encounters/mimo_muro",
-    color = { 0.85, 0.86, 0.92 },
-    weaknesses = { "pintura", "balde", "abeja", "bocina", "trompeta", "agua", "martillo" },
-    situation = "Bloquea la plaza fingiendo un muro invisible y se niega a romper el silencio.",
-    introLine = "...*toca el aire con desprecio y te arma un muro invisible en la nariz*...",
-    semiHintLine = "*Se alisa el traje. Ni una manchita. Vuelve a palpar el aire, muy digno.*",
-    defeatLine = "¡AY, MI OBRA MAESTRA! ¡ME HICISTE HABLAR, CIERVO PESADO! ¡Me retiro del teatro!",
-    moodLabel = "SILENCIOSO",
+    spritePath = "assets/sprites/encounters/gaviota_mafiosa",
+    sprite = "assets/sprites/encounters/gaviota_mafiosa",
+    color = { 0.78, 0.86, 0.96 },
+    weaknesses = { "empanada", "espantapajaros", "manguera", "agua", "pescado", "viento" },
+    situation = "Cobra peaje ilegal en el muelle con lentes oscuros y mirada de jefa del puerto.",
+    introLine = "¡KRA! Impuesto portuario, peludito: pagas el peaje del muelle o no pasas.",
+    semiHintLine = "¡Kra! Mientras nadie me tiente con un bocadillo porteño ni me empuje las alas, mando yo.",
+    defeatLine = "¡KRA-KRA! ¡Ok, ok, pase libre vitalicio para el ciervo! ¡Nos vemos en la caleta!",
+    moodLabel = "MAFIOSA",
     tauntLines = {
-      "...*pule su vidrio imaginario con un pañuelo invisible y sonríe sobrado*...",
-      "...*se tapa los oídos con dramatismo y apunta a un cartel imaginario de PARE*...",
-      "...*finge que tu ataque rebotó en su pared invisible con cámara lenta*...",
-      "...*hace una reverencia burlona y vuelve a cerrar la puerta que no existe*...",
+      "¡KRA! Qué lindo sombrero, sería una pena que pagara doble impuesto.",
+      "En este muelle nadie cruza gratis, ni con cara de pudú inocente.",
+      "¡Pff! ¿Eso era un soborno? A mí me conquistas con cosas serias del puerto.",
+      "¡Mis lentes oscuros no se mueven y mi tarifa tampoco, compadre!",
     },
   },
   {
-    index = 3,
     id = "puma_dramatico",
     name = "Puma Dramático",
     subtitle = "Diva Felina del Bosque",
     biome = "bosque",
     stage = "bosque",
     category = "animal",
-    u = 34.0,
-    v = 1.6,
+    u = 73.0,
+    v = 0.2,
     maxHp = 120,
     track = "boss",
     music = "boss",
@@ -366,46 +383,112 @@ Encounters.LIST = {
     },
   },
   {
-    index = 4,
-    id = "turista_selfie",
-    name = "Turista del Selfie Infinito",
-    subtitle = "Influencer del Mirador",
-    biome = "desierto",
-    stage = "mirador",
-    category = "persona",
-    u = 48.0,
-    v = -1.2,
-    maxHp = 105,
-    track = "plaza",
-    music = "plaza",
-    scale = 2.55,
+    id = "caleuche",
+    name = "El Caleuche",
+    subtitle = "Jefe Final de Chiloé",
+    biome = "chiloe",
+    stage = "chiloe",
+    category = "desafio",
+    finalBoss = true,
+    u = 112.0,
+    v = 0.4,
+    maxHp = 220,
+    track = "boss",
+    music = "boss",
+    scale = 2.65,
     offsetX = 0,
     offsetY = 0,
-    spritePath = "assets/sprites/encounters/turista_selfie",
-    sprite = "assets/sprites/encounters/turista_selfie",
-    color = { 0.36, 0.78, 0.90 },
-    weaknesses = { "lluvia", "nube", "paloma", "espejo", "viento", "barro", "bateria" },
-    situation = "Cierra todo el mirador buscando el ángulo perfecto para sus doce seguidores.",
-    introLine = "¡Un segundo! ¡No te cruces que arruinas mi foto para mis doce seguidores!",
-    semiHintLine = "¡Necesito cielo despejado, cero suciedad en el lente y carga al cien para mi mejor toma!",
-    defeatLine = "¡NOOO! ¡Mi encuadre épico se fue a la B! ¡Ya, pasa, voy a borrar el borrador!",
-    moodLabel = "POSANDO",
+    spritePath = "assets/sprites/encounters/caleuche",
+    color = { 0.50, 0.68, 0.92 },
+    weaknesses = { "faro", "linterna", "brujula", "ancla", "silencio", "amanecer" },
+    situation = "El barco fantasma corta el paso en el muelle de Chiloé y esconde el rumbo entre la niebla.",
+    introLine = "¡Arriba el ancla! Este muelle es mío mientras la niebla me esconda.",
+    semiHintLine = "Mi timonel manda en la bruma. Con el cielo claro hasta la boya le corrige el rumbo.",
+    defeatLine = "¡Bajen las velas! El muelle queda libre, capitán Pudú.",
+    moodLabel = "FANTASMAL",
     tauntLines = {
-      "¡Aguanta, pudú! Que este filtro de Atacama se me descuadra contigo atrás.",
-      "¡Toma cuarenta y ocho! Si sale borrosa, empezamos todo de nuevo.",
-      "¡A un lado, porfa! Mis doce seguidores merecen este perfil de oro.",
-      "¡Cero interrupciones! Mi celular está al máximo y mi palo selfie también.",
+      "¡A babor! A ver si ese sombrero sabe nadar.",
+      "He navegado cien temporales peores que ese.",
+      "¡La bruma me devuelve al muelle cuando quiero!",
+      "La tripulación todavía se ríe en la cubierta.",
+    },
+  },
+}
+
+-- Keep the remaining numbered slots available for direct QA launches.
+local selectable = {}
+for i, enc in ipairs(Encounters.LIST) do selectable[i] = enc end
+local qaBattles = {
+  {
+    id = "piscina_barro",
+    name = "Pantano Traicionero",
+    subtitle = "Trampa Pegajosa del Estero",
+    biome = "costa",
+    stage = "pantano",
+    category = "desafio",
+    u = 46.0,
+    v = 1.2,
+    maxHp = 120,
+    track = "boss",
+    music = "boss",
+    scale = 2.65,
+    offsetX = 0,
+    offsetY = 0,
+    spritePath = "assets/sprites/encounters/piscina_barro",
+    sprite = "assets/sprites/encounters/piscina_barro",
+    color = { 0.44, 0.62, 0.34 },
+    weaknesses = { "puente", "madera", "secador", "hielo", "ventisca", "esponja", "sol", "balsa" },
+    situation = "Un lodazal burbujeante y burlón engulle botas y corta el paso hacia el bosque.",
+    introLine = "¡Blub-blub! Ven a mojarte las patitas, que tengo hambre de botas limpias...",
+    semiHintLine = "¡Blub! Las botas son mi plato favorito. Lástima que tengan que pisarme primero.",
+    defeatLine = "¡Glup... glub! ¡Me dejaste más seco y domado que camino de verano! ¡Cruza no más!",
+    moodLabel = "PEGAJOSO",
+    tauntLines = {
+      "¡Blub-blub! Un paso más y tus pezuñas quedan de recuerdo en mi fondo.",
+      "¡Plop! Qué delicia de barro fresco, imposible cruzar a pata pelada.",
+      "¡Glub! Ese truco ni me hizo cosquillas en las burbujas, ciervito.",
+      "¡Sigo igual de pantanoso y feliz! ¿Trajiste botas talla gigante?",
     },
   },
   {
-    index = 5,
+    id = "mimo_muro",
+    name = "Mimo del Muro Invisible",
+    subtitle = "Artista Callejero Obstinado",
+    biome = "bosque",
+    stage = "plaza",
+    category = "persona",
+    u = 64.0,
+    v = -2.0,
+    maxHp = 110,
+    track = "superstar",
+    music = "superstar",
+    scale = 2.55,
+    offsetX = 0,
+    offsetY = 0,
+    spritePath = "assets/sprites/encounters/mimo_muro",
+    sprite = "assets/sprites/encounters/mimo_muro",
+    color = { 0.85, 0.86, 0.92 },
+    weaknesses = { "pintura", "balde", "abeja", "bocina", "trompeta", "agua", "martillo" },
+    situation = "Bloquea la plaza fingiendo un muro invisible y se niega a romper el silencio.",
+    introLine = "...*toca el aire con desprecio y te arma un muro invisible en la nariz*...",
+    semiHintLine = "*Se alisa el traje. Ni una manchita. Vuelve a palpar el aire, muy digno.*",
+    defeatLine = "¡AY, MI OBRA MAESTRA! ¡ME HICISTE HABLAR, CIERVO PESADO! ¡Me retiro del teatro!",
+    moodLabel = "SILENCIOSO",
+    tauntLines = {
+      "...*pule su vidrio imaginario con un pañuelo invisible y sonríe sobrado*...",
+      "...*se tapa los oídos con dramatismo y apunta a un cartel imaginario de PARE*...",
+      "...*finge que tu ataque rebotó en su pared invisible con cámara lenta*...",
+      "...*hace una reverencia burlona y vuelve a cerrar la puerta que no existe*...",
+    },
+  },
+  {
     id = "gato_guaton",
     name = "Gato Guatón Inamovible",
     subtitle = "Coloso de la Siesta",
     biome = "desierto",
     stage = "vereda",
     category = "animal",
-    u = 60.0,
+    u = 20.0,
     v = 1.8,
     maxHp = 110,
     track = "plaza",
@@ -430,71 +513,6 @@ Encounters.LIST = {
     },
   },
   {
-    index = 6,
-    id = "gaviota_mafiosa",
-    name = "Gaviota Mafiosa",
-    subtitle = "Jefa del Peaje Portuario",
-    biome = "costa",
-    stage = "muelle",
-    category = "animal",
-    u = 74.0,
-    v = -1.4,
-    maxHp = 115,
-    track = "superstar",
-    music = "superstar",
-    scale = 2.45,
-    offsetX = 0,
-    offsetY = 0,
-    spritePath = "assets/sprites/encounters/gaviota_mafiosa",
-    sprite = "assets/sprites/encounters/gaviota_mafiosa",
-    color = { 0.78, 0.86, 0.96 },
-    weaknesses = { "empanada", "espantapajaros", "manguera", "agua", "pescado", "viento" },
-    situation = "Cobra peaje ilegal en el muelle con lentes oscuros y mirada de jefa del puerto.",
-    introLine = "¡KRA! Impuesto portuario, peludito: pagas el peaje del muelle o no pasas.",
-    semiHintLine = "¡Kra! Mientras nadie me tiente con un bocadillo porteño ni me empuje las alas, mando yo.",
-    defeatLine = "¡KRA-KRA! ¡Ok, ok, pase libre vitalicio para el ciervo! ¡Nos vemos en la caleta!",
-    moodLabel = "MAFIOSA",
-    tauntLines = {
-      "¡KRA! Qué lindo sombrero, sería una pena que pagara doble impuesto.",
-      "En este muelle nadie cruza gratis, ni con cara de pudú inocente.",
-      "¡Pff! ¿Eso era un soborno? A mí me conquistas con cosas serias del puerto.",
-      "¡Mis lentes oscuros no se mueven y mi tarifa tampoco, compadre!",
-    },
-  },
-  {
-    index = 7,
-    id = "piscina_barro",
-    name = "Pantano Traicionero",
-    subtitle = "Trampa Pegajosa del Estero",
-    biome = "costa",
-    stage = "pantano",
-    category = "desafio",
-    u = 86.0,
-    v = 1.2,
-    maxHp = 120,
-    track = "boss",
-    music = "boss",
-    scale = 2.65,
-    offsetX = 0,
-    offsetY = 0,
-    spritePath = "assets/sprites/encounters/piscina_barro",
-    sprite = "assets/sprites/encounters/piscina_barro",
-    color = { 0.44, 0.62, 0.34 },
-    weaknesses = { "puente", "madera", "secador", "hielo", "ventisca", "esponja", "sol", "balsa" },
-    situation = "Un lodazal burbujeante y burlón engulle botas y corta el paso hacia la ciudad.",
-    introLine = "¡Blub-blub! Ven a mojarte las patitas, que tengo hambre de botas limpias...",
-    semiHintLine = "¡Blub! Las botas son mi plato favorito. Lástima que tengan que pisarme primero.",
-    defeatLine = "¡Glup... glub! ¡Me dejaste más seco y domado que camino de verano! ¡Cruza no más!",
-    moodLabel = "PEGAJOSO",
-    tauntLines = {
-      "¡Blub-blub! Un paso más y tus pezuñas quedan de recuerdo en mi fondo.",
-      "¡Plop! Qué delicia de barro fresco, imposible cruzar a pata pelada.",
-      "¡Glub! Ese truco ni me hizo cosquillas en las burbujas, ciervito.",
-      "¡Sigo igual de pantanoso y feliz! ¿Trajiste botas talla gigante?",
-    },
-  },
-  {
-    index = 8,
     id = "semaforo_rebelde",
     name = "Semáforo Rebelde",
     subtitle = "Tirano de la Luz Roja",
@@ -526,7 +544,6 @@ Encounters.LIST = {
     },
   },
   {
-    index = 9,
     id = "fila_tramite",
     name = "Tótem de la Fila #999",
     subtitle = "Jefe Final de la Burocracia",
@@ -558,11 +575,13 @@ Encounters.LIST = {
     },
   },
 }
+for _, enc in ipairs(qaBattles) do selectable[#selectable + 1] = enc end
+Encounters.SELECTABLE = selectable
 
 -- Snapshot baseline transform/stage defaults for clean resetOverrides()
 Encounters._DEFAULTS = {}
 Encounters._BY_ID = {}
-for idx, enc in ipairs(Encounters.LIST) do
+for idx, enc in ipairs(selectable) do
   enc.index = idx
   Encounters._BY_ID[enc.id] = idx
   Encounters._DEFAULTS[enc.id] = {
@@ -582,7 +601,7 @@ end
 --------------------------------------------------------------------------------
 
 function Encounters.count()
-  return #Encounters.LIST
+  return #selectable
 end
 
 function Encounters.getById(id)
@@ -591,13 +610,7 @@ function Encounters.getById(id)
   end
   local idx = Encounters._BY_ID[id]
   if idx then
-    return Encounters.LIST[idx], idx
-  end
-  for i, enc in ipairs(Encounters.LIST) do
-    if enc.id == id then
-      Encounters._BY_ID[id] = i
-      return enc, i
-    end
+    return selectable[idx], idx
   end
   return nil, nil
 end
@@ -605,15 +618,15 @@ end
 function Encounters.getByIndex(idx)
   local n = tonumber(idx)
   if not n then
-    return Encounters.LIST[1]
+    return selectable[1]
   end
   n = math.floor(n)
   if n < 1 then
     n = 1
-  elseif n > #Encounters.LIST then
-    n = #Encounters.LIST
+  elseif n > #selectable then
+    n = #selectable
   end
-  return Encounters.LIST[n]
+  return selectable[n]
 end
 
 function Encounters.getTheme(stageId)
@@ -624,28 +637,22 @@ function Encounters.getTheme(stageId)
 end
 
 function Encounters.getBiome(biomeId)
-  if type(biomeId) == "string" and Encounters.BIOMES[biomeId] then
-    return Encounters.BIOMES[biomeId]
-  end
-  return Encounters.BIOMES.bosque
+  if biomeId == "ciudad" then biomeId = "chiloe" end
+  return Encounters.BIOMES[biomeId] or Encounters.BIOMES.desierto
 end
 
 function Encounters.getBiomeAtU(u)
   local posU = tonumber(u) or 0
-  if posU < 38 then
-    return Encounters.BIOMES.bosque
-  elseif posU < 64 then
-    return Encounters.BIOMES.desierto
-  elseif posU < 90 then
-    return Encounters.BIOMES.costa
-  else
-    return Encounters.BIOMES.ciudad
+  for _, id in ipairs(Encounters.BIOME_ORDER) do
+    local biome = Encounters.BIOMES[id]
+    if posU < biome.uEnd then return biome end
   end
+  return Encounters.BIOMES.chiloe
 end
 
 function Encounters.getEncountersInBiome(biomeId)
   local out = {}
-  local target = (type(biomeId) == "string" and Encounters.BIOMES[biomeId]) and biomeId or "bosque"
+  local target = Encounters.getBiome(biomeId).id
   for _, enc in ipairs(Encounters.LIST) do
     if enc.biome == target then
       out[#out + 1] = enc
@@ -825,7 +832,7 @@ function Encounters.saveOverrides(overrides, baseDir, optBaseDir)
 end
 
 function Encounters.resetOverrides()
-  for _, enc in ipairs(Encounters.LIST) do
+  for _, enc in ipairs(selectable) do
     local def = Encounters._DEFAULTS[enc.id]
     if def then
       enc.scale = def.scale
@@ -848,7 +855,7 @@ function Encounters.applyOverrides(overrides)
   local encMap = (type(overrides.encounters) == "table") and overrides.encounters or nil
   local applied = 0
 
-  for _, enc in ipairs(Encounters.LIST) do
+  for _, enc in ipairs(selectable) do
     local entry = (encMap and encMap[enc.id]) or overrides[enc.id]
     if type(entry) == "table" then
       local touched = false
@@ -864,7 +871,10 @@ function Encounters.applyOverrides(overrides)
         enc.offsetY = entry.offsetY
         touched = true
       end
-      if type(entry.u) == "number" then
+      -- Map overrides must keep campaign rivals inside their playable biome.
+      local biome = enc.index <= #Encounters.LIST and Encounters.BIOMES[enc.biome]
+      if type(entry.u) == "number"
+        and (not biome or (entry.u >= biome.uStart and entry.u < math.min(biome.uEnd, 116.5))) then
         enc.u = entry.u
         touched = true
       end

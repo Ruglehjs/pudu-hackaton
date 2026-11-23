@@ -193,9 +193,9 @@ local function advance(seconds)
     for _ = 1, math.ceil(seconds / 0.05) do love.update(0.05) end
 end
 local function restart()
-    love.keypressed("2", "2", false)
+    love.keypressed("6", "6", false)
     advance(1)
-    assert(game.battlePhase == "player_turn" and game.battle.speech == Encounters.getByIndex(2).introLine)
+    assert(game.battlePhase == "player_turn" and game.battle.speech == Encounters.getByIndex(6).introLine)
 end
 local function submit(text)
     love.textinput(text)
@@ -218,7 +218,7 @@ local function cast(text, expectedReaction)
     advance(1.10)
     if game.battlePhase == "enemy_counter" then advance(1.15) end
 end
-local hint = Encounters.getByIndex(2).semiHintLine
+local hint = Encounters.getByIndex(6).semiHintLine
 restart()
 cast("silla")
 assert(game.battle.nonCritMissCount == 1 and game.battle.speech ~= hint)
@@ -270,7 +270,7 @@ assert(game.battle.decision.source == "lua", "un resultado atrasado no reemplaza
 love.keypressed("1", "1", false)
 advance(1)
 game.cli.mock = true
-cast("paraguas", "laughing")
-assert(game.battle.nonCritMissCount == 1 and game.battle.enemyHp == 100 and game.battle.hp < 100)
+cast("calcetín", "laughing")
+assert(game.battle.nonCritMissCount == 1 and game.battle.enemyHp == 90 and game.battle.hp < 100)
 
 print("OK: ritual, sprites tardíos, timeout, carriles, UTF-8, anti-tofu y semi-pista de fase 04.")

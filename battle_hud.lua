@@ -163,7 +163,7 @@ function BattleHUD:drawTopBar(state, w)
     oneLine(f.body, context, 42, 28 - f.body:getHeight() / 2, chipW - 36)
 
     local right = w - 14
-    if state.mode == "explore" or state.battlePhase == "player_turn" then
+    if state.canStartBattle or state.battlePhase == "player_turn" then
         local text = state.mode == "explore" and "Combate [Tab]" or "Mapa [Esc]"
         local width = f.body:getWidth(text) + 24
         right = right - width
@@ -341,8 +341,9 @@ function BattleHUD:drawVictoryOrDefeat(state, w, h)
     local x, y, width = battleStrip(w, h)
     local panelX, panelW = x + 204, width - 204
     drawFFWindow(panelX, y, panelW, 78)
-    oneLine(f.heading, won and "¡Victoria!" or "El Pudú necesita un respiro",
-        panelX + 16, y + 12, panelW - 296, "left", GOLD)
+    local title = won and "¡Victoria!" or "El Pudú necesita un respiro"
+    if state.campaignComplete then title = "¡Aventura completada!" end
+    oneLine(f.heading, title, panelX + 16, y + 12, panelW - 296, "left", GOLD)
     if state.lastPrompt then
         oneLine(f.body, state.lastPrompt, panelX + 16, y + 33, panelW - 296)
     end

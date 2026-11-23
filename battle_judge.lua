@@ -160,7 +160,8 @@ function Judge.standaloneLuaEvaluate(rawPrompt, encounter)
         outcome_type = "creative_chaos", is_critical = false, damage_to_enemy = 30, damage_to_pudu = 0, heal_pudu = 0,
         enemy_reaction = "confused", pudu_reaction = "happy", enemy_speech = "¡Me distraje aplaudiendo y me caí de poto!",
         narrator_text = rival.gag, enemy_counter_name = rival.counter, enemy_counter_line = rival.line,
-        enemy_counter_damage = 11, enemy_counter_fx = "wind", comedy_score = 6, comedy_badge = "¡BUENA TALLA!",
+        enemy_counter_damage = rival.counter_damage or 11, enemy_counter_fx = "wind",
+        comedy_score = 6, comedy_badge = "¡BUENA TALLA!",
         keep_prop_on_stage = false, prop_anchor = "ground_enemy", status_tag = "DESPISTADO",
         ritual_theme_color = "#68CEA4", adds_stage_state = "none", combo_triggered = "none", combo_name = "",
         anticipation_line = "¿Quién pidió ese paquete?",
@@ -246,7 +247,8 @@ function Judge.ensureResultCoherence(raw, prompt, encounter)
             elseif key ~= "combo_triggered" and key ~= "approved" then r[key] = value end
         end
     end
-    r.enemy_counter_damage = bounded(r.enemy_counter_damage, 5, 22)
+    local rival = encounter and rules.rivals[encounter.id]
+    r.enemy_counter_damage = bounded(r.enemy_counter_damage, rival and rival.counter_damage or 5, 22)
     r.comedy_score = bounded(r.comedy_score, 1, 10)
     r.damage_to_enemy = bounded(r.damage_to_enemy, 0, 100)
     r.status_tag = r.status_tag:gsub(charPattern, uppercase):upper()

@@ -126,7 +126,7 @@ def smoke(love):
             if not address:
                 raise RuntimeError(f"El puente de prueba no arrancó: {ready}")
             env["PUDU_BATTLE_PORT"] = address.group(1)
-            game, lines = launch([str(love), str(game_file), "--mode=battle", "--encounter=5",
+            game, lines = launch([str(love), str(game_file), "--mode=battle", "--encounter=7",
                                   "--quit-after=35"], env)
             try:
                 turns, logs = [], []
