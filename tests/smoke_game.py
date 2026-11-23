@@ -26,7 +26,7 @@ for i = 1, 40 do
 end
 assert(game)
 local turns, step = 0, 1
-local arrows, nextArrow, arrowTimer = {"up", "left", "down", "right"}, 1, 0
+local arrowTimer = 0
 function print(line, ...)
     ordinaryPrint(line, ...)
     if type(line) == "string" and line:match("^%[BATALLA%]") then turns = turns + 1 end
@@ -43,11 +43,16 @@ function love.update(dt)
     updateGame(dt)
     local onMap = game.mode == "explore" and game.transitionState == "none"
     local playerReady = game.battlePhase == "player_turn" and game.hud.promptOpen
-    if (step == 3 and turns == 1) or (step == 4 and turns == 2) or (step == 7 and turns == 3) then
+    if game.battlePhase == "ritual" and (step == 3 or step == 4 or step == 7) then
         arrowTimer = arrowTimer + dt
         if arrowTimer >= 0.09 then
-            key(arrows[nextArrow])
-            nextArrow = nextArrow % #arrows + 1
+            local ritual = game.ritual
+            local arrow = ritual.sequence[ritual.cursor]
+            if arrow then
+                key(arrow.direction)
+            elseif ritual:canReleaseBonus() then
+                key("return")
+            end
             arrowTimer = 0
         end
     end
