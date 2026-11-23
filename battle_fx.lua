@@ -399,6 +399,15 @@ function BattleFX:triggerImpact(result, targetX, targetY, puduX, puduY, audio)
     end
     play(audio, result.sfx)
     play(audio, result.reaction_sfx)
+    if result.adds_stage_state and result.adds_stage_state ~= "none" then
+        play(audio, "sfx_elem_" .. tostring(result.adds_stage_state), 0.78)
+    end
+    if critical and (not result.combo_triggered or result.combo_triggered == "none") then
+        play(audio, "sfx_crit_hit", 0.82)
+    end
+    if selfDamage > 0 then
+        play(audio, "hurt", 0.72)
+    end
 end
 
 function BattleFX:triggerComboSpectacle(comboType, comboName, targetX, targetY, audio)
@@ -414,9 +423,10 @@ function BattleFX:triggerComboSpectacle(comboType, comboName, targetX, targetY, 
     play(audio, theme.sfx2, 0.66)
 end
 
-function BattleFX:startDefeatFinale(reaction, enemyX, enemyY)
+function BattleFX:startDefeatFinale(reaction, enemyX, enemyY, audio)
     self.defeatFinale = { reaction = reaction or "defeated", x = enemyX, y = enemyY, age = 0 }
     if Spectacles then Spectacles.spawnFinaleBurst(self, reaction or "defeated", enemyX, enemyY) end
+    play(audio, "sfx_enemy_ko", 0.82)
 end
 
 function BattleFX:getDefeatTransform()
